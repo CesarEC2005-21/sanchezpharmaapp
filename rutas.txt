@@ -1,0 +1,260 @@
+from flask import Flask, jsonify, request
+import pymysql.cursors
+from flask_jwt import JWT, jwt_required
+import logging
+
+# ---------------------------------------------------
+# CONFIGURACIÓN LOGS
+# ---------------------------------------------------
+logging.basicConfig(filename='/tmp/jwt_debug.log', level=logging.DEBUG,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+# ---------------------------------------------------
+# CONEXIÓN A SÁNCHEZ PHARMA
+# ---------------------------------------------------
+def obtenerconexion_sanchezpharma():
+    return pymysql.connect(
+        host='nxlsxx.mysql.pythonanywhere-services.com',
+        user='nxlsxx',
+        password='77910396gG',
+        database='nxlsxx$PAF',
+        cursorclass=pymysql.cursors.DictCursor
+    )
+
+
+# ---------------------------------------------------
+# MODELO DE USUARIO
+# ---------------------------------------------------
+class UserSanchezPharma(object):
+    def __init__(self, id, username, password):
+        self.id = id
+        self.username = username
+        self.password = password
+
+    def __str__(self):
+        return f"User(id='{self.id}')"
+
+
+# ---------------------------------------------------
+# AUTENTICACIÓN
+# ---------------------------------------------------
+def authenticate(username, password):
+    logging.info(f"Intentando autenticar usuario Sánchez Pharma: {username}")
+
+    conn = obtenerconexion_sanchezpharma()
+    with conn:
+        with conn.cursor() as cursor:
+            sql = "SELECT id, username, password FROM usuarios WHERE username = %s"
+            cursor.execute(sql, (username,))
+            result = cursor.fetchone()
+
+    if result and result["password"] == password:
+        logging.info(f"Autenticado correctamente Sánchez Pharma: {username}")
+        return UserSanchezPharma(result["id"], result["username"], result["password"])
+
+    logging.warning("Credenciales incorrectas")
+    return None
+
+
+def identity(payload):
+    user_id = payload['identity']
+
+    conn = obtenerconexion_sanchezpharma()
+    with conn:
+        with conn.cursor() as cursor:
+            sql = "SELECT id, username, password FROM usuarios WHERE id = %s"
+            cursor.execute(sql, (user_id,))
+            result = cursor.fetchone()
+
+    if result:
+        return UserSanchezPharma(result["id"], result["username"], result["password"])
+    return None
+
+
+# ---------------------------------------------------
+# FLASK + JWT
+# ---------------------------------------------------
+app = Flask(__name__)
+app.debug = True
+app.config['SECRET_KEY'] = 'super-secret'
+
+jwt = JWT(app, authenticate, identity)
+
+
+# ---------------------------------------------------
+# TABLA BLACKLIST (crear si no existe)
+# ---------------------------------------------------
+def crear_tabla_blacklist():
+    conn = obtenerconexion_sanchezpharma()
+    with conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS jwt_blacklist (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    token VARCHAR(500),
+                    fecha DATETIME DEFAULT NOW()
+                )
+            """)
+        conn.commit()
+
+crear_tabla_blacklist()
+
+
+def token_en_lista_negra(token):
+    conn = obtenerconexion_sanchezpharma()
+    with conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id FROM jwt_blacklist WHERE token = %s", (token,))
+            data = cursor.fetchone()
+    return data is not None
+
+
+# ---------------------------------------------------
+# VERIFICAR TOKEN EN BLACKLIST
+# ---------------------------------------------------
+@app.before_request
+def verificar_token_blacklist():
+    endpoints_libres = ("api_login", "hello", "probar_conexion_sanchezpharma")
+    if request.endpoint in endpoints_libres:
+        return
+
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.replace("Bearer ", "")
+        if token_en_lista_negra(token):
+            return jsonify({"code": 0, "message": "Token inválido (logout realizado)"}), 401
+
+
+# ---------------------------------------------------
+# RUTAS
+# ---------------------------------------------------
+@app.route("/")
+def hello():
+    return "API Sánchez Pharma funcionando"
+
+
+# ---------------------------------------------------
+# LOGIN
+# ---------------------------------------------------
+@app.route('/api_login', methods=['POST'])
+def api_login():
+    try:
+        data = request.json
+        username = data.get("username")
+        password = data.get("password")
+
+        user = authenticate(username, password)
+
+        if not user:
+            return jsonify({"code": 0, "message": "Credenciales incorrectas"}), 401
+
+        token = jwt.jwt_encode_callback(user)
+
+        return jsonify({
+            "code": 1,
+            "message": "Inicio de sesión exitoso",
+            "token": token.decode('utf-8') if hasattr(token, 'decode') else token,
+            "user": {"id": user.id, "username": user.username}
+        })
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# LOGOUT
+# ---------------------------------------------------
+@app.route('/api_logout', methods=['POST'])
+@jwt_required()
+def api_logout():
+    try:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return jsonify({"code": 0, "message": "Token no enviado"}), 400
+
+        token = auth_header.replace("Bearer ", "")
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("INSERT INTO jwt_blacklist (token) VALUES (%s)", (token,))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Sesión cerrada correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# PROBAR CONEXIÓN BD
+# ---------------------------------------------------
+@app.route('/probar_conexion_sanchezpharma')
+def probar_conexion_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) AS total FROM usuarios")
+            total = cursor.fetchone()["total"]
+        return jsonify({"message": "Conexión exitosa", "total_usuarios": total})
+    except Exception as e:
+        return jsonify({"message": "Error", "error": str(e)})
+
+
+# ---------------------------------------------------
+# LISTAR USUARIOS
+# ---------------------------------------------------
+@app.route('/usuarios_sanchezpharma')
+@jwt_required()
+def usuarios_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM usuarios")
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Usuarios listados correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": {}, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# REGISTRAR USUARIO
+# ---------------------------------------------------
+@app.route('/registrar_usuario_sanchezpharma', methods=['POST'])
+@jwt_required()
+def registrar_usuario_sanchezpharma():
+    try:
+        data = request.json
+
+        campos = ["username", "email", "password", "nombre", "apellido", "edad", "sexo", "rol_id"]
+        if not all(data.get(c) for c in campos):
+            return jsonify({"code": 0, "message": "Faltan campos"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO usuarios 
+                    (username, email, password, nombre, apellido, edad, sexo, rol_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    data["username"], data["email"], data["password"],
+                    data["nombre"], data["apellido"], data["edad"],
+                    data["sexo"], data["rol_id"]
+                ))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Usuario registrado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# FIN
+# ---------------------------------------------------
+if __name__ == "__main__":
+    app.run()
