@@ -78,6 +78,8 @@ def identity(payload):
 app = Flask(__name__)
 app.debug = True
 app.config['SECRET_KEY'] = 'super-secret'
+# Configurar Flask-JWT para aceptar "Bearer" en lugar de "JWT"
+app.config['JWT_AUTH_HEADER_PREFIX'] = 'Bearer'
 
 # ---------------------------------------------------
 # CONFIGURACIÓN CORS
@@ -124,18 +126,40 @@ def token_en_lista_negra(token):
 
 
 # ---------------------------------------------------
+# MANEJAR CORS PREFLIGHT (OPTIONS)
+# ---------------------------------------------------
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = jsonify({})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add('Access-Control-Allow-Headers', "Content-Type,Authorization")
+        response.headers.add('Access-Control-Allow-Methods', "GET,PUT,POST,DELETE,OPTIONS")
+        return response
+
+# ---------------------------------------------------
 # VERIFICAR TOKEN EN BLACKLIST
 # ---------------------------------------------------
 @app.before_request
 def verificar_token_blacklist():
+    # Saltar verificación para peticiones OPTIONS y endpoints libres
+    if request.method == "OPTIONS":
+        return
+    
     endpoints_libres = ("api_login", "hello", "probar_conexion_sanchezpharma")
     if request.endpoint in endpoints_libres:
         return
 
+    # Aceptar tanto "Bearer" como "JWT" para compatibilidad
     auth_header = request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header.replace("Bearer ", "")
-        if token_en_lista_negra(token):
+    if auth_header:
+        token = None
+        if auth_header.startswith("Bearer "):
+            token = auth_header.replace("Bearer ", "")
+        elif auth_header.startswith("JWT "):
+            token = auth_header.replace("JWT ", "")
+        
+        if token and token_en_lista_negra(token):
             return jsonify({"code": 0, "message": "Token inválido (logout realizado)"}), 401
 
 
@@ -186,7 +210,13 @@ def api_logout():
         if not auth_header:
             return jsonify({"code": 0, "message": "Token no enviado"}), 400
 
-        token = auth_header.replace("Bearer ", "")
+        # Aceptar tanto "Bearer" como "JWT"
+        if auth_header.startswith("Bearer "):
+            token = auth_header.replace("Bearer ", "")
+        elif auth_header.startswith("JWT "):
+            token = auth_header.replace("JWT ", "")
+        else:
+            return jsonify({"code": 0, "message": "Formato de token inválido"}), 400
 
         conn = obtenerconexion_sanchezpharma()
         with conn:
@@ -232,6 +262,25 @@ def usuarios_sanchezpharma():
 
     except Exception as e:
         return jsonify({"code": 0, "data": {}, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# LISTAR ROLES
+# ---------------------------------------------------
+@app.route('/roles_sanchezpharma')
+@jwt_required()
+def roles_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM roles")
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Roles listados correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
 # ---------------------------------------------------

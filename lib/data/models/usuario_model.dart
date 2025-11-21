@@ -10,9 +10,26 @@ class UsuarioModel {
   final String? password;
   final String nombre;
   final String apellido;
+  @JsonKey(fromJson: _edadFromJson)
   final int edad;
   final String sexo;
+  @JsonKey(name: 'rol_id', fromJson: _rolIdFromJson)
   final int rolId;
+  
+  // Helper functions to handle null values
+  static int _edadFromJson(dynamic json) {
+    if (json == null) return 0;
+    if (json is num) return json.toInt();
+    if (json is String) return int.tryParse(json) ?? 0;
+    return 0;
+  }
+  
+  static int _rolIdFromJson(dynamic json) {
+    if (json == null) return 1; // Default rol_id
+    if (json is num) return json.toInt();
+    if (json is String) return int.tryParse(json) ?? 1;
+    return 1;
+  }
 
   UsuarioModel({
     this.id,

@@ -13,9 +13,9 @@ UsuarioModel _$UsuarioModelFromJson(Map<String, dynamic> json) => UsuarioModel(
   password: json['password'] as String?,
   nombre: json['nombre'] as String,
   apellido: json['apellido'] as String,
-  edad: (json['edad'] as num).toInt(),
+  edad: UsuarioModel._edadFromJson(json['edad']),
   sexo: json['sexo'] as String,
-  rolId: (json['rolId'] as num).toInt(),
+  rolId: UsuarioModel._rolIdFromJson(json['rol_id']),
 );
 
 Map<String, dynamic> _$UsuarioModelToJson(UsuarioModel instance) =>
@@ -28,5 +28,5 @@ Map<String, dynamic> _$UsuarioModelToJson(UsuarioModel instance) =>
       'apellido': instance.apellido,
       'edad': instance.edad,
       'sexo': instance.sexo,
-      'rolId': instance.rolId,
+      'rol_id': instance.rolId,
     };

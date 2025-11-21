@@ -9,5 +9,6 @@ class ApiConstants {
   static const String registrarUsuario = '/registrar_usuario_sanchezpharma';
   static const String editarUsuario = '/editar_usuario_sanchezpharma';
   static const String eliminarUsuario = '/eliminar_usuario_sanchezpharma';
+  static const String roles = '/roles_sanchezpharma';
 }
 

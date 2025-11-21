@@ -3,6 +3,7 @@ import 'package:retrofit/retrofit.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../data/models/usuario_model.dart';
+import '../../data/models/rol_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 
 class UsuariosScreen extends StatefulWidget {
@@ -15,6 +16,7 @@ class UsuariosScreen extends StatefulWidget {
 class _UsuariosScreenState extends State<UsuariosScreen> {
   final ApiService _apiService = ApiService(DioClient.createDio());
   List<UsuarioModel> _usuarios = [];
+  List<RolModel> _roles = [];
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -22,6 +24,46 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   void initState() {
     super.initState();
     _cargarUsuarios();
+    _cargarRoles();
+  }
+
+  Future<void> _cargarRoles() async {
+    try {
+      final response = await _apiService.getRoles();
+      
+      if (response.response.statusCode == 200) {
+        final data = response.data;
+        
+        if (data['code'] == 1 && data['data'] != null) {
+          final List<dynamic> rolesJson = data['data'];
+          setState(() {
+            _roles = rolesJson
+                .map((json) => RolModel.fromJson(json))
+                .toList();
+          });
+        } else {
+          // Si no hay roles en el servidor, usar roles por defecto
+          _roles = _getRolesPorDefecto();
+        }
+      } else {
+        // Si falla la petición, usar roles por defecto
+        _roles = _getRolesPorDefecto();
+      }
+    } catch (e) {
+      // Si hay error, usar roles por defecto
+      print('Error al cargar roles: $e');
+      _roles = _getRolesPorDefecto();
+    }
+  }
+
+  List<RolModel> _getRolesPorDefecto() {
+    // Roles comunes por defecto si no hay endpoint o falla
+    return [
+      RolModel(id: 1, nombre: 'Administrador', descripcion: 'Rol de administrador'),
+      RolModel(id: 2, nombre: 'Usuario', descripcion: 'Rol de usuario estándar'),
+      RolModel(id: 3, nombre: 'Empleado', descripcion: 'Rol de empleado'),
+      RolModel(id: 4, nombre: 'Cliente', descripcion: 'Rol de cliente'),
+    ];
   }
 
   Future<void> _cargarUsuarios() async {
@@ -84,7 +126,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
     final apellidoController = TextEditingController(text: usuario?.apellido ?? '');
     final edadController = TextEditingController(text: usuario?.edad.toString() ?? '');
     String sexoValue = usuario?.sexo ?? 'M';
-    final rolIdController = TextEditingController(text: usuario?.rolId.toString() ?? '1');
+    int? rolIdSeleccionado = usuario?.rolId ?? (_roles.isNotEmpty ? _roles.first.id : 1);
 
     await showDialog(
       context: context,
@@ -213,19 +255,26 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                   },
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
-                  controller: rolIdController,
+                DropdownButtonFormField<int>(
+                  value: rolIdSeleccionado,
                   decoration: const InputDecoration(
-                    labelText: 'Rol ID',
+                    labelText: 'Rol',
                     border: OutlineInputBorder(),
                   ),
-                  keyboardType: TextInputType.number,
+                  items: _roles.map((rol) {
+                    return DropdownMenuItem<int>(
+                      value: rol.id,
+                      child: Text(rol.nombre),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      rolIdSeleccionado = value;
+                    });
+                  },
                   validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'El Rol ID es requerido';
-                    }
-                    if (int.tryParse(value) == null) {
-                      return 'El Rol ID debe ser un número';
+                    if (value == null) {
+                      return 'El rol es requerido';
                     }
                     return null;
                   },
@@ -243,6 +292,15 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
           ElevatedButton(
             onPressed: () async {
               if (formKey.currentState!.validate()) {
+                if (rolIdSeleccionado == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Por favor seleccione un rol'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
                 await _guardarUsuario(
                   usuario: usuario,
                   username: usernameController.text,
@@ -252,7 +310,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                   apellido: apellidoController.text,
                   edad: int.parse(edadController.text),
                   sexo: sexoValue,
-                  rolId: int.parse(rolIdController.text),
+                  rolId: rolIdSeleccionado!,
                 );
                 if (mounted) {
                   Navigator.of(context).pop();

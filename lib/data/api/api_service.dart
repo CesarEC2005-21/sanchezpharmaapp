@@ -3,6 +3,7 @@ import 'package:retrofit/retrofit.dart';
 import '../models/login_request.dart';
 import '../models/login_response.dart';
 import '../models/usuario_model.dart';
+import '../models/rol_model.dart';
 import '../../core/constants/api_constants.dart';
 
 part 'api_service.g.dart';
@@ -19,6 +20,9 @@ abstract class ApiService {
 
   @GET(ApiConstants.usuarios)
   Future<HttpResponse<dynamic>> getUsuarios();
+
+  @GET(ApiConstants.roles)
+  Future<HttpResponse<dynamic>> getRoles();
 
   @POST(ApiConstants.registrarUsuario)
   Future<HttpResponse<dynamic>> registrarUsuario(@Body() Map<String, dynamic> usuario);
