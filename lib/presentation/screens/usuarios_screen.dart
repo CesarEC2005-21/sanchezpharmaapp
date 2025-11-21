@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:retrofit/retrofit.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../data/models/usuario_model.dart';
+import '../../core/utils/shared_prefs_helper.dart';
 
 class UsuariosScreen extends StatefulWidget {
   const UsuariosScreen({super.key});
@@ -29,6 +31,16 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
     });
 
     try {
+      // Verificar que el token esté disponible antes de hacer la petición
+      final token = await SharedPrefsHelper.getToken();
+      if (token == null || token.isEmpty) {
+        setState(() {
+          _errorMessage = 'No hay sesión activa. Por favor, inicie sesión nuevamente.';
+          _isLoading = false;
+        });
+        return;
+      }
+
       final response = await _apiService.getUsuarios();
       
       if (response.response.statusCode == 200) {

@@ -12,13 +12,16 @@ class SharedPrefsHelper {
     required String username,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyToken, token);
+    // Limpiar el token (eliminar espacios en blanco)
+    final cleanToken = token.trim();
+    await prefs.setString(_keyToken, cleanToken);
     await prefs.setInt(_keyUserId, userId);
     await prefs.setString(_keyUsername, username);
     
     // Log para verificar que se guardó
     print('✅ Token guardado exitosamente');
-    print('   - Token: ${token.substring(0, 20)}...'); // Solo primeros 20 caracteres
+    print('   - Token (limpio): ${cleanToken.substring(0, cleanToken.length > 20 ? 20 : cleanToken.length)}...');
+    print('   - Longitud del token: ${cleanToken.length} caracteres');
     print('   - User ID: $userId');
     print('   - Username: $username');
   }
@@ -29,12 +32,15 @@ class SharedPrefsHelper {
     final token = prefs.getString(_keyToken);
     
     if (token != null) {
-      print('📥 Token recuperado: ${token.substring(0, 20)}...');
+      final cleanToken = token.trim();
+      print('📥 Token recuperado: ${cleanToken.substring(0, cleanToken.length > 20 ? 20 : cleanToken.length)}...');
+      print('   - Longitud: ${cleanToken.length} caracteres');
+      return cleanToken;
     } else {
       print('⚠️ No hay token guardado');
     }
     
-    return token;
+    return token?.trim();
   }
 
   // Obtener ID de usuario
