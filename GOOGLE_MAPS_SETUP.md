@@ -16,45 +16,36 @@
 
 ### 2. Configurar Android
 
+✅ **YA CONFIGURADO** - Solo necesitas agregar tu API Key
+
 1. Abre `android/app/src/main/AndroidManifest.xml`
-2. Agrega la siguiente línea dentro de la etiqueta `<application>`:
+2. Busca la línea que dice `android:value="TU_API_KEY_DE_GOOGLE_MAPS_AQUI"`
+3. Reemplaza `TU_API_KEY_DE_GOOGLE_MAPS_AQUI` con tu API Key real
 
 ```xml
 <meta-data
     android:name="com.google.android.geo.API_KEY"
-    android:value="TU_API_KEY_AQUI"/>
+    android:value="TU_API_KEY_DE_GOOGLE_MAPS_AQUI"/>
 ```
+
+✅ **Permisos ya configurados** en `AndroidManifest.xml`
 
 ### 3. Configurar iOS
 
+✅ **YA CONFIGURADO** - Solo necesitas agregar tu API Key
+
 1. Abre `ios/Runner/AppDelegate.swift`
-2. Agrega el siguiente código en el método `application`:
+2. Busca la línea que dice `GMSServices.provideAPIKey("TU_API_KEY_DE_GOOGLE_MAPS_AQUI")`
+3. Reemplaza `TU_API_KEY_DE_GOOGLE_MAPS_AQUI` con tu API Key real
 
 ```swift
 import GoogleMaps
 
 // En application(_:didFinishLaunchingWithOptions:)
-GMSServices.provideAPIKey("TU_API_KEY_AQUI")
+GMSServices.provideAPIKey("TU_API_KEY_DE_GOOGLE_MAPS_AQUI")
 ```
 
-### 4. Configurar permisos
-
-#### Android (`android/app/src/main/AndroidManifest.xml`):
-
-```xml
-<uses-permission android:name="android.permission.INTERNET"/>
-<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-```
-
-#### iOS (`ios/Runner/Info.plist`):
-
-```xml
-<key>NSLocationWhenInUseUsageDescription</key>
-<string>Necesitamos tu ubicación para mostrar el seguimiento del envío</string>
-<key>NSLocationAlwaysUsageDescription</key>
-<string>Necesitamos tu ubicación para mostrar el seguimiento del envío</string>
-```
+✅ **Permisos ya configurados** en `ios/Runner/Info.plist`
 
 ### 5. Instalar dependencias
 

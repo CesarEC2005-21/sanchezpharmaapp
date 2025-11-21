@@ -4,12 +4,16 @@ class SharedPrefsHelper {
   static const String _keyToken = 'auth_token';
   static const String _keyUserId = 'user_id';
   static const String _keyUsername = 'username';
+  static const String _keyUserType = 'user_type'; // 'cliente' o 'usuario'
+  static const String _keyClienteId = 'cliente_id'; // ID del cliente si es tipo 'cliente'
 
   // Guardar token y datos de usuario
   static Future<void> saveAuthData({
     required String token,
     required int userId,
     required String username,
+    String? userType,
+    int? clienteId,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     // Limpiar el token (eliminar espacios en blanco)
@@ -17,6 +21,12 @@ class SharedPrefsHelper {
     await prefs.setString(_keyToken, cleanToken);
     await prefs.setInt(_keyUserId, userId);
     await prefs.setString(_keyUsername, username);
+    if (userType != null) {
+      await prefs.setString(_keyUserType, userType);
+    }
+    if (clienteId != null) {
+      await prefs.setInt(_keyClienteId, clienteId);
+    }
     
     // Log para verificar que se guardó
     print('✅ Token guardado exitosamente');
@@ -24,6 +34,10 @@ class SharedPrefsHelper {
     print('   - Longitud del token: ${cleanToken.length} caracteres');
     print('   - User ID: $userId');
     print('   - Username: $username');
+    print('   - User Type: ${userType ?? 'usuario'}');
+    if (clienteId != null) {
+      print('   - Cliente ID: $clienteId');
+    }
   }
 
   // Obtener token
@@ -65,12 +79,38 @@ class SharedPrefsHelper {
     return isAuth;
   }
 
+  // Obtener tipo de usuario
+  static Future<String?> getUserType() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyUserType);
+  }
+
+  // Obtener ID de cliente
+  static Future<int?> getClienteId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_keyClienteId);
+  }
+
+  // Verificar si es cliente
+  static Future<bool> isCliente() async {
+    final userType = await getUserType();
+    return userType == 'cliente';
+  }
+
+  // Verificar si es usuario interno
+  static Future<bool> isUsuarioInterno() async {
+    final userType = await getUserType();
+    return userType == 'usuario' || userType == null;
+  }
+
   // Limpiar datos (logout)
   static Future<void> clearAuthData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keyToken);
     await prefs.remove(_keyUserId);
     await prefs.remove(_keyUsername);
+    await prefs.remove(_keyUserType);
+    await prefs.remove(_keyClienteId);
     
     print('🗑️ Token y datos de usuario eliminados (logout)');
   }

@@ -1,6 +1,9 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/constants/api_constants.dart';
+import '../../main.dart';
+import '../../presentation/screens/login_screen.dart';
 
 class DioClient {
   static Dio createDio() {
@@ -20,30 +23,40 @@ class DioClient {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          // Agregar token si existe
-          try {
-            final token = await SharedPrefsHelper.getToken();
-            if (token != null && token.isNotEmpty) {
-              // Limpiar el token (eliminar espacios en blanco)
-              final cleanToken = token.trim();
-              
-              // Flask-JWT configurado para aceptar "Bearer" (estándar OAuth2/JWT)
-              // Formato: Authorization: Bearer <token>
-              // IMPORTANTE: El servidor está configurado con JWT_AUTH_HEADER_PREFIX = 'Bearer'
-              final authHeader = 'Bearer $cleanToken';
-              
-              options.headers['Authorization'] = authHeader;
-              
-              print('🔑 Token agregado al header Authorization para: ${options.path}');
-              print('   Método: ${options.method}');
-              print('   URL completa: ${options.baseUrl}${options.path}');
-              print('   Token (primeros 50 chars): ${cleanToken.substring(0, cleanToken.length > 50 ? 50 : cleanToken.length)}...');
-              print('   Header completo: Authorization: Bearer ${cleanToken.substring(0, cleanToken.length > 20 ? 20 : cleanToken.length)}...');
-            } else {
-              print('⚠️ No se encontró token para la petición: ${options.path}');
+          // Excluir endpoints públicos que no requieren token
+          final publicEndpoints = ['/api_login'];
+          final isPublicEndpoint = publicEndpoints.any((endpoint) => 
+            options.path.contains(endpoint) || options.uri.path.contains(endpoint)
+          );
+          
+          // Solo agregar token si NO es un endpoint público
+          if (!isPublicEndpoint) {
+            try {
+              final token = await SharedPrefsHelper.getToken();
+              if (token != null && token.isNotEmpty) {
+                // Limpiar el token (eliminar espacios en blanco)
+                final cleanToken = token.trim();
+                
+                // Flask-JWT configurado para aceptar "Bearer" (estándar OAuth2/JWT)
+                // Formato: Authorization: Bearer <token>
+                // IMPORTANTE: El servidor está configurado con JWT_AUTH_HEADER_PREFIX = 'Bearer'
+                final authHeader = 'Bearer $cleanToken';
+                
+                options.headers['Authorization'] = authHeader;
+                
+                print('🔑 Token agregado al header Authorization para: ${options.path}');
+                print('   Método: ${options.method}');
+                print('   URL completa: ${options.baseUrl}${options.path}');
+                print('   Token (primeros 50 chars): ${cleanToken.substring(0, cleanToken.length > 50 ? 50 : cleanToken.length)}...');
+                print('   Header completo: Authorization: Bearer ${cleanToken.substring(0, cleanToken.length > 20 ? 20 : cleanToken.length)}...');
+              } else {
+                print('⚠️ No se encontró token para la petición: ${options.path}');
+              }
+            } catch (e) {
+              print('❌ Error al obtener token: $e');
             }
-          } catch (e) {
-            print('❌ Error al obtener token: $e');
+          } else {
+            print('🔓 Endpoint público detectado: ${options.path} - No se requiere token');
           }
           return handler.next(options);
         },
@@ -75,16 +88,33 @@ class DioClient {
           
           // Si el token es inválido (401), verificar antes de limpiar
           if (error.response?.statusCode == 401) {
-            print('🔒 Error 401 - Token rechazado por el servidor');
-            print('   Posibles causas:');
-            print('     1. El servidor (PythonAnywhere/Apache) puede estar eliminando el header Authorization');
-            print('     2. Flask-JWT no está reconociendo el formato del token');
-            print('     3. El token puede estar expirado o ser inválido');
-            print('     4. Problema de configuración CORS o WSGI');
+            // Verificar si es un endpoint público (login, etc.)
+            final publicEndpoints = ['/api_login'];
+            final isPublicEndpoint = publicEndpoints.any((endpoint) => 
+              error.requestOptions.path.contains(endpoint) || 
+              error.requestOptions.uri.path.contains(endpoint)
+            );
             
-            // Solo limpiar si el error es realmente de autenticación confirmada
-            final errorData = error.response?.data;
-            if (errorData is Map) {
+            if (isPublicEndpoint) {
+              // Para endpoints públicos, 401 significa credenciales incorrectas, no token inválido
+              print('🔐 Error 401 en endpoint público - Credenciales incorrectas');
+              print('   Este es un error de autenticación (usuario/contraseña incorrectos)');
+              print('   No se requiere token para este endpoint');
+            } else {
+              // Para endpoints protegidos, 401 significa token inválido
+              print('🔒 Error 401 - Token rechazado por el servidor');
+              print('   Posibles causas:');
+              print('     1. El servidor (PythonAnywhere/Apache) puede estar eliminando el header Authorization');
+              print('     2. Flask-JWT no está reconociendo el formato del token');
+              print('     3. El token puede estar expirado o ser inválido');
+              print('     4. Problema de configuración CORS o WSGI');
+            }
+            
+            // Solo limpiar token si NO es un endpoint público
+            if (!isPublicEndpoint) {
+              // Solo limpiar si el error es realmente de autenticación confirmada
+              final errorData = error.response?.data;
+              if (errorData is Map) {
               final description = errorData['description']?.toString() ?? '';
               final errorMsg = errorData['error']?.toString() ?? '';
               final message = errorData['message']?.toString() ?? '';
@@ -102,16 +132,47 @@ class DioClient {
               } else if (message.contains('Token inválido') || 
                   message.contains('Invalid token') ||
                   message.contains('Token expired') ||
-                  errorMsg.contains('Token expired')) {
+                  errorMsg.contains('Token expired') ||
+                  description.contains('expired') ||
+                  description.contains('Signature has expired') ||
+                  errorMsg.contains('expired') ||
+                  errorMsg.contains('Signature has expired')) {
                 print('🔒 Token confirmado como inválido o expirado, limpiando datos');
+                print('   El token ha expirado. Por favor, inicia sesión nuevamente.');
                 await SharedPrefsHelper.clearAuthData();
+                
+                // Redirigir al login si estamos en una pantalla autenticada
+                if (navigatorKey.currentContext != null) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    final context = navigatorKey.currentContext;
+                    if (context != null) {
+                      // Mostrar mensaje al usuario
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Tu sesión ha expirado. Por favor, inicia sesión nuevamente.'),
+                          backgroundColor: Colors.orange,
+                          duration: Duration(seconds: 3),
+                        ),
+                      );
+                      
+                      // Redirigir al login
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(
+                          builder: (context) => const LoginScreen(),
+                        ),
+                        (route) => false,
+                      );
+                    }
+                  });
+                }
               } else {
                 print('⚠️ Error 401 pero el servidor no confirma token inválido específicamente');
                 print('   El token se mantiene en el cliente para reintentar');
               }
-            } else {
-              print('⚠️ Error 401 sin mensaje específico del servidor');
-              print('   Probable problema de configuración del servidor');
+              } else {
+                print('⚠️ Error 401 sin mensaje específico del servidor');
+                print('   Probable problema de configuración del servidor');
+              }
             }
           }
           

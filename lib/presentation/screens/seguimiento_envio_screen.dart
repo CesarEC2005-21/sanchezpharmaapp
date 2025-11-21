@@ -45,10 +45,13 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
   }
 
   Future<void> _initializeMap() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
-      // Obtener ubicación actual del dispositivo (simulando ubicación del repartidor)
-      _repartidorPosition = await _getCurrentLocation();
-      
+      // Primero, obtener la posición del destino
       // Usar coordenadas del modelo si están disponibles, sino geocodificar la dirección
       if (widget.envio.latitudDestino != null && widget.envio.longitudDestino != null) {
         // Usar coordenadas almacenadas en la base de datos (más preciso)
@@ -66,7 +69,24 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
         );
       } else {
         // Fallback: convertir dirección de texto a coordenadas (menos preciso)
-        _destinoPosition = await _getLocationFromAddress(widget.envio.direccionEntrega);
+        try {
+          _destinoPosition = await _getLocationFromAddress(widget.envio.direccionEntrega);
+        } catch (e) {
+          print('Error al geocodificar dirección: $e');
+          // Usar ubicación por defecto (Lima, Perú)
+          _destinoPosition = Position(
+            latitude: -12.0464,
+            longitude: -77.0428,
+            timestamp: DateTime.now(),
+            accuracy: 0,
+            altitude: 0,
+            altitudeAccuracy: 0,
+            heading: 0,
+            headingAccuracy: 0,
+            speed: 0,
+            speedAccuracy: 0,
+          );
+        }
       }
       
       // Si hay coordenadas del repartidor almacenadas, usarlas
@@ -83,20 +103,41 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
           speed: 0,
           speedAccuracy: 0,
         );
+      } else {
+        // Obtener ubicación actual del dispositivo (simulando ubicación del repartidor)
+        try {
+          _repartidorPosition = await _getCurrentLocation();
+        } catch (e) {
+          print('Error al obtener ubicación actual: $e');
+          // Si no se puede obtener la ubicación, usar la posición del destino como fallback
+          _repartidorPosition = _destinoPosition;
+        }
+      }
+
+      // Asegurar que al menos una posición esté disponible
+      if (_destinoPosition == null) {
+        throw Exception('No se pudo obtener la ubicación del destino');
+      }
+
+      if (_repartidorPosition == null) {
+        _repartidorPosition = _destinoPosition;
       }
 
       if (_repartidorPosition != null && _destinoPosition != null) {
         _updateMarkers();
         _updateRoute();
-        _moveCameraToFitBoth();
+        // No llamar _moveCameraToFitBoth aquí porque el controlador aún no está listo
+        // Se llamará cuando el mapa se cree en onMapCreated
       }
 
       setState(() {
         _isLoading = false;
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('Error al inicializar mapa: $e');
+      print('Stack trace: $stackTrace');
       setState(() {
-        _errorMessage = 'Error al cargar el mapa: ${e.toString()}';
+        _errorMessage = 'Error al cargar el mapa: ${e.toString()}\n\nAsegúrate de que:\n1. La API key de Google Maps esté configurada\n2. Tengas conexión a internet\n3. Los permisos de ubicación estén habilitados';
         _isLoading = false;
       });
     }
@@ -122,7 +163,9 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
 
     // En producción, esto debería obtener la ubicación real del repartidor desde el backend
     // Por ahora, simulamos una ubicación cerca del destino
-    Position position = await Geolocator.getCurrentPosition();
+    Position position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.medium,
+    );
     
     // Simulación: mover el repartidor gradualmente hacia el destino
     if (_destinoPosition != null) {
@@ -319,28 +362,62 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
                     ],
                   ),
                 )
-              : Stack(
-                  children: [
-                    GoogleMap(
-                      onMapCreated: (GoogleMapController controller) {
-                        _mapController = controller;
-                        _moveCameraToFitBoth();
-                      },
-                      initialCameraPosition: CameraPosition(
-                        target: _repartidorPosition != null
-                            ? LatLng(
-                                _repartidorPosition!.latitude,
-                                _repartidorPosition!.longitude,
-                              )
-                            : const LatLng(-12.0464, -77.0428),
-                        zoom: 13,
+              : (_repartidorPosition == null && _destinoPosition == null)
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.map_outlined, size: 64, color: Colors.grey.shade400),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No se pudo cargar la ubicación',
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: _initializeMap,
+                            child: const Text('Reintentar'),
+                          ),
+                        ],
                       ),
-                      markers: _markers,
-                      polylines: _polylines,
-                      myLocationEnabled: true,
-                      myLocationButtonEnabled: true,
-                      mapType: MapType.normal,
-                    ),
+                    )
+                  : Stack(
+                      children: [
+                        GoogleMap(
+                          onMapCreated: (GoogleMapController controller) {
+                            _mapController = controller;
+                            // Esperar un momento antes de mover la cámara para asegurar que el mapa esté listo
+                            Future.delayed(const Duration(milliseconds: 500), () {
+                              if (mounted && _mapController != null) {
+                                _moveCameraToFitBoth();
+                              }
+                            });
+                          },
+                          initialCameraPosition: CameraPosition(
+                            target: _repartidorPosition != null
+                                ? LatLng(
+                                    _repartidorPosition!.latitude,
+                                    _repartidorPosition!.longitude,
+                                  )
+                                : _destinoPosition != null
+                                    ? LatLng(
+                                        _destinoPosition!.latitude,
+                                        _destinoPosition!.longitude,
+                                      )
+                                    : const LatLng(-12.0464, -77.0428), // Lima, Perú por defecto
+                            zoom: 13,
+                          ),
+                          markers: _markers,
+                          polylines: _polylines,
+                          myLocationEnabled: true,
+                          myLocationButtonEnabled: true,
+                          mapType: MapType.normal,
+                          onCameraMoveStarted: () {
+                            // Evitar errores durante el movimiento de la cámara
+                          },
+                          compassEnabled: true,
+                          mapToolbarEnabled: false,
+                        ),
                     // Panel de información
                     Positioned(
                       bottom: 0,

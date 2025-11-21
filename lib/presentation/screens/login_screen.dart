@@ -5,6 +5,7 @@ import '../../data/api/api_service.dart';
 import '../../data/models/login_request.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import 'dashboard_screen.dart';
+import 'tienda_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -47,28 +48,52 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final response = await apiService.login(loginRequest);
 
-      if (response.code == 1 && response.token != null && response.user != null) {
+      if (response.code == 1 && response.token != null) {
         print('🎉 Login exitoso! Respuesta del servidor:');
         print('   - Code: ${response.code}');
         print('   - Message: ${response.message}');
         print('   - Token recibido: ${response.token!.substring(0, 20)}...');
-        print('   - User ID: ${response.user!.id}');
-        print('   - Username: ${response.user!.username}');
+        print('   - User Type: ${response.userType ?? 'usuario'}');
         
         // Guardar datos de autenticación
-        await SharedPrefsHelper.saveAuthData(
-          token: response.token!,
-          userId: response.user!.id,
-          username: response.user!.username,
-        );
+        if (response.isCliente) {
+          // Login de cliente
+          await SharedPrefsHelper.saveAuthData(
+            token: response.token!,
+            userId: response.clienteId ?? 0,
+            username: response.user?.username ?? 'Cliente',
+            userType: 'cliente',
+            clienteId: response.clienteId,
+          );
+        } else {
+          // Login de usuario interno
+          if (response.user != null) {
+            await SharedPrefsHelper.saveAuthData(
+              token: response.token!,
+              userId: response.user!.id,
+              username: response.user!.username,
+              userType: 'usuario',
+            );
+          }
+        }
 
         if (mounted) {
-          // Navegar al Dashboard
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (context) => const DashboardScreen(),
-            ),
-          );
+          // Redirigir según el tipo de usuario
+          if (response.isCliente) {
+            // Navegar a la tienda para clientes
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (context) => const TiendaScreen(),
+              ),
+            );
+          } else {
+            // Navegar al Dashboard para usuarios internos
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (context) => const DashboardScreen(),
+              ),
+            );
+          }
         }
       } else {
         if (mounted) {

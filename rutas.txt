@@ -59,17 +59,48 @@ def authenticate(username, password):
 
 def identity(payload):
     user_id = payload['identity']
+    logging.info(f"Validando token para user_id: {user_id}")
 
-    conn = obtenerconexion_sanchezpharma()
-    with conn:
-        with conn.cursor() as cursor:
-            sql = "SELECT id, username, password FROM usuarios WHERE id = %s"
-            cursor.execute(sql, (user_id,))
-            result = cursor.fetchone()
+    try:
+        # PASO 1: Intentar buscar como usuario interno
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                sql = "SELECT id, username, password FROM usuarios WHERE id = %s"
+                cursor.execute(sql, (user_id,))
+                result = cursor.fetchone()
 
-    if result:
-        return UserSanchezPharma(result["id"], result["username"], result["password"])
-    return None
+        if result:
+            logging.info(f"Usuario interno encontrado: {result['username']}")
+            return UserSanchezPharma(result["id"], result["username"], result["password"])
+        
+        # PASO 2: Si no es usuario interno, intentar buscar como cliente
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                sql = """
+                    SELECT id, email, documento, password 
+                    FROM clientes 
+                    WHERE id = %s AND estado = 'activo'
+                """
+                cursor.execute(sql, (user_id,))
+                cliente = cursor.fetchone()
+        
+        if cliente:
+            # Crear objeto UserSanchezPharma para el cliente
+            # Usar email o documento como username
+            email = cliente.get("email") if cliente.get("email") else None
+            documento = cliente.get("documento") if cliente.get("documento") else None
+            username = email or documento or str(cliente["id"])
+            password = cliente.get("password") or ""  # La contraseña puede no ser necesaria para validación
+            logging.info(f"Cliente encontrado: {username} (ID: {cliente['id']})")
+            return UserSanchezPharma(cliente["id"], username, password)
+        
+        logging.warning(f"No se encontró usuario ni cliente con ID: {user_id}")
+        return None
+    except Exception as e:
+        logging.error(f"Error en identity para user_id {user_id}: {repr(e)}")
+        return None
 
 
 # ---------------------------------------------------
@@ -181,22 +212,106 @@ def api_login():
         username = data.get("username")
         password = data.get("password")
 
-        user = authenticate(username, password)
+        if not username or not password:
+            return jsonify({"code": 0, "message": "Usuario y contraseña son requeridos"}), 400
 
-        if not user:
-            return jsonify({"code": 0, "message": "Credenciales incorrectas"}), 401
+        logging.info(f"Intentando autenticar: {username}")
 
-        token = jwt.jwt_encode_callback(user)
-
-        return jsonify({
-            "code": 1,
-            "message": "Inicio de sesión exitoso",
-            "token": token.decode('utf-8') if hasattr(token, 'decode') else token,
-            "user": {"id": user.id, "username": user.username}
-        })
+        # ============================================================
+        # PASO 1: Intentar autenticar como usuario interno
+        # ============================================================
+        user = authenticate(username, password)  # Función existente
+        
+        if user:
+            # Es usuario interno
+            logging.info(f"Usuario interno autenticado: {username}")
+            token = jwt.jwt_encode_callback(user)
+            return jsonify({
+                "code": 1,
+                "message": "Inicio de sesión exitoso",
+                "token": token.decode('utf-8') if hasattr(token, 'decode') else token,
+                "user_type": "usuario",
+                "user": {"id": user.id, "username": user.username}
+            })
+        
+        # ============================================================
+        # PASO 2: Si no es usuario interno, intentar como cliente
+        # ============================================================
+        conn = obtenerconexion_sanchezpharma()
+        cliente = None
+        
+        try:
+            with conn:
+                with conn.cursor() as cursor:
+                    # Verificar si el campo password existe
+                    cursor.execute("SHOW COLUMNS FROM clientes LIKE 'password'")
+                    password_exists = cursor.fetchone()
+                    
+                    if not password_exists:
+                        # Si no existe el campo password, no se puede autenticar como cliente
+                        logging.warning("Campo 'password' no existe en tabla 'clientes'. Ejecuta: ALTER TABLE clientes ADD COLUMN password VARCHAR(255) AFTER email;")
+                        cliente = None
+                    else:
+                        # Buscar cliente por email o documento
+                        # OPCIÓN A: Si usas contraseña en texto plano
+                        # sql = """
+                        #     SELECT id, nombre, email, documento, telefono 
+                        #     FROM clientes 
+                        #     WHERE (email = %s OR documento = %s) 
+                        #     AND password = %s 
+                        #     AND estado = 'activo'
+                        # """
+                        # cursor.execute(sql, (username, username, password))
+                        # cliente = cursor.fetchone()
+                        
+                        # OPCIÓN B: Si usas hash SHA256 (RECOMENDADO) - ACTIVADA
+                        sql = """
+                            SELECT id, nombre, email, documento, telefono 
+                            FROM clientes 
+                            WHERE (email = %s OR documento = %s) 
+                            AND password = SHA2(%s, 256)
+                            AND estado = 'activo'
+                        """
+                        cursor.execute(sql, (username, username, password))
+                        cliente = cursor.fetchone()
+        except Exception as e:
+            logging.error(f"Error al buscar cliente: {repr(e)}")
+            # Si hay error (probablemente campo password no existe), continuar sin cliente
+            cliente = None
+        
+        if cliente:
+            # Es cliente - crear token JWT
+            logging.info(f"Cliente autenticado: {username} (ID: {cliente['id']})")
+            
+            # Crear un objeto similar a User para el token JWT
+            # El token necesita un objeto con atributos id, username, password
+            cliente_user = UserSanchezPharma(
+                cliente["id"], 
+                cliente["email"] or cliente["documento"] or str(cliente["id"]), 
+                password
+            )
+            
+            token = jwt.jwt_encode_callback(cliente_user)
+            
+            return jsonify({
+                "code": 1,
+                "message": "Inicio de sesión exitoso",
+                "token": token.decode('utf-8') if hasattr(token, 'decode') else token,
+                "user_type": "cliente",
+                "cliente_id": cliente["id"],
+                "user": {
+                    "id": cliente["id"], 
+                    "username": cliente["email"] or cliente["documento"] or str(cliente["id"])
+                }
+            })
+        
+        # Si no es ni usuario ni cliente
+        logging.warning(f"Credenciales incorrectas para: {username}")
+        return jsonify({"code": 0, "message": "Credenciales incorrectas"}), 401
 
     except Exception as e:
-        return jsonify({"code": 0, "message": repr(e)})
+        logging.error(f"Error en api_login: {repr(e)}")
+        return jsonify({"code": 0, "message": repr(e)}), 500
 
 
 # ---------------------------------------------------

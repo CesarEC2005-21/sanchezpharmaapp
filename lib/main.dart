@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'core/utils/shared_prefs_helper.dart';
 import 'presentation/screens/login_screen.dart';
 import 'presentation/screens/dashboard_screen.dart';
+import 'presentation/screens/tienda_screen.dart';
+
+// NavigatorKey global para poder navegar desde cualquier parte de la app
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
   runApp(const MyApp());
@@ -15,6 +19,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Sánchez Pharma',
       debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
         useMaterial3: true,
@@ -46,12 +51,23 @@ class _SplashScreenState extends State<SplashScreen> {
     final isAuthenticated = await SharedPrefsHelper.isAuthenticated();
 
     if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) =>
-              isAuthenticated ? const DashboardScreen() : const LoginScreen(),
-        ),
-      );
+      if (isAuthenticated) {
+        // Verificar el tipo de usuario para redirigir correctamente
+        final isCliente = await SharedPrefsHelper.isCliente();
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => isCliente 
+                ? const TiendaScreen() 
+                : const DashboardScreen(),
+          ),
+        );
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => const LoginScreen(),
+          ),
+        );
+      }
     }
   }
 
