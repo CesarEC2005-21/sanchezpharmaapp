@@ -1,5 +1,13 @@
 import 'package:flutter/material.dart';
 import '../screens/usuarios_screen.dart';
+import '../screens/productos_screen.dart';
+import '../screens/categorias_screen.dart';
+import '../screens/proveedores_screen.dart';
+import '../screens/ventas_screen.dart';
+import '../screens/clientes_screen.dart';
+import '../screens/envios_screen.dart';
+import '../screens/reportes_screen.dart';
+import '../screens/dashboard_screen.dart';
 
 class CustomDrawer extends StatelessWidget {
   final String username;
@@ -24,7 +32,7 @@ class CustomDrawer extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [Colors.blue.shade700, Colors.blue.shade900],
+                  colors: [Colors.green.shade700, Colors.green.shade900],
                 ),
               ),
               child: SafeArea(
@@ -37,7 +45,7 @@ class CustomDrawer extends StatelessWidget {
                       child: Icon(
                         Icons.person,
                         size: 50,
-                        color: Colors.blue,
+                        color: Colors.green,
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -71,9 +79,17 @@ class CustomDrawer extends StatelessWidget {
                     title: 'Dashboard',
                     onTap: () {
                       Navigator.pop(context);
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const DashboardScreen(),
+                        ),
+                      );
                     },
                   ),
                   const Divider(),
+                  
+                  // Usuarios
                   _buildDrawerItem(
                     icon: Icons.people,
                     title: 'Usuarios',
@@ -87,47 +103,150 @@ class CustomDrawer extends StatelessWidget {
                       );
                     },
                   ),
+                  
+                  const Divider(),
+                  
+                  // Inventario - Expandible
+                  ExpansionTile(
+                    leading: const Icon(Icons.inventory, color: Colors.green),
+                    title: const Text(
+                      'Inventario',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    children: [
+                      _buildSubDrawerItem(
+                        icon: Icons.inventory_2,
+                        title: 'Productos',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ProductosScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      _buildSubDrawerItem(
+                        icon: Icons.category,
+                        title: 'Categorías',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const CategoriasScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      _buildSubDrawerItem(
+                        icon: Icons.local_shipping_outlined,
+                        title: 'Proveedores',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ProveedoresScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  
+                  // Ventas - Expandible
+                  ExpansionTile(
+                    leading: const Icon(Icons.shopping_cart, color: Colors.orange),
+                    title: const Text(
+                      'Ventas',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    children: [
+                      _buildSubDrawerItem(
+                        icon: Icons.point_of_sale,
+                        title: 'Registrar Venta',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const VentasScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      _buildSubDrawerItem(
+                        icon: Icons.people_outline,
+                        title: 'Clientes',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ClientesScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  
+                  // Envíos
                   _buildDrawerItem(
-                    icon: Icons.inventory,
-                    title: 'Inventario',
+                    icon: Icons.local_shipping,
+                    title: 'Seguimiento de Envíos',
                     onTap: () {
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Módulo de Inventario')),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const EnviosScreen(),
+                        ),
                       );
                     },
                   ),
-                  _buildDrawerItem(
-                    icon: Icons.shopping_cart,
-                    title: 'Ventas',
-                    onTap: () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Módulo de Ventas')),
-                      );
-                    },
-                  ),
+                  
+                  // Reportes
                   _buildDrawerItem(
                     icon: Icons.assessment,
                     title: 'Reportes',
                     onTap: () {
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Módulo de Reportes')),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ReportesScreen(),
+                        ),
                       );
                     },
                   ),
+                  
                   const Divider(),
+                  
+                  // Configuración
                   _buildDrawerItem(
                     icon: Icons.settings,
                     title: 'Configuración',
                     onTap: () {
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Configuración')),
+                        const SnackBar(
+                          content: Text('Configuración - Próximamente'),
+                          duration: Duration(seconds: 2),
+                        ),
                       );
                     },
                   ),
+                  
+                  // Acerca de
                   _buildDrawerItem(
                     icon: Icons.info,
                     title: 'Acerca de',
@@ -140,8 +259,17 @@ class CustomDrawer extends StatelessWidget {
                         applicationIcon: const Icon(
                           Icons.medication,
                           size: 50,
-                          color: Colors.blue,
+                          color: Colors.green,
                         ),
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(top: 16),
+                            child: Text(
+                              'Sistema de gestión farmacéutica para el control de inventario, ventas y envíos.',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
                       );
                     },
                   ),
@@ -171,13 +299,37 @@ class CustomDrawer extends StatelessWidget {
     Color? color,
   }) {
     return ListTile(
-      leading: Icon(icon, color: color ?? Colors.blue.shade700),
+      leading: Icon(icon, color: color ?? Colors.green.shade700),
       title: Text(
         title,
         style: TextStyle(
           color: color ?? Colors.black87,
           fontWeight: FontWeight.w500,
         ),
+      ),
+      onTap: onTap,
+    );
+  }
+
+  Widget _buildSubDrawerItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: const SizedBox(width: 16),
+      title: Row(
+        children: [
+          Icon(icon, size: 20, color: Colors.grey.shade600),
+          const SizedBox(width: 12),
+          Text(
+            title,
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontSize: 14,
+            ),
+          ),
+        ],
       ),
       onTap: onTap,
     );

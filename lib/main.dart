@@ -16,7 +16,7 @@ class MyApp extends StatelessWidget {
       title: 'Sánchez Pharma',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
         useMaterial3: true,
       ),
       home: const SplashScreen(),
@@ -64,22 +64,47 @@ class _SplashScreenState extends State<SplashScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Colors.blue.shade700,
-              Colors.blue.shade900,
+              Colors.green.shade700,
+              Colors.green.shade900,
             ],
           ),
         ),
-        child: const Center(
+        child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.medication,
-                size: 100,
-                color: Colors.white,
+              // Logo
+              Container(
+                width: 200,
+                height: 200,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(20),
+                  child: ClipOval(
+                    child: Image.asset(
+                      'assets/images/ddspLogo.jpg',
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.medication,
+                          size: 100,
+                          color: Colors.green,
+                        );
+                      },
+                    ),
+                  ),
               ),
-              SizedBox(height: 24),
-              Text(
+              const SizedBox(height: 24),
+              const Text(
                 'Sánchez Pharma',
                 style: TextStyle(
                   fontSize: 32,
@@ -87,8 +112,8 @@ class _SplashScreenState extends State<SplashScreen> {
                   color: Colors.white,
                 ),
               ),
-              SizedBox(height: 24),
-              CircularProgressIndicator(
+              const SizedBox(height: 24),
+              const CircularProgressIndicator(
                 color: Colors.white,
               ),
             ],

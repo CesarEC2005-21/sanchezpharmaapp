@@ -113,8 +113,8 @@ class _LoginScreenState extends State<LoginScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Colors.blue.shade700,
-              Colors.blue.shade900,
+              Colors.green.shade700,
+              Colors.green.shade900,
             ],
           ),
         ),
@@ -127,24 +127,34 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Logo o icono
+                    // Logo
                     Container(
-                      padding: const EdgeInsets.all(20),
+                      width: 150,
+                      height: 150,
                       decoration: BoxDecoration(
                         color: Colors.white,
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withOpacity(0.2),
-                            blurRadius: 10,
+                            blurRadius: 15,
                             offset: const Offset(0, 5),
                           ),
                         ],
                       ),
-                      child: const Icon(
-                        Icons.medication,
-                        size: 60,
-                        color: Colors.blue,
+                      padding: const EdgeInsets.all(15),
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/images/ddspLogo.jpg',
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(
+                              Icons.medication,
+                              size: 80,
+                              color: Colors.green,
+                            );
+                          },
+                        ),
                       ),
                     ),
                     const SizedBox(height: 30),
@@ -231,7 +241,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: ElevatedButton(
                                 onPressed: _isLoading ? null : _handleLogin,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue.shade700,
+                                  backgroundColor: Colors.green.shade700,
                                   foregroundColor: Colors.white,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(10),

@@ -464,7 +464,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Gestión de Usuarios'),
-        backgroundColor: Colors.blue.shade700,
+        backgroundColor: Colors.green.shade700,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
@@ -533,7 +533,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                             elevation: 2,
                             child: ListTile(
                               leading: CircleAvatar(
-                                backgroundColor: Colors.blue.shade700,
+                                backgroundColor: Colors.green.shade700,
                                 child: Text(
                                   usuario.nombre[0].toUpperCase(),
                                   style: const TextStyle(color: Colors.white),
@@ -557,7 +557,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   IconButton(
-                                    icon: const Icon(Icons.edit, color: Colors.blue),
+                                    icon: const Icon(Icons.edit, color: Colors.green),
                                     onPressed: () => _mostrarFormularioUsuario(usuario: usuario),
                                     tooltip: 'Editar',
                                   ),
@@ -575,7 +575,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                     ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _mostrarFormularioUsuario(),
-        backgroundColor: Colors.blue.shade700,
+        backgroundColor: Colors.green.shade700,
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );

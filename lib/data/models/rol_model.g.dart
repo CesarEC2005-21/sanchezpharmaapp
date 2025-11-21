@@ -12,10 +12,8 @@ RolModel _$RolModelFromJson(Map<String, dynamic> json) => RolModel(
   descripcion: json['descripcion'] as String?,
 );
 
-Map<String, dynamic> _$RolModelToJson(RolModel instance) =>
-    <String, dynamic>{
-      'id': instance.id,
-      'nombre': instance.nombre,
-      'descripcion': instance.descripcion,
-    };
-
+Map<String, dynamic> _$RolModelToJson(RolModel instance) => <String, dynamic>{
+  'id': instance.id,
+  'nombre': instance.nombre,
+  'descripcion': instance.descripcion,
+};

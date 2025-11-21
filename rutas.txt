@@ -386,6 +386,1703 @@ def eliminar_usuario_sanchezpharma(usuario_id):
 
 
 # ---------------------------------------------------
+# INVENTARIO - PRODUCTOS
+# ---------------------------------------------------
+
+# LISTAR PRODUCTOS
+@app.route('/productos_sanchezpharma')
+@jwt_required()
+def productos_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT p.*, c.nombre as categoria_nombre, pr.nombre as proveedor_nombre
+                    FROM productos p
+                    LEFT JOIN categorias c ON p.categoria_id = c.id
+                    LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
+                    ORDER BY p.nombre
+                """)
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Productos listados correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# OBTENER PRODUCTO POR ID
+@app.route('/producto_sanchezpharma/<int:producto_id>')
+@jwt_required()
+def producto_sanchezpharma(producto_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT p.*, c.nombre as categoria_nombre, pr.nombre as proveedor_nombre
+                    FROM productos p
+                    LEFT JOIN categorias c ON p.categoria_id = c.id
+                    LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
+                    WHERE p.id = %s
+                """, (producto_id,))
+                data = cursor.fetchone()
+
+        if data:
+            return jsonify({"code": 1, "data": data, "message": "Producto obtenido correctamente"})
+        else:
+            return jsonify({"code": 0, "data": {}, "message": "Producto no encontrado"}), 404
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": {}, "message": repr(e)})
+
+
+# REGISTRAR PRODUCTO
+@app.route('/registrar_producto_sanchezpharma', methods=['POST'])
+@jwt_required()
+def registrar_producto_sanchezpharma():
+    try:
+        data = request.json
+
+        campos = ["codigo", "nombre", "precio_compra", "precio_venta", "stock_actual", "stock_minimo"]
+        if not all(data.get(c) for c in campos):
+            return jsonify({"code": 0, "message": "Faltan campos requeridos"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO productos 
+                    (codigo, codigo_barras, nombre, descripcion, categoria_id, proveedor_id,
+                     precio_compra, precio_venta, stock_actual, stock_minimo, unidad_medida,
+                     fecha_vencimiento, estado)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    data.get("codigo"),
+                    data.get("codigo_barras"),
+                    data.get("nombre"),
+                    data.get("descripcion"),
+                    data.get("categoria_id"),
+                    data.get("proveedor_id"),
+                    data.get("precio_compra"),
+                    data.get("precio_venta"),
+                    data.get("stock_actual"),
+                    data.get("stock_minimo"),
+                    data.get("unidad_medida", "unidad"),
+                    data.get("fecha_vencimiento"),
+                    data.get("estado", "activo")
+                ))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Producto registrado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# EDITAR PRODUCTO
+@app.route('/editar_producto_sanchezpharma', methods=['PUT'])
+@jwt_required()
+def editar_producto_sanchezpharma():
+    try:
+        data = request.json
+
+        if not data.get("id"):
+            return jsonify({"code": 0, "message": "Falta el ID del producto"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE productos 
+                    SET codigo = %s, codigo_barras = %s, nombre = %s, descripcion = %s,
+                        categoria_id = %s, proveedor_id = %s, precio_compra = %s,
+                        precio_venta = %s, stock_actual = %s, stock_minimo = %s,
+                        unidad_medida = %s, fecha_vencimiento = %s, estado = %s
+                    WHERE id = %s
+                """, (
+                    data.get("codigo"),
+                    data.get("codigo_barras"),
+                    data.get("nombre"),
+                    data.get("descripcion"),
+                    data.get("categoria_id"),
+                    data.get("proveedor_id"),
+                    data.get("precio_compra"),
+                    data.get("precio_venta"),
+                    data.get("stock_actual"),
+                    data.get("stock_minimo"),
+                    data.get("unidad_medida", "unidad"),
+                    data.get("fecha_vencimiento"),
+                    data.get("estado", "activo"),
+                    data.get("id")
+                ))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Producto actualizado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ELIMINAR PRODUCTO
+@app.route('/eliminar_producto_sanchezpharma/<int:producto_id>', methods=['DELETE'])
+@jwt_required()
+def eliminar_producto_sanchezpharma(producto_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM productos WHERE id = %s", (producto_id,))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Producto eliminado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# BUSCAR PRODUCTOS
+@app.route('/buscar_productos_sanchezpharma')
+@jwt_required()
+def buscar_productos_sanchezpharma():
+    try:
+        busqueda = request.args.get('q', '')
+        categoria_id = request.args.get('categoria_id')
+        proveedor_id = request.args.get('proveedor_id')
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                query = """
+                    SELECT p.*, c.nombre as categoria_nombre, pr.nombre as proveedor_nombre
+                    FROM productos p
+                    LEFT JOIN categorias c ON p.categoria_id = c.id
+                    LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
+                    WHERE 1=1
+                """
+                params = []
+
+                if busqueda:
+                    query += " AND (p.nombre LIKE %s OR p.codigo LIKE %s OR p.codigo_barras LIKE %s)"
+                    params.extend([f"%{busqueda}%", f"%{busqueda}%", f"%{busqueda}%"])
+
+                if categoria_id:
+                    query += " AND p.categoria_id = %s"
+                    params.append(categoria_id)
+
+                if proveedor_id:
+                    query += " AND p.proveedor_id = %s"
+                    params.append(proveedor_id)
+
+                query += " ORDER BY p.nombre"
+
+                cursor.execute(query, params)
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Búsqueda realizada correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# PRODUCTOS CON STOCK BAJO
+@app.route('/productos_stock_bajo_sanchezpharma')
+@jwt_required()
+def productos_stock_bajo_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT p.*, c.nombre as categoria_nombre, pr.nombre as proveedor_nombre,
+                           (p.stock_minimo - p.stock_actual) as faltante
+                    FROM productos p
+                    LEFT JOIN categorias c ON p.categoria_id = c.id
+                    LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
+                    WHERE p.stock_actual <= p.stock_minimo AND p.estado = 'activo'
+                    ORDER BY faltante DESC
+                """)
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Productos con stock bajo listados correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# PRODUCTOS PRÓXIMOS A VENCER
+@app.route('/productos_proximos_vencer_sanchezpharma')
+@jwt_required()
+def productos_proximos_vencer_sanchezpharma():
+    try:
+        dias = request.args.get('dias', 30, type=int)
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT p.*, c.nombre as categoria_nombre, pr.nombre as proveedor_nombre,
+                           DATEDIFF(p.fecha_vencimiento, CURDATE()) as dias_restantes
+                    FROM productos p
+                    LEFT JOIN categorias c ON p.categoria_id = c.id
+                    LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
+                    WHERE p.fecha_vencimiento IS NOT NULL
+                    AND p.fecha_vencimiento BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
+                    AND p.estado = 'activo'
+                    ORDER BY p.fecha_vencimiento ASC
+                """, (dias,))
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Productos próximos a vencer listados correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# ---------------------------------------------------
+# INVENTARIO - CATEGORÍAS
+# ---------------------------------------------------
+
+# LISTAR CATEGORÍAS
+@app.route('/categorias_sanchezpharma')
+@jwt_required()
+def categorias_sanchezpharma():
+    try:
+        estado = request.args.get('estado')  # Opcional: 'activo', 'inactivo', o None para todas
+        
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                if estado:
+                    cursor.execute("SELECT * FROM categorias WHERE estado = %s ORDER BY nombre", (estado,))
+                else:
+                    cursor.execute("SELECT * FROM categorias ORDER BY nombre")
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Categorías listadas correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# REGISTRAR CATEGORÍA
+@app.route('/registrar_categoria_sanchezpharma', methods=['POST'])
+@jwt_required()
+def registrar_categoria_sanchezpharma():
+    try:
+        data = request.json
+
+        if not data.get("nombre"):
+            return jsonify({"code": 0, "message": "El nombre es requerido"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO categorias (nombre, descripcion, estado)
+                    VALUES (%s, %s, %s)
+                """, (
+                    data.get("nombre"),
+                    data.get("descripcion"),
+                    data.get("estado", "activo")
+                ))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Categoría registrada correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# EDITAR CATEGORÍA
+@app.route('/editar_categoria_sanchezpharma', methods=['PUT'])
+@jwt_required()
+def editar_categoria_sanchezpharma():
+    try:
+        data = request.json
+
+        if not data.get("id"):
+            return jsonify({"code": 0, "message": "Falta el ID de la categoría"})
+
+        if not data.get("nombre"):
+            return jsonify({"code": 0, "message": "El nombre es requerido"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE categorias 
+                    SET nombre = %s, descripcion = %s, estado = %s
+                    WHERE id = %s
+                """, (
+                    data.get("nombre"),
+                    data.get("descripcion"),
+                    data.get("estado", "activo"),
+                    data.get("id")
+                ))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Categoría actualizada correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# INVENTARIO - PROVEEDORES
+# ---------------------------------------------------
+
+# LISTAR PROVEEDORES
+@app.route('/proveedores_sanchezpharma')
+@jwt_required()
+def proveedores_sanchezpharma():
+    try:
+        estado = request.args.get('estado')  # Opcional: 'activo', 'inactivo', o None para todas
+        
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                if estado:
+                    cursor.execute("SELECT * FROM proveedores WHERE estado = %s ORDER BY nombre", (estado,))
+                else:
+                    cursor.execute("SELECT * FROM proveedores ORDER BY nombre")
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Proveedores listados correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# REGISTRAR PROVEEDOR
+@app.route('/registrar_proveedor_sanchezpharma', methods=['POST'])
+@jwt_required()
+def registrar_proveedor_sanchezpharma():
+    try:
+        data = request.json
+
+        if not data.get("nombre"):
+            return jsonify({"code": 0, "message": "El nombre es requerido"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO proveedores (nombre, contacto, telefono, email, direccion, estado)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (
+                    data.get("nombre"),
+                    data.get("contacto"),
+                    data.get("telefono"),
+                    data.get("email"),
+                    data.get("direccion"),
+                    data.get("estado", "activo")
+                ))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Proveedor registrado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# EDITAR PROVEEDOR
+@app.route('/editar_proveedor_sanchezpharma', methods=['PUT'])
+@jwt_required()
+def editar_proveedor_sanchezpharma():
+    try:
+        data = request.json
+
+        if not data.get("id"):
+            return jsonify({"code": 0, "message": "Falta el ID del proveedor"})
+
+        if not data.get("nombre"):
+            return jsonify({"code": 0, "message": "El nombre es requerido"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE proveedores 
+                    SET nombre = %s, contacto = %s, telefono = %s, 
+                        email = %s, direccion = %s, estado = %s
+                    WHERE id = %s
+                """, (
+                    data.get("nombre"),
+                    data.get("contacto"),
+                    data.get("telefono"),
+                    data.get("email"),
+                    data.get("direccion"),
+                    data.get("estado", "activo"),
+                    data.get("id")
+                ))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Proveedor actualizado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# INVENTARIO - MOVIMIENTOS
+# ---------------------------------------------------
+
+# LISTAR MOVIMIENTOS DE INVENTARIO
+@app.route('/movimientos_inventario_sanchezpharma')
+@jwt_required()
+def movimientos_inventario_sanchezpharma():
+    try:
+        producto_id = request.args.get('producto_id')
+        fecha_desde = request.args.get('fecha_desde')
+        fecha_hasta = request.args.get('fecha_hasta')
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                query = """
+                    SELECT m.*, p.nombre as producto_nombre, p.codigo as producto_codigo,
+                           tm.nombre as tipo_movimiento_nombre, tm.tipo as tipo_movimiento_tipo,
+                           u.username as usuario_nombre
+                    FROM movimientos_inventario m
+                    LEFT JOIN productos p ON m.producto_id = p.id
+                    LEFT JOIN tipo_movimiento tm ON m.tipo_movimiento_id = tm.id
+                    LEFT JOIN usuarios u ON m.usuario_id = u.id
+                    WHERE 1=1
+                """
+                params = []
+
+                if producto_id:
+                    query += " AND m.producto_id = %s"
+                    params.append(producto_id)
+
+                if fecha_desde:
+                    query += " AND DATE(m.fecha_movimiento) >= %s"
+                    params.append(fecha_desde)
+
+                if fecha_hasta:
+                    query += " AND DATE(m.fecha_movimiento) <= %s"
+                    params.append(fecha_hasta)
+
+                query += " ORDER BY m.fecha_movimiento DESC LIMIT 100"
+
+                cursor.execute(query, params)
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Movimientos listados correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# REGISTRAR MOVIMIENTO DE INVENTARIO
+@app.route('/registrar_movimiento_sanchezpharma', methods=['POST'])
+@jwt_required()
+def registrar_movimiento_sanchezpharma():
+    try:
+        data = request.json
+
+        campos = ["producto_id", "tipo_movimiento_id", "cantidad"]
+        if not all(data.get(c) for c in campos):
+            return jsonify({"code": 0, "message": "Faltan campos requeridos"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Obtener stock actual
+                cursor.execute("SELECT stock_actual FROM productos WHERE id = %s", (data.get("producto_id"),))
+                producto = cursor.fetchone()
+
+                if not producto:
+                    return jsonify({"code": 0, "message": "Producto no encontrado"})
+
+                stock_anterior = producto["stock_actual"]
+
+                # Obtener tipo de movimiento
+                cursor.execute("SELECT tipo FROM tipo_movimiento WHERE id = %s", (data.get("tipo_movimiento_id"),))
+                tipo_mov = cursor.fetchone()
+
+                if not tipo_mov:
+                    return jsonify({"code": 0, "message": "Tipo de movimiento no encontrado"})
+
+                cantidad = data.get("cantidad")
+                if tipo_mov["tipo"] == "salida":
+                    stock_nuevo = stock_anterior - cantidad
+                    if stock_nuevo < 0:
+                        return jsonify({"code": 0, "message": "Stock insuficiente"})
+                else:
+                    stock_nuevo = stock_anterior + cantidad
+
+                # Registrar movimiento
+                cursor.execute("""
+                    INSERT INTO movimientos_inventario 
+                    (producto_id, tipo_movimiento_id, cantidad, stock_anterior, stock_nuevo,
+                     precio_unitario, motivo, referencia, usuario_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    data.get("producto_id"),
+                    data.get("tipo_movimiento_id"),
+                    cantidad,
+                    stock_anterior,
+                    stock_nuevo,
+                    data.get("precio_unitario"),
+                    data.get("motivo"),
+                    data.get("referencia"),
+                    data.get("usuario_id")
+                ))
+
+                # Actualizar stock del producto
+                cursor.execute("""
+                    UPDATE productos 
+                    SET stock_actual = %s,
+                        estado = CASE 
+                            WHEN %s <= 0 THEN 'agotado'
+                            WHEN %s <= stock_minimo THEN 'activo'
+                            ELSE 'activo'
+                        END
+                    WHERE id = %s
+                """, (stock_nuevo, stock_nuevo, stock_nuevo, data.get("producto_id")))
+
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Movimiento registrado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# LISTAR TIPOS DE MOVIMIENTO
+@app.route('/tipos_movimiento_sanchezpharma')
+@jwt_required()
+def tipos_movimiento_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM tipo_movimiento ORDER BY tipo, nombre")
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Tipos de movimiento listados correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# ---------------------------------------------------
+# INVENTARIO - ALERTAS
+# ---------------------------------------------------
+
+# LISTAR ALERTAS DE INVENTARIO
+@app.route('/alertas_inventario_sanchezpharma')
+@jwt_required()
+def alertas_inventario_sanchezpharma():
+    try:
+        tipo_alerta = request.args.get('tipo_alerta')
+        leida = request.args.get('leida')
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                query = """
+                    SELECT a.*, p.nombre as producto_nombre, p.codigo as producto_codigo
+                    FROM alertas_inventario a
+                    LEFT JOIN productos p ON a.producto_id = p.id
+                    WHERE 1=1
+                """
+                params = []
+
+                if tipo_alerta:
+                    query += " AND a.tipo_alerta = %s"
+                    params.append(tipo_alerta)
+
+                if leida is not None:
+                    query += " AND a.leida = %s"
+                    params.append(leida == 'true')
+
+                query += " ORDER BY a.fecha_alerta DESC"
+
+                cursor.execute(query, params)
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Alertas listadas correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# MARCAR ALERTA COMO LEÍDA
+@app.route('/marcar_alerta_leida_sanchezpharma/<int:alerta_id>', methods=['PUT'])
+@jwt_required()
+def marcar_alerta_leida_sanchezpharma(alerta_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE alertas_inventario 
+                    SET leida = TRUE, fecha_leida = NOW()
+                    WHERE id = %s
+                """, (alerta_id,))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Alerta marcada como leída"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# VENTAS - CLIENTES
+# ---------------------------------------------------
+
+# LISTAR CLIENTES
+@app.route('/clientes_sanchezpharma')
+@jwt_required()
+def clientes_sanchezpharma():
+    try:
+        estado = request.args.get('estado')
+        busqueda = request.args.get('q', '')
+        
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                query = "SELECT * FROM clientes WHERE 1=1"
+                params = []
+                
+                if estado:
+                    query += " AND estado = %s"
+                    params.append(estado)
+                
+                if busqueda:
+                    query += " AND (nombre LIKE %s OR apellido LIKE %s OR documento LIKE %s)"
+                    params.extend([f"%{busqueda}%", f"%{busqueda}%", f"%{busqueda}%"])
+                
+                query += " ORDER BY nombre"
+                cursor.execute(query, params)
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Clientes listados correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# REGISTRAR CLIENTE
+@app.route('/registrar_cliente_sanchezpharma', methods=['POST'])
+@jwt_required()
+def registrar_cliente_sanchezpharma():
+    try:
+        data = request.json
+
+        if not data.get("nombre"):
+            return jsonify({"code": 0, "message": "El nombre es requerido"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO clientes (nombre, apellido, documento, tipo_documento, 
+                                         telefono, email, direccion, estado)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    data.get("nombre"),
+                    data.get("apellido"),
+                    data.get("documento"),
+                    data.get("tipo_documento", "DNI"),
+                    data.get("telefono"),
+                    data.get("email"),
+                    data.get("direccion"),
+                    data.get("estado", "activo")
+                ))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Cliente registrado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# EDITAR CLIENTE
+@app.route('/editar_cliente_sanchezpharma', methods=['PUT'])
+@jwt_required()
+def editar_cliente_sanchezpharma():
+    try:
+        data = request.json
+
+        if not data.get("id"):
+            return jsonify({"code": 0, "message": "Falta el ID del cliente"})
+
+        if not data.get("nombre"):
+            return jsonify({"code": 0, "message": "El nombre es requerido"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE clientes 
+                    SET nombre = %s, apellido = %s, documento = %s, tipo_documento = %s,
+                        telefono = %s, email = %s, direccion = %s, estado = %s
+                    WHERE id = %s
+                """, (
+                    data.get("nombre"),
+                    data.get("apellido"),
+                    data.get("documento"),
+                    data.get("tipo_documento", "DNI"),
+                    data.get("telefono"),
+                    data.get("email"),
+                    data.get("direccion"),
+                    data.get("estado", "activo"),
+                    data.get("id")
+                ))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Cliente actualizado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# VENTAS - MÉTODOS DE PAGO
+# ---------------------------------------------------
+
+# LISTAR MÉTODOS DE PAGO
+@app.route('/metodos_pago_sanchezpharma')
+@jwt_required()
+def metodos_pago_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM metodos_pago WHERE estado = 'activo' ORDER BY nombre")
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Métodos de pago listados correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# ---------------------------------------------------
+# VENTAS - VENTAS
+# ---------------------------------------------------
+
+# LISTAR VENTAS
+@app.route('/ventas_sanchezpharma')
+@jwt_required()
+def ventas_sanchezpharma():
+    try:
+        fecha_desde = request.args.get('fecha_desde')
+        fecha_hasta = request.args.get('fecha_hasta')
+        cliente_id = request.args.get('cliente_id')
+        estado = request.args.get('estado')
+        tipo_venta = request.args.get('tipo_venta')
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                query = """
+                    SELECT v.*, c.nombre as cliente_nombre, c.apellido as cliente_apellido,
+                           c.documento as cliente_documento, u.username as usuario_nombre,
+                           mp.nombre as metodo_pago_nombre
+                    FROM ventas v
+                    LEFT JOIN clientes c ON v.cliente_id = c.id
+                    LEFT JOIN usuarios u ON v.usuario_id = u.id
+                    LEFT JOIN metodos_pago mp ON v.metodo_pago_id = mp.id
+                    WHERE 1=1
+                """
+                params = []
+
+                if fecha_desde:
+                    query += " AND DATE(v.fecha_venta) >= %s"
+                    params.append(fecha_desde)
+
+                if fecha_hasta:
+                    query += " AND DATE(v.fecha_venta) <= %s"
+                    params.append(fecha_hasta)
+
+                if cliente_id:
+                    query += " AND v.cliente_id = %s"
+                    params.append(cliente_id)
+
+                if estado:
+                    query += " AND v.estado = %s"
+                    params.append(estado)
+
+                if tipo_venta:
+                    query += " AND v.tipo_venta = %s"
+                    params.append(tipo_venta)
+
+                query += " ORDER BY v.fecha_venta DESC LIMIT 100"
+
+                cursor.execute(query, params)
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Ventas listadas correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# OBTENER VENTA POR ID
+@app.route('/venta_sanchezpharma/<int:venta_id>')
+@jwt_required()
+def venta_sanchezpharma(venta_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Obtener venta
+                cursor.execute("""
+                    SELECT v.*, c.nombre as cliente_nombre, c.apellido as cliente_apellido,
+                           c.documento as cliente_documento, c.telefono as cliente_telefono,
+                           u.username as usuario_nombre, mp.nombre as metodo_pago_nombre
+                    FROM ventas v
+                    LEFT JOIN clientes c ON v.cliente_id = c.id
+                    LEFT JOIN usuarios u ON v.usuario_id = u.id
+                    LEFT JOIN metodos_pago mp ON v.metodo_pago_id = mp.id
+                    WHERE v.id = %s
+                """, (venta_id,))
+                venta = cursor.fetchone()
+
+                if not venta:
+                    return jsonify({"code": 0, "data": {}, "message": "Venta no encontrada"}), 404
+
+                # Obtener detalle de venta
+                cursor.execute("""
+                    SELECT dv.*, p.nombre as producto_nombre, p.codigo as producto_codigo
+                    FROM detalle_venta dv
+                    LEFT JOIN productos p ON dv.producto_id = p.id
+                    WHERE dv.venta_id = %s
+                """, (venta_id,))
+                detalle = cursor.fetchall()
+
+                venta['detalle'] = detalle
+
+        return jsonify({"code": 1, "data": venta, "message": "Venta obtenida correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": {}, "message": repr(e)})
+
+
+# REGISTRAR VENTA
+@app.route('/registrar_venta_sanchezpharma', methods=['POST'])
+@jwt_required()
+def registrar_venta_sanchezpharma():
+    try:
+        data = request.json
+
+        campos_requeridos = ["usuario_id", "tipo_venta", "metodo_pago_id", "productos"]
+        if not all(data.get(c) for c in campos_requeridos):
+            return jsonify({"code": 0, "message": "Faltan campos requeridos"})
+
+        productos = data.get("productos")
+        if not isinstance(productos, list) or len(productos) == 0:
+            return jsonify({"code": 0, "message": "Debe incluir al menos un producto"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Calcular totales
+                subtotal = 0
+                for producto in productos:
+                    producto_id = producto.get("producto_id")
+                    cantidad = producto.get("cantidad")
+                    
+                    cursor.execute("SELECT precio_venta, stock_actual FROM productos WHERE id = %s", (producto_id,))
+                    producto_info = cursor.fetchone()
+                    
+                    if not producto_info:
+                        return jsonify({"code": 0, "message": f"Producto {producto_id} no encontrado"})
+                    
+                    if producto_info["stock_actual"] < cantidad:
+                        return jsonify({"code": 0, "message": f"Stock insuficiente para producto {producto_id}"})
+                    
+                    subtotal += producto_info["precio_venta"] * cantidad
+
+                descuento = data.get("descuento", 0)
+                total = subtotal - descuento
+
+                # Insertar venta
+                cursor.execute("""
+                    INSERT INTO ventas 
+                    (cliente_id, usuario_id, tipo_venta, metodo_pago_id,
+                     subtotal, descuento, total, estado, observaciones)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    data.get("cliente_id"),
+                    data.get("usuario_id"),
+                    data.get("tipo_venta"),
+                    data.get("metodo_pago_id"),
+                    subtotal,
+                    descuento,
+                    total,
+                    data.get("estado", "completada"),
+                    data.get("observaciones")
+                ))
+
+                venta_id = cursor.lastrowid
+
+                # Insertar detalle y actualizar stock
+                for producto in productos:
+                    producto_id = producto.get("producto_id")
+                    cantidad = producto.get("cantidad")
+                    
+                    cursor.execute("SELECT precio_venta FROM productos WHERE id = %s", (producto_id,))
+                    precio = cursor.fetchone()["precio_venta"]
+                    producto_subtotal = precio * cantidad
+
+                    cursor.execute("""
+                        INSERT INTO detalle_venta 
+                        (venta_id, producto_id, cantidad, precio_unitario, subtotal)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (venta_id, producto_id, cantidad, precio, producto_subtotal))
+
+                    # Actualizar stock
+                    cursor.execute("""
+                        UPDATE productos 
+                        SET stock_actual = stock_actual - %s,
+                            estado = CASE 
+                                WHEN stock_actual - %s <= 0 THEN 'agotado'
+                                WHEN stock_actual - %s <= stock_minimo THEN 'activo'
+                                ELSE 'activo'
+                            END
+                        WHERE id = %s
+                    """, (cantidad, cantidad, cantidad, producto_id))
+
+                # Si es tipo envio_domicilio, crear el envío con todos los datos
+                if data.get("tipo_venta") == "envio_domicilio":
+                    # Validar campos requeridos para envío
+                    if not data.get("direccion_entrega") or not data.get("telefono_contacto") or not data.get("nombre_destinatario"):
+                        return jsonify({"code": 0, "message": "Para envío a domicilio se requiere: dirección, teléfono y nombre del destinatario"})
+                    
+                    # Generar número de seguimiento
+                    from datetime import datetime
+                    numero_seguimiento = f"ENV-{venta_id}-{datetime.now().strftime('%Y%m%d')}"
+                    
+                    # Crear o actualizar el envío (el trigger puede haberlo creado ya)
+                    cursor.execute("""
+                        SELECT id FROM envios WHERE venta_id = %s
+                    """, (venta_id,))
+                    envio_existente = cursor.fetchone()
+                    
+                    if envio_existente:
+                        # Actualizar envío existente (creado por trigger)
+                        cursor.execute("""
+                            UPDATE envios 
+                            SET direccion_entrega = %s,
+                                telefono_contacto = %s,
+                                nombre_destinatario = %s,
+                                referencia_direccion = %s,
+                                latitud_destino = %s,
+                                longitud_destino = %s,
+                                fecha_estimada_entrega = DATE_ADD(NOW(), INTERVAL 1 DAY)
+                            WHERE venta_id = %s
+                        """, (
+                            data.get("direccion_entrega"),
+                            data.get("telefono_contacto"),
+                            data.get("nombre_destinatario"),
+                            data.get("referencia_direccion"),
+                            data.get("latitud_destino"),
+                            data.get("longitud_destino"),
+                            venta_id
+                        ))
+                    else:
+                        # Crear envío si no existe
+                        cursor.execute("""
+                            INSERT INTO envios 
+                            (venta_id, numero_seguimiento, direccion_entrega, telefono_contacto,
+                             nombre_destinatario, referencia_direccion, latitud_destino, longitud_destino,
+                             estado, fecha_creacion, fecha_estimada_entrega)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), DATE_ADD(NOW(), INTERVAL 1 DAY))
+                        """, (
+                            venta_id,
+                            numero_seguimiento,
+                            data.get("direccion_entrega"),
+                            data.get("telefono_contacto"),
+                            data.get("nombre_destinatario"),
+                            data.get("referencia_direccion"),
+                            data.get("latitud_destino"),
+                            data.get("longitud_destino"),
+                            'pendiente'
+                        ))
+
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Venta registrada correctamente", "venta_id": venta_id})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ANULAR VENTA
+@app.route('/anular_venta_sanchezpharma/<int:venta_id>', methods=['PUT'])
+@jwt_required()
+def anular_venta_sanchezpharma(venta_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Verificar que la venta existe y no está anulada
+                cursor.execute("SELECT estado FROM ventas WHERE id = %s", (venta_id,))
+                venta = cursor.fetchone()
+
+                if not venta:
+                    return jsonify({"code": 0, "message": "Venta no encontrada"}), 404
+
+                if venta["estado"] == "anulada":
+                    return jsonify({"code": 0, "message": "La venta ya está anulada"})
+
+                # Obtener detalle para restaurar stock
+                cursor.execute("SELECT producto_id, cantidad FROM detalle_venta WHERE venta_id = %s", (venta_id,))
+                detalle = cursor.fetchall()
+
+                # Restaurar stock
+                for item in detalle:
+                    cursor.execute("""
+                        UPDATE productos 
+                        SET stock_actual = stock_actual + %s,
+                            estado = CASE 
+                                WHEN stock_actual + %s > stock_minimo THEN 'activo'
+                                ELSE 'activo'
+                            END
+                        WHERE id = %s
+                    """, (item["cantidad"], item["cantidad"], item["producto_id"]))
+
+                # Anular venta
+                cursor.execute("""
+                    UPDATE ventas 
+                    SET estado = 'anulada'
+                    WHERE id = %s
+                """, (venta_id,))
+
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Venta anulada correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# VENTAS - ENVÍOS
+# ---------------------------------------------------
+
+# LISTAR ENVÍOS
+@app.route('/envios_sanchezpharma')
+@jwt_required()
+def envios_sanchezpharma():
+    try:
+        estado = request.args.get('estado')
+        fecha_desde = request.args.get('fecha_desde')
+        fecha_hasta = request.args.get('fecha_hasta')
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                query = """
+                    SELECT e.*, v.numero_venta, v.fecha_venta, v.total,
+                           c.nombre as cliente_nombre, c.telefono as cliente_telefono
+                    FROM envios e
+                    LEFT JOIN ventas v ON e.venta_id = v.id
+                    LEFT JOIN clientes c ON v.cliente_id = c.id
+                    WHERE 1=1
+                """
+                params = []
+
+                if estado:
+                    query += " AND e.estado = %s"
+                    params.append(estado)
+                else:
+                    # Por defecto mostrar solo pendientes, preparando y en_camino
+                    query += " AND e.estado IN ('pendiente', 'preparando', 'en_camino')"
+
+                if fecha_desde:
+                    query += " AND DATE(e.fecha_creacion) >= %s"
+                    params.append(fecha_desde)
+
+                if fecha_hasta:
+                    query += " AND DATE(e.fecha_creacion) <= %s"
+                    params.append(fecha_hasta)
+
+                query += " ORDER BY CASE e.estado WHEN 'pendiente' THEN 1 WHEN 'preparando' THEN 2 WHEN 'en_camino' THEN 3 ELSE 4 END, e.fecha_creacion ASC"
+
+                cursor.execute(query, params)
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Envíos listados correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# OBTENER ENVÍO POR ID
+@app.route('/envio_sanchezpharma/<int:envio_id>')
+@jwt_required()
+def envio_sanchezpharma(envio_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT e.*, v.numero_venta, v.fecha_venta, v.total,
+                           c.nombre as cliente_nombre, c.apellido as cliente_apellido,
+                           c.telefono as cliente_telefono, c.documento as cliente_documento
+                    FROM envios e
+                    LEFT JOIN ventas v ON e.venta_id = v.id
+                    LEFT JOIN clientes c ON v.cliente_id = c.id
+                    WHERE e.id = %s
+                """, (envio_id,))
+                envio = cursor.fetchone()
+
+                if not envio:
+                    return jsonify({"code": 0, "data": {}, "message": "Envío no encontrado"}), 404
+
+                # Obtener historial de estados
+                cursor.execute("""
+                    SELECT es.*, u.username as usuario_nombre
+                    FROM estados_envio es
+                    LEFT JOIN usuarios u ON es.usuario_id = u.id
+                    WHERE es.envio_id = %s
+                    ORDER BY es.fecha_cambio DESC
+                """, (envio_id,))
+                historial = cursor.fetchall()
+
+                envio['historial_estados'] = historial
+
+        return jsonify({"code": 1, "data": envio, "message": "Envío obtenido correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": {}, "message": repr(e)})
+
+
+# ACTUALIZAR ESTADO DE ENVÍO
+@app.route('/actualizar_estado_envio_sanchezpharma/<int:envio_id>', methods=['PUT'])
+@jwt_required()
+def actualizar_estado_envio_sanchezpharma(envio_id):
+    try:
+        data = request.json
+
+        nuevo_estado = data.get("estado")
+        if not nuevo_estado:
+            return jsonify({"code": 0, "message": "El estado es requerido"})
+
+        estados_validos = ['pendiente', 'preparando', 'en_camino', 'entregado', 'cancelado']
+        if nuevo_estado not in estados_validos:
+            return jsonify({"code": 0, "message": "Estado inválido"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Obtener estado anterior
+                cursor.execute("SELECT estado FROM envios WHERE id = %s", (envio_id,))
+                envio = cursor.fetchone()
+
+                if not envio:
+                    return jsonify({"code": 0, "message": "Envío no encontrado"}), 404
+
+                estado_anterior = envio["estado"]
+
+                # Actualizar estado
+                update_query = "UPDATE envios SET estado = %s, fecha_actualizacion = NOW()"
+                params = [nuevo_estado]
+
+                # Si se marca como entregado, actualizar fecha real
+                if nuevo_estado == 'entregado':
+                    update_query += ", fecha_real_entrega = NOW()"
+
+                update_query += " WHERE id = %s"
+                params.append(envio_id)
+
+                cursor.execute(update_query, params)
+
+                # Registrar cambio en historial
+                cursor.execute("""
+                    INSERT INTO estados_envio 
+                    (envio_id, estado_anterior, estado_nuevo, usuario_id, observaciones)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (
+                    envio_id,
+                    estado_anterior,
+                    nuevo_estado,
+                    data.get("usuario_id"),
+                    data.get("observaciones")
+                ))
+
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Estado de envío actualizado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ACTUALIZAR INFORMACIÓN DE ENVÍO
+@app.route('/actualizar_envio_sanchezpharma/<int:envio_id>', methods=['PUT'])
+@jwt_required()
+def actualizar_envio_sanchezpharma(envio_id):
+    try:
+        data = request.json
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE envios 
+                    SET direccion_entrega = %s, telefono_contacto = %s,
+                        nombre_destinatario = %s, referencia_direccion = %s,
+                        fecha_estimada_entrega = %s, conductor_repartidor = %s,
+                        costo_envio = %s, observaciones = %s
+                    WHERE id = %s
+                """, (
+                    data.get("direccion_entrega"),
+                    data.get("telefono_contacto"),
+                    data.get("nombre_destinatario"),
+                    data.get("referencia_direccion"),
+                    data.get("fecha_estimada_entrega"),
+                    data.get("conductor_repartidor"),
+                    data.get("costo_envio", 0),
+                    data.get("observaciones"),
+                    envio_id
+                ))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Envío actualizado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# MÓDULO DE REPORTES
+# ---------------------------------------------------
+
+# LISTAR TIPOS DE REPORTE
+@app.route('/tipos_reporte_sanchezpharma')
+@jwt_required()
+def tipos_reporte_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM tipos_reporte WHERE estado = 'activo' ORDER BY categoria, nombre")
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Tipos de reporte listados correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# DASHBOARD RESUMEN
+@app.route('/dashboard_resumen_sanchezpharma')
+@jwt_required()
+def dashboard_resumen_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.callproc('dashboard_resumen')
+                results = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": results, "message": "Dashboard resumen obtenido correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# REPORTE DE VENTAS POR PERÍODO
+@app.route('/reporte_ventas_periodo_sanchezpharma', methods=['POST'])
+@jwt_required()
+def reporte_ventas_periodo_sanchezpharma():
+    try:
+        data = request.json
+        fecha_desde = data.get('fecha_desde')
+        fecha_hasta = data.get('fecha_hasta')
+
+        if not fecha_desde or not fecha_hasta:
+            return jsonify({"code": 0, "data": [], "message": "fecha_desde y fecha_hasta son requeridos"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.callproc('reporte_ventas_periodo', (fecha_desde, fecha_hasta))
+                results = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": results, "message": "Reporte de ventas generado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# REPORTE DE PRODUCTOS MÁS VENDIDOS
+@app.route('/reporte_productos_mas_vendidos_sanchezpharma', methods=['POST'])
+@jwt_required()
+def reporte_productos_mas_vendidos_sanchezpharma():
+    try:
+        data = request.json
+        fecha_desde = data.get('fecha_desde', '2020-01-01')
+        fecha_hasta = data.get('fecha_hasta', '2099-12-31')
+        limite = data.get('limite', 10)
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.callproc('reporte_productos_mas_vendidos', (fecha_desde, fecha_hasta, limite))
+                results = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": results, "message": "Reporte de productos más vendidos generado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# REPORTE DE INGRESOS TOTALES
+@app.route('/reporte_ingresos_totales_sanchezpharma', methods=['POST'])
+@jwt_required()
+def reporte_ingresos_totales_sanchezpharma():
+    try:
+        data = request.json
+        fecha_desde = data.get('fecha_desde', '2020-01-01')
+        fecha_hasta = data.get('fecha_hasta', '2099-12-31')
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.callproc('reporte_ingresos_totales', (fecha_desde, fecha_hasta))
+                results = cursor.fetchone()
+
+        return jsonify({"code": 1, "data": results, "message": "Reporte de ingresos totales generado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": {}, "message": repr(e)})
+
+
+# REPORTE DE ENVÍOS
+@app.route('/reporte_envios_sanchezpharma', methods=['POST'])
+@jwt_required()
+def reporte_envios_sanchezpharma():
+    try:
+        data = request.json
+        fecha_desde = data.get('fecha_desde', '2020-01-01')
+        fecha_hasta = data.get('fecha_hasta', '2099-12-31')
+        estado = data.get('estado', None)
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.callproc('reporte_envios', (fecha_desde, fecha_hasta, estado))
+                results = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": results, "message": "Reporte de envíos generado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# VISTA: VENTAS DIARIAS
+@app.route('/vista_ventas_diarias_sanchezpharma')
+@jwt_required()
+def vista_ventas_diarias_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM vista_ventas_diarias ORDER BY fecha DESC LIMIT 30")
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Ventas diarias obtenidas correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# VISTA: VENTAS MENSUALES
+@app.route('/vista_ventas_mensuales_sanchezpharma')
+@jwt_required()
+def vista_ventas_mensuales_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM vista_ventas_mensuales ORDER BY año DESC, mes DESC LIMIT 12")
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Ventas mensuales obtenidas correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# VISTA: PRODUCTOS MÁS VENDIDOS
+@app.route('/vista_productos_mas_vendidos_sanchezpharma')
+@jwt_required()
+def vista_productos_mas_vendidos_sanchezpharma():
+    try:
+        limite = request.args.get('limite', 10, type=int)
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM vista_productos_mas_vendidos LIMIT %s", (limite,))
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Productos más vendidos obtenidos correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# VISTA: VENTAS POR VENDEDOR
+@app.route('/vista_ventas_por_vendedor_sanchezpharma')
+@jwt_required()
+def vista_ventas_por_vendedor_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM vista_ventas_por_vendedor")
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Ventas por vendedor obtenidas correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# VISTA: VENTAS POR CLIENTE
+@app.route('/vista_ventas_por_cliente_sanchezpharma')
+@jwt_required()
+def vista_ventas_por_cliente_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM vista_ventas_por_cliente")
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Ventas por cliente obtenidas correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# VISTA: VENTAS POR MÉTODO DE PAGO
+@app.route('/vista_ventas_por_metodo_pago_sanchezpharma')
+@jwt_required()
+def vista_ventas_por_metodo_pago_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM vista_ventas_por_metodo_pago")
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Ventas por método de pago obtenidas correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# VISTA: RESUMEN DE ENVÍOS
+@app.route('/vista_resumen_envios_sanchezpharma')
+@jwt_required()
+def vista_resumen_envios_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM vista_resumen_envios")
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Resumen de envíos obtenido correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# VISTA: ANÁLISIS DE INVENTARIO
+@app.route('/vista_analisis_inventario_sanchezpharma')
+@jwt_required()
+def vista_analisis_inventario_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM vista_analisis_inventario")
+                data = cursor.fetchone()
+
+        return jsonify({"code": 1, "data": data, "message": "Análisis de inventario obtenido correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": {}, "message": repr(e)})
+
+
+# VISTA: ROTACIÓN DE PRODUCTOS
+@app.route('/vista_rotacion_productos_sanchezpharma')
+@jwt_required()
+def vista_rotacion_productos_sanchezpharma():
+    try:
+        limite = request.args.get('limite', 50, type=int)
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM vista_rotacion_productos ORDER BY unidades_vendidas DESC LIMIT %s", (limite,))
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Rotación de productos obtenida correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# VISTA: COMPARATIVA DE PERÍODOS
+@app.route('/vista_comparativa_periodos_sanchezpharma')
+@jwt_required()
+def vista_comparativa_periodos_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM vista_comparativa_periodos")
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Comparativa de períodos obtenida correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# GUARDAR REPORTE GENERADO
+@app.route('/guardar_reporte_sanchezpharma', methods=['POST'])
+@jwt_required()
+def guardar_reporte_sanchezpharma():
+    try:
+        data = request.json
+        usuario_id = data.get('usuario_id')
+        tipo_reporte_id = data.get('tipo_reporte_id')
+        nombre_reporte = data.get('nombre_reporte')
+        parametros = data.get('parametros', {})
+        fecha_desde = data.get('fecha_desde')
+        fecha_hasta = data.get('fecha_hasta')
+        datos_reporte = data.get('datos_reporte', {})
+        formato = data.get('formato', 'json')
+
+        if not usuario_id or not tipo_reporte_id:
+            return jsonify({"code": 0, "message": "usuario_id y tipo_reporte_id son requeridos"})
+
+        import json
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO reportes_generados 
+                    (tipo_reporte_id, usuario_id, nombre_reporte, parametros, fecha_desde, fecha_hasta, datos_reporte, formato)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    tipo_reporte_id,
+                    usuario_id,
+                    nombre_reporte,
+                    json.dumps(parametros),
+                    fecha_desde,
+                    fecha_hasta,
+                    json.dumps(datos_reporte),
+                    formato
+                ))
+                reporte_id = cursor.lastrowid
+            conn.commit()
+
+        return jsonify({"code": 1, "data": {"id": reporte_id}, "message": "Reporte guardado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# LISTAR REPORTES GENERADOS
+@app.route('/reportes_generados_sanchezpharma')
+@jwt_required()
+def reportes_generados_sanchezpharma():
+    try:
+        usuario_id = request.args.get('usuario_id', type=int)
+        tipo_reporte_id = request.args.get('tipo_reporte_id', type=int)
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                query = """
+                    SELECT rg.*, tr.nombre as tipo_reporte_nombre, u.username
+                    FROM reportes_generados rg
+                    LEFT JOIN tipos_reporte tr ON rg.tipo_reporte_id = tr.id
+                    LEFT JOIN usuarios u ON rg.usuario_id = u.id
+                    WHERE 1=1
+                """
+                params = []
+
+                if usuario_id:
+                    query += " AND rg.usuario_id = %s"
+                    params.append(usuario_id)
+
+                if tipo_reporte_id:
+                    query += " AND rg.tipo_reporte_id = %s"
+                    params.append(tipo_reporte_id)
+
+                query += " ORDER BY rg.fecha_generacion DESC LIMIT 50"
+
+                cursor.execute(query, params)
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Reportes generados listados correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# OBTENER REPORTE GENERADO POR ID
+@app.route('/reporte_generado_sanchezpharma/<int:reporte_id>')
+@jwt_required()
+def reporte_generado_sanchezpharma(reporte_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT rg.*, tr.nombre as tipo_reporte_nombre, u.username
+                    FROM reportes_generados rg
+                    LEFT JOIN tipos_reporte tr ON rg.tipo_reporte_id = tr.id
+                    LEFT JOIN usuarios u ON rg.usuario_id = u.id
+                    WHERE rg.id = %s
+                """, (reporte_id,))
+                data = cursor.fetchone()
+
+        if not data:
+            return jsonify({"code": 0, "data": {}, "message": "Reporte no encontrado"}), 404
+
+        return jsonify({"code": 1, "data": data, "message": "Reporte obtenido correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": {}, "message": repr(e)})
+
+
+# ELIMINAR REPORTE GENERADO
+@app.route('/eliminar_reporte_sanchezpharma/<int:reporte_id>', methods=['DELETE'])
+@jwt_required()
+def eliminar_reporte_sanchezpharma(reporte_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM reportes_generados WHERE id = %s", (reporte_id,))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Reporte eliminado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
 # FIN
 # ---------------------------------------------------
 if __name__ == "__main__":

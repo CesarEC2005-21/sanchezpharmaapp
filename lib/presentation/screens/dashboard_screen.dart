@@ -5,6 +5,10 @@ import '../../data/api/api_service.dart';
 import '../widgets/custom_drawer.dart';
 import 'login_screen.dart';
 import 'usuarios_screen.dart';
+import 'productos_screen.dart';
+import 'ventas_screen.dart';
+import 'envios_screen.dart';
+import 'reportes_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -79,7 +83,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Dashboard'),
-        backgroundColor: Colors.blue.shade700,
+        backgroundColor: Colors.green.shade700,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
@@ -99,7 +103,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.blue.shade50,
+              Colors.green.shade50,
               Colors.white,
             ],
           ),
@@ -120,7 +124,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [Colors.blue.shade700, Colors.blue.shade900],
+                      colors: [Colors.green.shade700, Colors.green.shade900],
                     ),
                     borderRadius: BorderRadius.circular(15),
                   ),
@@ -170,7 +174,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     _buildDashboardCard(
                       icon: Icons.people,
                       title: 'Usuarios',
-                      color: Colors.blue,
+                      color: Colors.green,
                       onTap: () {
                         Navigator.push(
                           context,
@@ -185,9 +189,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       title: 'Inventario',
                       color: Colors.green,
                       onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Módulo de Inventario'),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ProductosScreen(),
                           ),
                         );
                       },
@@ -197,9 +202,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       title: 'Ventas',
                       color: Colors.orange,
                       onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Módulo de Ventas'),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const VentasScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildDashboardCard(
+                      icon: Icons.local_shipping,
+                      title: 'Envíos',
+                      color: Colors.purple,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const EnviosScreen(),
                           ),
                         );
                       },
@@ -207,11 +226,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     _buildDashboardCard(
                       icon: Icons.assessment,
                       title: 'Reportes',
-                      color: Colors.purple,
+                      color: Colors.teal,
                       onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Módulo de Reportes'),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ReportesScreen(),
                           ),
                         );
                       },
