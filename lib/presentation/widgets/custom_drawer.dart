@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../screens/usuarios_screen.dart';
 
 class CustomDrawer extends StatelessWidget {
   final String username;
@@ -78,8 +79,11 @@ class CustomDrawer extends StatelessWidget {
                     title: 'Usuarios',
                     onTap: () {
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Módulo de Usuarios')),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const UsuariosScreen(),
+                        ),
                       );
                     },
                   ),

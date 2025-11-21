@@ -48,6 +48,13 @@ class _LoginScreenState extends State<LoginScreen> {
       final response = await apiService.login(loginRequest);
 
       if (response.code == 1 && response.token != null && response.user != null) {
+        print('🎉 Login exitoso! Respuesta del servidor:');
+        print('   - Code: ${response.code}');
+        print('   - Message: ${response.message}');
+        print('   - Token recibido: ${response.token!.substring(0, 20)}...');
+        print('   - User ID: ${response.user!.id}');
+        print('   - Username: ${response.user!.username}');
+        
         // Guardar datos de autenticación
         await SharedPrefsHelper.saveAuthData(
           token: response.token!,

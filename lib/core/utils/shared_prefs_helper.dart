@@ -15,12 +15,26 @@ class SharedPrefsHelper {
     await prefs.setString(_keyToken, token);
     await prefs.setInt(_keyUserId, userId);
     await prefs.setString(_keyUsername, username);
+    
+    // Log para verificar que se guardó
+    print('✅ Token guardado exitosamente');
+    print('   - Token: ${token.substring(0, 20)}...'); // Solo primeros 20 caracteres
+    print('   - User ID: $userId');
+    print('   - Username: $username');
   }
 
   // Obtener token
   static Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyToken);
+    final token = prefs.getString(_keyToken);
+    
+    if (token != null) {
+      print('📥 Token recuperado: ${token.substring(0, 20)}...');
+    } else {
+      print('⚠️ No hay token guardado');
+    }
+    
+    return token;
   }
 
   // Obtener ID de usuario
@@ -38,7 +52,11 @@ class SharedPrefsHelper {
   // Verificar si está autenticado
   static Future<bool> isAuthenticated() async {
     final token = await getToken();
-    return token != null && token.isNotEmpty;
+    final isAuth = token != null && token.isNotEmpty;
+    
+    print('🔐 Estado de autenticación: ${isAuth ? "Autenticado ✅" : "No autenticado ❌"}');
+    
+    return isAuth;
   }
 
   // Limpiar datos (logout)
@@ -47,6 +65,8 @@ class SharedPrefsHelper {
     await prefs.remove(_keyToken);
     await prefs.remove(_keyUserId);
     await prefs.remove(_keyUsername);
+    
+    print('🗑️ Token y datos de usuario eliminados (logout)');
   }
 }
 

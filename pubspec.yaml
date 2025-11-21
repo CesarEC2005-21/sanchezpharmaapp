@@ -36,9 +36,9 @@ dependencies:
   cupertino_icons: ^1.0.8
   
   # Network
-  dio: ^5.4.0
-  retrofit: ^4.0.3
-  json_annotation: ^4.8.1
+  dio: ^5.9.0
+  retrofit: ^4.5.0
+  json_annotation: ^4.9.0
   
   # State Management
   provider: ^6.1.1
@@ -61,9 +61,9 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   
   # Code generation
-  build_runner: ^2.4.7
-  retrofit_generator: ^8.0.6
-  json_serializable: ^6.7.1
+  build_runner: ^2.4.14
+  retrofit_generator: ^10.2.0
+  json_serializable: ^6.9.5
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -4,6 +4,7 @@ import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../widgets/custom_drawer.dart';
 import 'login_screen.dart';
+import 'usuarios_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -171,10 +172,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       title: 'Usuarios',
                       color: Colors.blue,
                       onTap: () {
-                        // Navegar a usuarios
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Módulo de Usuarios'),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const UsuariosScreen(),
                           ),
                         );
                       },
@@ -228,7 +229,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildDashboardCard({
     required IconData icon,
     required String title,
-    required Color color,
+    required MaterialColor color,
     required VoidCallback onTap,
   }) {
     return Card(

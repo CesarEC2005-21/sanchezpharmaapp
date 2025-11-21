@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request
 import pymysql.cursors
 from flask_jwt import JWT, jwt_required
+from flask_cors import CORS
 import logging
 
 # ---------------------------------------------------
@@ -77,6 +78,19 @@ def identity(payload):
 app = Flask(__name__)
 app.debug = True
 app.config['SECRET_KEY'] = 'super-secret'
+
+# ---------------------------------------------------
+# CONFIGURACIÓN CORS
+# ---------------------------------------------------
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",  # Permite todos los orígenes (para desarrollo)
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "expose_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
+    }
+})
 
 jwt = JWT(app, authenticate, identity)
 
@@ -248,6 +262,75 @@ def registrar_usuario_sanchezpharma():
             conn.commit()
 
         return jsonify({"code": 1, "message": "Usuario registrado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# EDITAR USUARIO
+# ---------------------------------------------------
+@app.route('/editar_usuario_sanchezpharma', methods=['PUT'])
+@jwt_required()
+def editar_usuario_sanchezpharma():
+    try:
+        data = request.json
+
+        if not data.get("id"):
+            return jsonify({"code": 0, "message": "Falta el ID del usuario"})
+
+        campos_requeridos = ["username", "email", "nombre", "apellido", "edad", "sexo", "rol_id"]
+        if not all(data.get(c) for c in campos_requeridos):
+            return jsonify({"code": 0, "message": "Faltan campos requeridos"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Si se proporciona password, actualizarlo también
+                if data.get("password"):
+                    cursor.execute("""
+                        UPDATE usuarios 
+                        SET username = %s, email = %s, password = %s, nombre = %s, 
+                            apellido = %s, edad = %s, sexo = %s, rol_id = %s
+                        WHERE id = %s
+                    """, (
+                        data["username"], data["email"], data["password"],
+                        data["nombre"], data["apellido"], data["edad"],
+                        data["sexo"], data["rol_id"], data["id"]
+                    ))
+                else:
+                    cursor.execute("""
+                        UPDATE usuarios 
+                        SET username = %s, email = %s, nombre = %s, 
+                            apellido = %s, edad = %s, sexo = %s, rol_id = %s
+                        WHERE id = %s
+                    """, (
+                        data["username"], data["email"],
+                        data["nombre"], data["apellido"], data["edad"],
+                        data["sexo"], data["rol_id"], data["id"]
+                    ))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Usuario actualizado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# ELIMINAR USUARIO
+# ---------------------------------------------------
+@app.route('/eliminar_usuario_sanchezpharma/<int:usuario_id>', methods=['DELETE'])
+@jwt_required()
+def eliminar_usuario_sanchezpharma(usuario_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM usuarios WHERE id = %s", (usuario_id,))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Usuario eliminado correctamente"})
 
     except Exception as e:
         return jsonify({"code": 0, "message": repr(e)})
