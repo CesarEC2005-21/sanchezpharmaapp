@@ -73,6 +73,27 @@ class _CategoriasScreenState extends State<CategoriasScreen> {
     }
   }
 
+  Widget _buildSectionTitle(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: Colors.purple.shade700),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.purple.shade700,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Divider(color: Colors.purple.shade200, thickness: 1),
+        ),
+      ],
+    );
+  }
+
   Future<void> _mostrarFormularioCategoria({CategoriaModel? categoria}) async {
     final formKey = GlobalKey<FormState>();
 
@@ -82,81 +103,212 @@ class _CategoriasScreenState extends State<CategoriasScreen> {
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(categoria == null ? 'Registrar Categoría' : 'Editar Categoría'),
-        content: StatefulBuilder(
-          builder: (context, setState) => SingleChildScrollView(
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: nombreController,
-                    decoration: const InputDecoration(
-                      labelText: 'Nombre *',
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'El nombre es requerido';
-                      }
-                      return null;
-                    },
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.9,
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.6,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.purple.shade600, Colors.purple.shade800],
                   ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: descripcionController,
-                    decoration: const InputDecoration(
-                      labelText: 'Descripción',
-                      border: OutlineInputBorder(),
-                    ),
-                    maxLines: 3,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
                   ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: estadoValue,
-                    decoration: const InputDecoration(
-                      labelText: 'Estado',
-                      border: OutlineInputBorder(),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      categoria == null ? Icons.add_box : Icons.edit,
+                      color: Colors.white,
+                      size: 28,
                     ),
-                    items: const [
-                      DropdownMenuItem(value: 'activo', child: Text('Activo')),
-                      DropdownMenuItem(value: 'inactivo', child: Text('Inactivo')),
-                    ],
-                    onChanged: (value) {
-                      setState(() {
-                        estadoValue = value ?? 'activo';
-                      });
-                    },
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        categoria == null ? 'Registrar Categoría' : 'Editar Categoría',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
               ),
-            ),
+              // Body
+              Expanded(
+                child: StatefulBuilder(
+                  builder: (context, setState) => SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: Form(
+                      key: formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Sección: Información de la Categoría
+                          _buildSectionTitle('🏷️ Información de la Categoría', Icons.label),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: nombreController,
+                            decoration: InputDecoration(
+                              labelText: 'Nombre de la Categoría *',
+                              prefixIcon: const Icon(Icons.category),
+                              hintText: 'Ej: Medicamentos, Suplementos, etc.',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              filled: true,
+                              fillColor: Colors.grey.shade50,
+                            ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'El nombre es requerido';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: descripcionController,
+                            decoration: InputDecoration(
+                              labelText: 'Descripción',
+                              prefixIcon: const Icon(Icons.description),
+                              hintText: 'Describe esta categoría de productos',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              filled: true,
+                              fillColor: Colors.grey.shade50,
+                            ),
+                            maxLines: 4,
+                          ),
+                          const SizedBox(height: 24),
+                          
+                          // Sección: Estado
+                          _buildSectionTitle('⚙️ Estado', Icons.settings),
+                          const SizedBox(height: 16),
+                          DropdownButtonFormField<String>(
+                            value: estadoValue,
+                            decoration: InputDecoration(
+                              labelText: 'Estado de la Categoría',
+                              prefixIcon: Icon(
+                                estadoValue == 'activo' ? Icons.check_circle : Icons.cancel,
+                                color: estadoValue == 'activo' ? Colors.green : Colors.grey,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              filled: true,
+                              fillColor: estadoValue == 'activo' 
+                                  ? Colors.green.shade50 
+                                  : Colors.grey.shade100,
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'activo',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.check_circle, color: Colors.green, size: 20),
+                                    SizedBox(width: 8),
+                                    Text('Activo'),
+                                  ],
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'inactivo',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.cancel, color: Colors.grey, size: 20),
+                                    SizedBox(width: 8),
+                                    Text('Inactivo'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              setState(() {
+                                estadoValue = value ?? 'activo';
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // Footer con botones
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(20),
+                    bottomRight: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                      label: const Text('Cancelar'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.grey.shade700,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        if (formKey.currentState!.validate()) {
+                          await _guardarCategoria(
+                            categoria: categoria,
+                            nombre: nombreController.text,
+                            descripcion: descripcionController.text.isEmpty ? null : descripcionController.text,
+                            estado: estadoValue,
+                          );
+                          if (mounted) {
+                            Navigator.of(context).pop();
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.save),
+                      label: const Text('Guardar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.purple.shade600,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (formKey.currentState!.validate()) {
-                await _guardarCategoria(
-                  categoria: categoria,
-                  nombre: nombreController.text,
-                  descripcion: descripcionController.text.isEmpty ? null : descripcionController.text,
-                  estado: estadoValue,
-                );
-                if (mounted) {
-                  Navigator.of(context).pop();
-                }
-              }
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
       ),
     );
   }

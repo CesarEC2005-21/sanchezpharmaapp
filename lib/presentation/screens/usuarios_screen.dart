@@ -16,9 +16,11 @@ class UsuariosScreen extends StatefulWidget {
 class _UsuariosScreenState extends State<UsuariosScreen> {
   final ApiService _apiService = ApiService(DioClient.createDio());
   List<UsuarioModel> _usuarios = [];
+  List<UsuarioModel> _usuariosFiltrados = [];
   List<RolModel> _roles = [];
   bool _isLoading = true;
   String? _errorMessage;
+  int? _rolFiltroSeleccionado;
 
   @override
   void initState() {
@@ -66,6 +68,16 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
     ];
   }
 
+  void _aplicarFiltro() {
+    if (_rolFiltroSeleccionado == null) {
+      _usuariosFiltrados = List.from(_usuarios);
+    } else {
+      _usuariosFiltrados = _usuarios
+          .where((usuario) => usuario.rolId == _rolFiltroSeleccionado)
+          .toList();
+    }
+  }
+
   Future<void> _cargarUsuarios() async {
     setState(() {
       _isLoading = true;
@@ -94,6 +106,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
             _usuarios = usuariosJson
                 .map((json) => UsuarioModel.fromJson(json))
                 .toList();
+            _aplicarFiltro();
             _isLoading = false;
           });
         } else {
@@ -474,7 +487,63 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
           ),
         ],
       ),
-      body: _isLoading
+      body: Column(
+        children: [
+          // Filtro por rol
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            color: Colors.grey.shade100,
+            child: Row(
+              children: [
+                const Icon(Icons.filter_list, color: Colors.green),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<int?>(
+                    value: _rolFiltroSeleccionado,
+                    decoration: const InputDecoration(
+                      labelText: 'Filtrar por rol',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('Todos los roles'),
+                      ),
+                      ..._roles.map((rol) => DropdownMenuItem<int?>(
+                        value: rol.id,
+                        child: Text(rol.nombre),
+                      )),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _rolFiltroSeleccionado = value;
+                        _aplicarFiltro();
+                      });
+                    },
+                  ),
+                ),
+                if (_rolFiltroSeleccionado != null) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.clear, color: Colors.red),
+                    onPressed: () {
+                      setState(() {
+                        _rolFiltroSeleccionado = null;
+                        _aplicarFiltro();
+                      });
+                    },
+                    tooltip: 'Limpiar filtro',
+                  ),
+                ],
+              ],
+            ),
+          ),
+          // Lista de usuarios
+          Expanded(
+            child: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
               ? Center(
@@ -500,7 +569,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                     ],
                   ),
                 )
-              : _usuarios.isEmpty
+              : _usuariosFiltrados.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -511,9 +580,12 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                             color: Colors.grey.shade400,
                           ),
                           const SizedBox(height: 16),
-                          const Text(
-                            'No hay usuarios registrados',
-                            style: TextStyle(fontSize: 16),
+                          Text(
+                            _rolFiltroSeleccionado == null
+                                ? 'No hay usuarios registrados'
+                                : 'No hay usuarios con el rol seleccionado',
+                            style: const TextStyle(fontSize: 16),
+                            textAlign: TextAlign.center,
                           ),
                         ],
                       ),
@@ -522,9 +594,13 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                       onRefresh: _cargarUsuarios,
                       child: ListView.builder(
                         padding: const EdgeInsets.all(8),
-                        itemCount: _usuarios.length,
+                        itemCount: _usuariosFiltrados.length,
                         itemBuilder: (context, index) {
-                          final usuario = _usuarios[index];
+                          final usuario = _usuariosFiltrados[index];
+                          final rol = _roles.firstWhere(
+                            (r) => r.id == usuario.rolId,
+                            orElse: () => RolModel(id: 0, nombre: 'Sin rol', descripcion: ''),
+                          );
                           return Card(
                             margin: const EdgeInsets.symmetric(
                               vertical: 6,
@@ -551,6 +627,22 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                                   Text('Usuario: ${usuario.username}'),
                                   Text('Email: ${usuario.email}'),
                                   Text('Edad: ${usuario.edad} | Sexo: ${usuario.sexo}'),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.shade100,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      '🎭 ${rol.nombre}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green.shade800,
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               ),
                               trailing: Row(
@@ -573,6 +665,9 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                         },
                       ),
                     ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _mostrarFormularioUsuario(),
         backgroundColor: Colors.green.shade700,
