@@ -177,7 +177,7 @@ def verificar_token_blacklist():
     if request.method == "OPTIONS":
         return
     
-    endpoints_libres = ("api_login", "hello", "probar_conexion_sanchezpharma")
+    endpoints_libres = ("api_login", "hello", "probar_conexion_sanchezpharma", "registrar_cliente_publico_sanchezpharma")
     if request.endpoint in endpoints_libres:
         return
 
@@ -1183,7 +1183,70 @@ def clientes_sanchezpharma():
         return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
-# REGISTRAR CLIENTE
+# REGISTRAR CLIENTE (PÚBLICO - SIN AUTENTICACIÓN)
+@app.route('/registrar_cliente_publico_sanchezpharma', methods=['POST'])
+def registrar_cliente_publico_sanchezpharma():
+    try:
+        data = request.json
+
+        # Validar campos requeridos
+        campos_requeridos = ["nombre", "email", "password", "documento"]
+        if not all(data.get(c) for c in campos_requeridos):
+            return jsonify({"code": 0, "message": "Faltan campos requeridos: nombre, email, password, documento"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Verificar si el email o documento ya existen
+                cursor.execute("""
+                    SELECT id FROM clientes 
+                    WHERE email = %s OR documento = %s
+                """, (data.get("email"), data.get("documento")))
+                cliente_existente = cursor.fetchone()
+                
+                if cliente_existente:
+                    return jsonify({"code": 0, "message": "Ya existe un cliente con este email o documento"})
+
+                # Verificar si el campo password existe
+                cursor.execute("SHOW COLUMNS FROM clientes LIKE 'password'")
+                password_exists = cursor.fetchone()
+                
+                if not password_exists:
+                    # Si no existe el campo password, crearlo
+                    cursor.execute("ALTER TABLE clientes ADD COLUMN password VARCHAR(255) AFTER email")
+                    conn.commit()
+
+                # Insertar cliente con contraseña encriptada con SHA256
+                cursor.execute("""
+                    INSERT INTO clientes (nombre, apellido, documento, tipo_documento, 
+                                         telefono, email, password, direccion, estado)
+                    VALUES (%s, %s, %s, %s, %s, %s, SHA2(%s, 256), %s, %s)
+                """, (
+                    data.get("nombre"),
+                    data.get("apellido"),
+                    data.get("documento"),
+                    data.get("tipo_documento", "DNI"),
+                    data.get("telefono"),
+                    data.get("email"),
+                    data.get("password"),  # Se encripta con SHA2 en la consulta
+                    data.get("direccion"),
+                    "activo"
+                ))
+                cliente_id = cursor.lastrowid
+            conn.commit()
+
+        return jsonify({
+            "code": 1, 
+            "message": "Cliente registrado correctamente. Ya puedes iniciar sesión.",
+            "cliente_id": cliente_id
+        })
+
+    except Exception as e:
+        logging.error(f"Error al registrar cliente: {repr(e)}")
+        return jsonify({"code": 0, "message": f"Error al registrar cliente: {str(e)}"})
+
+
+# REGISTRAR CLIENTE (PRIVADO - REQUIERE AUTENTICACIÓN)
 @app.route('/registrar_cliente_sanchezpharma', methods=['POST'])
 @jwt_required()
 def registrar_cliente_sanchezpharma():

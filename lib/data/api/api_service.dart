@@ -104,6 +104,9 @@ abstract class ApiService {
   @POST(ApiConstants.registrarCliente)
   Future<HttpResponse<dynamic>> registrarCliente(@Body() Map<String, dynamic> cliente);
 
+  @POST(ApiConstants.registrarClientePublico)
+  Future<HttpResponse<dynamic>> registrarClientePublico(@Body() Map<String, dynamic> cliente);
+
   @PUT(ApiConstants.editarCliente)
   Future<HttpResponse<dynamic>> editarCliente(@Body() Map<String, dynamic> cliente);
 

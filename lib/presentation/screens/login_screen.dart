@@ -6,6 +6,7 @@ import '../../data/models/login_request.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import 'dashboard_screen.dart';
 import 'tienda_screen.dart';
+import 'registro_cliente_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -284,6 +285,46 @@ class _LoginScreenState extends State<LoginScreen> {
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            
+                            // Link para registrarse
+                            TextButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const RegistroClienteScreen(),
+                                  ),
+                                );
+                              },
+                              child: RichText(
+                                text: const TextSpan(
+                                  style: TextStyle(
+                                    color: Colors.black87,
+                                    fontSize: 16,
+                                  ),
+                                  children: [
+                                    TextSpan(text: '¿No tienes cuenta? '),
+                                    TextSpan(
+                                      text: 'Regístrate aquí',
+                                      style: TextStyle(
+                                        color: Colors.black,
+                                        fontWeight: FontWeight.bold,
+                                        decoration: TextDecoration.underline,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              style: TextButton.styleFrom(
+                                backgroundColor: Colors.white.withOpacity(0.9),
+                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                               ),
                             ),
                           ],
