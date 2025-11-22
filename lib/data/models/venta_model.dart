@@ -11,7 +11,7 @@ class VentaModel {
   final String? numeroVenta;
   @JsonKey(name: 'cliente_id')
   final int? clienteId;
-  @JsonKey(name: 'usuario_id')
+  @JsonKey(name: 'usuario_id', fromJson: _usuarioIdFromJson)
   final int usuarioId;
   @JsonKey(name: 'tipo_venta')
   final String tipoVenta; // 'recojo_tienda' o 'envio_domicilio'
@@ -74,6 +74,13 @@ class VentaModel {
     if (json is num) return json.toDouble();
     if (json is String) return double.tryParse(json) ?? 0.0;
     return 0.0;
+  }
+
+  static int _usuarioIdFromJson(dynamic json) {
+    if (json == null) return 0;
+    if (json is num) return json.toInt();
+    if (json is String) return int.tryParse(json) ?? 0;
+    return 0;
   }
 
   String get clienteCompleto {

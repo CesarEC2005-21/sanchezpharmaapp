@@ -6,6 +6,7 @@ import '../../data/api/api_service.dart';
 import '../../data/models/producto_model.dart';
 import '../../data/models/categoria_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../widgets/cliente_drawer.dart';
 import 'carrito_screen.dart';
 import 'login_screen.dart';
 
@@ -26,12 +27,21 @@ class _TiendaScreenState extends State<TiendaScreen> {
   final TextEditingController _searchController = TextEditingController();
   String? _categoriaSeleccionada;
   int _itemsEnCarrito = 0;
+  String _username = '';
 
   @override
   void initState() {
     super.initState();
+    _loadUserData();
     _cargarDatos();
     _actualizarContadorCarrito();
+  }
+
+  Future<void> _loadUserData() async {
+    final username = await SharedPrefsHelper.getUsername();
+    setState(() {
+      _username = username ?? 'Cliente';
+    });
   }
 
   @override
@@ -262,7 +272,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
     if (mounted) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
-          builder: (context) => const LoginScreen(),
+          builder: (context) => LoginScreen(),
         ),
         (route) => false,
       );
@@ -272,6 +282,10 @@ class _TiendaScreenState extends State<TiendaScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: ClienteDrawer(
+        username: _username,
+        onLogout: _handleLogout,
+      ),
       appBar: AppBar(
         title: const Text('Tienda Sánchez Pharma'),
         backgroundColor: Colors.green.shade700,
@@ -314,26 +328,6 @@ class _TiendaScreenState extends State<TiendaScreen> {
                     ),
                   ),
                 ),
-            ],
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            onSelected: (value) {
-              if (value == 'logout') {
-                _handleLogout();
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout, color: Colors.red),
-                    SizedBox(width: 8),
-                    Text('Cerrar Sesión'),
-                  ],
-                ),
-              ),
             ],
           ),
         ],

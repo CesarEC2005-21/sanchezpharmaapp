@@ -1,9 +1,14 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../data/models/envio_model.dart';
+import '../../data/api/dio_client.dart';
+import '../../data/api/api_service.dart';
+import '../../core/utils/shared_prefs_helper.dart';
 
 class SeguimientoEnvioScreen extends StatefulWidget {
   final EnvioModel envio;
@@ -23,18 +28,34 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
   Position? _destinoPosition;
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
+  List<LatLng> _rutaRecorrida = []; // Lista de puntos de la ruta recorrida
   bool _isLoading = true;
   String? _errorMessage;
+  bool _esRepartidor = false;
+  String? _username;
+  final ApiService _apiService = ApiService(DioClient.createDio());
 
-  // Simulación de ubicación del repartidor (en producción esto vendría del backend)
-  // Por ahora, simularemos que el repartidor está en movimiento
+  // Timer para actualizar ubicación en tiempo real
   Timer? _locationUpdateTimer;
 
   @override
   void initState() {
     super.initState();
+    _verificarUsuario();
     _initializeMap();
     _startLocationUpdates();
+  }
+
+  Future<void> _verificarUsuario() async {
+    final username = await SharedPrefsHelper.getUsername();
+    setState(() {
+      _username = username;
+      // Verificar si el usuario actual es el repartidor asignado
+      _esRepartidor = widget.envio.conductorRepartidor != null &&
+          widget.envio.conductorRepartidor!.isNotEmpty &&
+          username != null &&
+          widget.envio.conductorRepartidor!.toLowerCase().contains(username.toLowerCase());
+    });
   }
 
   @override
@@ -103,6 +124,8 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
           speed: 0,
           speedAccuracy: 0,
         );
+        // Inicializar ruta recorrida con la posición inicial
+        _rutaRecorrida = [LatLng(widget.envio.latitudRepartidor!, widget.envio.longitudRepartidor!)];
       } else {
         // Obtener ubicación actual del dispositivo (simulando ubicación del repartidor)
         try {
@@ -123,8 +146,13 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
         _repartidorPosition = _destinoPosition;
       }
 
+      // Inicializar la ruta recorrida con la posición inicial del repartidor
+      if (_repartidorPosition != null && _rutaRecorrida.isEmpty) {
+        _rutaRecorrida = [LatLng(_repartidorPosition!.latitude, _repartidorPosition!.longitude)];
+      }
+
       if (_repartidorPosition != null && _destinoPosition != null) {
-        _updateMarkers();
+        await _updateMarkers();
         _updateRoute();
         // No llamar _moveCameraToFitBoth aquí porque el controlador aún no está listo
         // Se llamará cuando el mapa se cree en onMapCreated
@@ -225,10 +253,78 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
     );
   }
 
-  void _updateMarkers() {
+  Future<BitmapDescriptor> _crearIconoAutomovil() async {
+    return await _crearIconoPersonalizado(
+      icono: Icons.directions_car,
+      color: Colors.blue.shade700,
+    );
+  }
+
+  Future<BitmapDescriptor> _crearIconoHumano() async {
+    return await _crearIconoPersonalizado(
+      icono: Icons.person,
+      color: Colors.red,
+      texto: 'C',
+    );
+  }
+
+  Future<BitmapDescriptor> _crearIconoPersonalizado({
+    required IconData icono,
+    required Color color,
+    String? texto,
+  }) async {
+    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(pictureRecorder);
+    final Paint paint = Paint()..color = color;
+    final Paint paintFondo = Paint()..color = Colors.white;
+
+    // Dibujar círculo de fondo
+    canvas.drawCircle(
+      const Offset(50, 50),
+      40,
+      paintFondo,
+    );
+    canvas.drawCircle(
+      const Offset(50, 50),
+      40,
+      paint..style = PaintingStyle.stroke..strokeWidth = 3,
+    );
+
+    // Dibujar icono
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(icono.codePoint),
+        style: TextStyle(
+          fontSize: 50,
+          fontFamily: icono.fontFamily,
+          color: color,
+          package: icono.fontPackage,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(
+        (100 - textPainter.width) / 2,
+        (100 - textPainter.height) / 2,
+      ),
+    );
+
+    final picture = pictureRecorder.endRecording();
+    final image = await picture.toImage(100, 100);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    final uint8List = byteData!.buffer.asUint8List();
+
+    return BitmapDescriptor.fromBytes(uint8List);
+  }
+
+  Future<void> _updateMarkers() async {
     _markers.clear();
 
     if (_repartidorPosition != null) {
+      final iconoAutomovil = await _crearIconoAutomovil();
       _markers.add(
         Marker(
           markerId: const MarkerId('repartidor'),
@@ -236,7 +332,7 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
             _repartidorPosition!.latitude,
             _repartidorPosition!.longitude,
           ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          icon: iconoAutomovil,
           infoWindow: InfoWindow(
             title: 'Repartidor',
             snippet: widget.envio.conductorRepartidor ?? 'En camino',
@@ -246,6 +342,7 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
     }
 
     if (_destinoPosition != null) {
+      final iconoHumano = await _crearIconoHumano();
       _markers.add(
         Marker(
           markerId: const MarkerId('destino'),
@@ -253,7 +350,7 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
             _destinoPosition!.latitude,
             _destinoPosition!.longitude,
           ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          icon: iconoHumano,
           infoWindow: InfoWindow(
             title: 'Destino',
             snippet: widget.envio.direccionEntrega,
@@ -261,14 +358,31 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
         ),
       );
     }
+    
+    setState(() {});
   }
 
   void _updateRoute() {
-    if (_repartidorPosition != null && _destinoPosition != null) {
-      _polylines.clear();
+    _polylines.clear();
+    
+    // Ruta recorrida (línea sólida azul)
+    if (_rutaRecorrida.length > 1) {
       _polylines.add(
         Polyline(
-          polylineId: const PolylineId('ruta'),
+          polylineId: const PolylineId('ruta_recorrida'),
+          points: _rutaRecorrida,
+          color: Colors.blue,
+          width: 5,
+          patterns: [],
+        ),
+      );
+    }
+    
+    // Ruta restante hasta el destino (línea punteada verde)
+    if (_repartidorPosition != null && _destinoPosition != null) {
+      _polylines.add(
+        Polyline(
+          polylineId: const PolylineId('ruta_restante'),
           points: [
             LatLng(_repartidorPosition!.latitude, _repartidorPosition!.longitude),
             LatLng(_destinoPosition!.latitude, _destinoPosition!.longitude),
@@ -309,23 +423,98 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
   }
 
   void _startLocationUpdates() {
-    // Simular actualizaciones de ubicación cada 5 segundos
-    _locationUpdateTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
-      if (widget.envio.estado == 'en_camino') {
+    // Actualizar ubicación cada 10 segundos si el envío está en camino
+    _locationUpdateTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+      if (widget.envio.estado == 'en_camino' && widget.envio.id != null) {
         try {
-          _repartidorPosition = await _getCurrentLocation();
-          _updateMarkers();
-          _updateRoute();
-          
-          if (_mapController != null && _repartidorPosition != null) {
-            _mapController!.animateCamera(
-              CameraUpdate.newLatLng(
-                LatLng(
-                  _repartidorPosition!.latitude,
-                  _repartidorPosition!.longitude,
-                ),
-              ),
-            );
+          if (_esRepartidor) {
+            // Si es el repartidor, actualizar su ubicación y enviarla al backend
+            final nuevaPosicion = await _getCurrentLocation();
+            if (nuevaPosicion != null) {
+              final nuevaLatLng = LatLng(nuevaPosicion.latitude, nuevaPosicion.longitude);
+              
+              setState(() {
+                _repartidorPosition = nuevaPosicion;
+                // Agregar nueva posición a la ruta recorrida si es diferente a la anterior
+                if (_rutaRecorrida.isEmpty || 
+                    _rutaRecorrida.last.latitude != nuevaLatLng.latitude ||
+                    _rutaRecorrida.last.longitude != nuevaLatLng.longitude) {
+                  _rutaRecorrida.add(nuevaLatLng);
+                }
+              });
+              
+              // Actualizar ubicación en el backend
+              try {
+                await _apiService.actualizarEnvio(
+                  widget.envio.id!,
+                  {
+                    'latitud_repartidor': nuevaPosicion.latitude,
+                    'longitud_repartidor': nuevaPosicion.longitude,
+                  },
+                );
+              } catch (e) {
+                print('Error al actualizar ubicación en backend: $e');
+              }
+              
+              await _updateMarkers();
+              _updateRoute();
+              
+              if (_mapController != null) {
+                _mapController!.animateCamera(
+                  CameraUpdate.newLatLng(
+                    LatLng(
+                      nuevaPosicion.latitude,
+                      nuevaPosicion.longitude,
+                    ),
+                  ),
+                );
+              }
+            }
+          } else {
+            // Si es cliente, obtener la ubicación actualizada del repartidor desde el backend
+            try {
+              final response = await _apiService.getEnvio(widget.envio.id!);
+              if (response.response.statusCode == 200) {
+                final data = response.data;
+                if (data['code'] == 1 && data['data'] != null) {
+                  final envioActualizado = EnvioModel.fromJson(data['data']);
+                  if (envioActualizado.latitudRepartidor != null && 
+                      envioActualizado.longitudRepartidor != null) {
+                    final nuevaLatLng = LatLng(
+                      envioActualizado.latitudRepartidor!,
+                      envioActualizado.longitudRepartidor!,
+                    );
+                    
+                    setState(() {
+                      _repartidorPosition = Position(
+                        latitude: envioActualizado.latitudRepartidor!,
+                        longitude: envioActualizado.longitudRepartidor!,
+                        timestamp: DateTime.now(),
+                        accuracy: 0,
+                        altitude: 0,
+                        altitudeAccuracy: 0,
+                        heading: 0,
+                        headingAccuracy: 0,
+                        speed: 0,
+                        speedAccuracy: 0,
+                      );
+                      
+                      // Agregar nueva posición a la ruta recorrida si es diferente a la anterior
+                      if (_rutaRecorrida.isEmpty || 
+                          _rutaRecorrida.last.latitude != nuevaLatLng.latitude ||
+                          _rutaRecorrida.last.longitude != nuevaLatLng.longitude) {
+                        _rutaRecorrida.add(nuevaLatLng);
+                      }
+                    });
+                    
+                    await _updateMarkers();
+                    _updateRoute();
+                  }
+                }
+              }
+            } catch (e) {
+              print('Error al obtener ubicación del repartidor: $e');
+            }
           }
         } catch (e) {
           print('Error al actualizar ubicación: $e');
@@ -469,6 +658,32 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Colors.grey.shade700,
+                                ),
+                              ),
+                            if (_esRepartidor)
+                              Container(
+                                margin: const EdgeInsets.only(top: 8),
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.blue.shade200),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.person, size: 16, color: Colors.blue.shade700),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        'Eres el repartidor asignado - Tu ubicación se actualiza automáticamente',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blue.shade700,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             if (_repartidorPosition != null && _destinoPosition != null)

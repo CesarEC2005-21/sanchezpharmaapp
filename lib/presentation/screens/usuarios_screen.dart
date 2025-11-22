@@ -5,6 +5,8 @@ import '../../data/api/api_service.dart';
 import '../../data/models/usuario_model.dart';
 import '../../data/models/rol_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/constants/app_colors.dart';
+import '../widgets/custom_modal_dialog.dart';
 
 class UsuariosScreen extends StatefulWidget {
   const UsuariosScreen({super.key});
@@ -143,21 +145,25 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(usuario == null ? 'Registrar Usuario' : 'Editar Usuario'),
+      barrierDismissible: false,
+      builder: (context) => CustomModalDialog(
+        title: usuario == null ? 'Registrar Usuario' : 'Editar Usuario',
+        icon: usuario == null ? Icons.person_add : Icons.edit,
         content: StatefulBuilder(
-          builder: (context, setState) => SingleChildScrollView(
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                TextFormField(
+          builder: (context, setState) => Form(
+            key: formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Sección: Credenciales
+                ModalSectionBuilder.buildSectionTitle('Credenciales de Acceso', Icons.lock),
+                ModalSectionBuilder.buildTextField(
                   controller: usernameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Username',
-                    border: OutlineInputBorder(),
-                  ),
+                  label: 'Nombre de Usuario',
+                  icon: Icons.person,
+                  hint: 'Ingrese el username',
+                  required: true,
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'El username es requerido';
@@ -165,14 +171,13 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 12),
-                TextFormField(
+                ModalSectionBuilder.buildTextField(
                   controller: emailController,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    border: OutlineInputBorder(),
-                  ),
+                  label: 'Correo Electrónico',
+                  icon: Icons.email,
+                  hint: 'usuario@sanchez-pharma.com',
                   keyboardType: TextInputType.emailAddress,
+                  required: true,
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'El email es requerido';
@@ -183,133 +188,194 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: passwordController,
-                  decoration: InputDecoration(
-                    labelText: usuario == null ? 'Password *' : 'Password (dejar vacío para mantener)',
-                    border: const OutlineInputBorder(),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: TextFormField(
+                    controller: passwordController,
+                    decoration: InputDecoration(
+                      labelText: usuario == null ? 'Contraseña *' : 'Nueva Contraseña',
+                      hintText: usuario == null ? 'Ingrese una contraseña segura' : 'Dejar vacío para mantener la actual',
+                      prefixIcon: const Icon(Icons.password, color: AppColors.primary),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey.shade50,
+                    ),
+                    obscureText: true,
+                    validator: (value) {
+                      if (usuario == null && (value == null || value.isEmpty)) {
+                        return 'La contraseña es requerida';
+                      }
+                      return null;
+                    },
                   ),
-                  obscureText: true,
-                  validator: (value) {
-                    if (usuario == null && (value == null || value.isEmpty)) {
-                      return 'El password es requerido';
-                    }
-                    return null;
-                  },
                 ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: nombreController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'El nombre es requerido';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: apellidoController,
-                  decoration: const InputDecoration(
-                    labelText: 'Apellido',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'El apellido es requerido';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: edadController,
-                  decoration: const InputDecoration(
-                    labelText: 'Edad',
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'La edad es requerida';
-                    }
-                    if (int.tryParse(value) == null) {
-                      return 'La edad debe ser un número';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: sexoValue,
-                  decoration: const InputDecoration(
-                    labelText: 'Sexo',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'M', child: Text('Masculino')),
-                    DropdownMenuItem(value: 'F', child: Text('Femenino')),
+
+                // Sección: Información Personal
+                ModalSectionBuilder.buildSectionTitle('Información Personal', Icons.badge),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ModalSectionBuilder.buildTextField(
+                        controller: nombreController,
+                        label: 'Nombre',
+                        icon: Icons.person_outline,
+                        required: true,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Requerido';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ModalSectionBuilder.buildTextField(
+                        controller: apellidoController,
+                        label: 'Apellido',
+                        icon: Icons.person_outline,
+                        required: true,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Requerido';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
                   ],
-                  onChanged: (value) {
-                    setState(() {
-                      sexoValue = value ?? 'M';
-                    });
-                  },
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'El sexo es requerido';
-                    }
-                    return null;
-                  },
                 ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<int>(
-                  value: rolIdSeleccionado,
-                  decoration: const InputDecoration(
-                    labelText: 'Rol',
-                    border: OutlineInputBorder(),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ModalSectionBuilder.buildTextField(
+                        controller: edadController,
+                        label: 'Edad',
+                        icon: Icons.cake,
+                        keyboardType: TextInputType.number,
+                        required: true,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Requerido';
+                          }
+                          if (int.tryParse(value) == null) {
+                            return 'Debe ser un número';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: DropdownButtonFormField<String>(
+                          value: sexoValue,
+                          decoration: InputDecoration(
+                            labelText: 'Sexo *',
+                            prefixIcon: const Icon(Icons.wc, color: AppColors.primary),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                            ),
+                            filled: true,
+                            fillColor: Colors.grey.shade50,
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'M', child: Text('Masculino')),
+                            DropdownMenuItem(value: 'F', child: Text('Femenino')),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              sexoValue = value ?? 'M';
+                            });
+                          },
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Requerido';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Sección: Rol y Permisos
+                ModalSectionBuilder.buildSectionTitle('Rol y Permisos', Icons.admin_panel_settings),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: DropdownButtonFormField<int>(
+                    value: rolIdSeleccionado,
+                    decoration: InputDecoration(
+                      labelText: 'Rol del Usuario *',
+                      prefixIcon: const Icon(Icons.security, color: AppColors.primary),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey.shade50,
+                    ),
+                    items: _roles.map((rol) {
+                      return DropdownMenuItem<int>(
+                        value: rol.id,
+                        child: Text(rol.nombre),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        rolIdSeleccionado = value;
+                      });
+                    },
+                    validator: (value) {
+                      if (value == null) {
+                        return 'El rol es requerido';
+                      }
+                      return null;
+                    },
                   ),
-                  items: _roles.map((rol) {
-                    return DropdownMenuItem<int>(
-                      value: rol.id,
-                      child: Text(rol.nombre),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      rolIdSeleccionado = value;
-                    });
-                  },
-                  validator: (value) {
-                    if (value == null) {
-                      return 'El rol es requerido';
-                    }
-                    return null;
-                  },
                 ),
-                ],
-              ),
+              ],
             ),
           ),
         ),
         actions: [
-          TextButton(
+          ModalSectionBuilder.buildButton(
+            label: 'Cancelar',
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
+            icon: Icons.close,
+            isOutlined: true,
           ),
-          ElevatedButton(
+          const SizedBox(width: 12),
+          ModalSectionBuilder.buildButton(
+            label: 'Guardar',
+            icon: Icons.check,
             onPressed: () async {
               if (formKey.currentState!.validate()) {
                 if (rolIdSeleccionado == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Por favor seleccione un rol'),
-                      backgroundColor: Colors.red,
+                      backgroundColor: AppColors.error,
                     ),
                   );
                   return;
@@ -330,7 +396,6 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                 }
               }
             },
-            child: const Text('Guardar'),
           ),
         ],
       ),

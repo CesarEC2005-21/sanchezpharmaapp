@@ -4,6 +4,8 @@ import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../data/models/categoria_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/constants/app_colors.dart';
+import '../widgets/custom_modal_dialog.dart';
 
 class CategoriasScreen extends StatefulWidget {
   const CategoriasScreen({super.key});

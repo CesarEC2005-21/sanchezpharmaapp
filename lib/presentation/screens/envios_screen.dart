@@ -3,6 +3,7 @@ import 'package:retrofit/retrofit.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../data/models/envio_model.dart';
+import '../../data/models/usuario_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import 'seguimiento_envio_screen.dart';
 
@@ -16,6 +17,7 @@ class EnviosScreen extends StatefulWidget {
 class _EnviosScreenState extends State<EnviosScreen> {
   final ApiService _apiService = ApiService(DioClient.createDio());
   List<EnvioModel> _envios = [];
+  List<UsuarioModel> _repartidores = [];
   bool _isLoading = true;
   String? _errorMessage;
   String? _filtroEstado;
@@ -24,6 +26,28 @@ class _EnviosScreenState extends State<EnviosScreen> {
   void initState() {
     super.initState();
     _cargarEnvios();
+    _cargarRepartidores();
+  }
+
+  Future<void> _cargarRepartidores() async {
+    try {
+      final response = await _apiService.getUsuarios();
+      if (response.response.statusCode == 200) {
+        final data = response.data;
+        if (data['code'] == 1 && data['data'] != null) {
+          final List<dynamic> usuariosJson = data['data'];
+          setState(() {
+            // Filtrar usuarios que pueden ser repartidores (puedes ajustar el filtro según tu lógica)
+            // Por ahora, cargamos todos los usuarios
+            _repartidores = usuariosJson
+                .map((json) => UsuarioModel.fromJson(json))
+                .toList();
+          });
+        }
+      }
+    } catch (e) {
+      print('Error al cargar repartidores: $e');
+    }
   }
 
   Future<void> _cargarEnvios() async {
@@ -83,6 +107,15 @@ class _EnviosScreenState extends State<EnviosScreen> {
   Future<void> _actualizarEstadoEnvio(EnvioModel envio, String nuevoEstado) async {
     if (envio.id == null) return;
 
+    // Si el nuevo estado es "en_camino" y no hay repartidor asignado, pedir asignar uno primero
+    if (nuevoEstado == 'en_camino' && (envio.conductorRepartidor == null || envio.conductorRepartidor!.isEmpty)) {
+      final repartidorAsignado = await _mostrarDialogoAsignarRepartidor(envio);
+      if (repartidorAsignado == null) {
+        // El usuario canceló, no actualizar estado
+        return;
+      }
+    }
+
     try {
       final usuarioId = await SharedPrefsHelper.getUserId();
       
@@ -111,6 +144,113 @@ class _EnviosScreenState extends State<EnviosScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(data['message'] ?? 'Error al actualizar estado'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<String?> _mostrarDialogoAsignarRepartidor(EnvioModel envio) async {
+    if (_repartidores.isEmpty) {
+      await _cargarRepartidores();
+    }
+
+    if (_repartidores.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No hay repartidores disponibles'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return null;
+    }
+
+    return await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Asignar Repartidor - ${envio.numeroSeguimiento ?? "Envío #${envio.id}"}'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _repartidores.length,
+            itemBuilder: (context, index) {
+              final repartidor = _repartidores[index];
+              final nombreCompleto = '${repartidor.nombre} ${repartidor.apellido}';
+              final isAsignado = envio.conductorRepartidor == nombreCompleto;
+              
+              return ListTile(
+                leading: CircleAvatar(
+                  child: Text(
+                    repartidor.nombre[0].toUpperCase(),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                title: Text(nombreCompleto),
+                subtitle: Text(repartidor.email),
+                trailing: isAsignado
+                    ? const Icon(Icons.check_circle, color: Colors.green)
+                    : null,
+                selected: isAsignado,
+                onTap: () {
+                  Navigator.of(context).pop(nombreCompleto);
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _asignarRepartidor(EnvioModel envio, String nombreRepartidor) async {
+    if (envio.id == null) return;
+
+    try {
+      final response = await _apiService.actualizarEnvio(
+        envio.id!,
+        {
+          'conductor_repartidor': nombreRepartidor,
+        },
+      );
+
+      if (response.response.statusCode == 200) {
+        final data = response.data;
+        if (data['code'] == 1) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Repartidor asignado: $nombreRepartidor'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+          _cargarEnvios();
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(data['message'] ?? 'Error al asignar repartidor'),
                 backgroundColor: Colors.red,
               ),
             );
@@ -475,11 +615,25 @@ class _EnviosScreenState extends State<EnviosScreen> {
                                       Text('Cliente: ${envio.clienteNombre ?? "N/A"}'),
                                       Text('Destinatario: ${envio.nombreDestinatario}'),
                                       Text('Dirección: ${envio.direccionEntrega}'),
+                                      if (envio.conductorRepartidor != null && envio.conductorRepartidor!.isNotEmpty)
+                                        Row(
+                                          children: [
+                                            Icon(Icons.person, size: 16, color: Colors.green.shade700),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Repartidor: ${envio.conductorRepartidor}',
+                                              style: TextStyle(
+                                                color: Colors.green.shade700,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       if (envio.fechaEstimadaEntrega != null)
                                         Text('Fecha Estimada: ${envio.fechaEstimadaEntrega!.day}/${envio.fechaEstimadaEntrega!.month}/${envio.fechaEstimadaEntrega!.year}'),
                                     ],
                                   ),
-                                  trailing: PopupMenuButton(
+                                    trailing: PopupMenuButton(
                                     icon: const Icon(Icons.more_vert),
                                     itemBuilder: (context) => [
                                       const PopupMenuItem(
@@ -503,6 +657,18 @@ class _EnviosScreenState extends State<EnviosScreen> {
                                             ],
                                           ),
                                         ),
+                                      if ((envio.estado == 'pendiente' || envio.estado == 'preparando') && 
+                                          (envio.conductorRepartidor == null || envio.conductorRepartidor!.isEmpty))
+                                        const PopupMenuItem(
+                                          value: 'asignar',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.person_add, size: 20),
+                                              SizedBox(width: 8),
+                                              Text('Asignar Repartidor'),
+                                            ],
+                                          ),
+                                        ),
                                       const PopupMenuItem(
                                         value: 'actualizar',
                                         child: Row(
@@ -514,7 +680,7 @@ class _EnviosScreenState extends State<EnviosScreen> {
                                         ),
                                       ),
                                     ],
-                                    onSelected: (value) {
+                                    onSelected: (value) async {
                                       if (value == 'ver') {
                                         _verDetalleEnvio(envio);
                                       } else if (value == 'mapa') {
@@ -524,6 +690,11 @@ class _EnviosScreenState extends State<EnviosScreen> {
                                             builder: (context) => SeguimientoEnvioScreen(envio: envio),
                                           ),
                                         );
+                                      } else if (value == 'asignar') {
+                                        final repartidor = await _mostrarDialogoAsignarRepartidor(envio);
+                                        if (repartidor != null) {
+                                          await _asignarRepartidor(envio, repartidor);
+                                        }
                                       } else if (value == 'actualizar') {
                                         _mostrarOpcionesEstado(envio);
                                       }
@@ -539,39 +710,65 @@ class _EnviosScreenState extends State<EnviosScreen> {
                                 if (envio.estado != 'entregado' && envio.estado != 'cancelado')
                                   Padding(
                                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                    child: Row(
+                                    child: Column(
                                       children: [
-                                        if (envio.estado == 'en_camino' || envio.estado == 'preparando')
-                                          Expanded(
-                                            child: ElevatedButton.icon(
-                                              onPressed: () {
-                                                Navigator.push(
-                                                  context,
-                                                  MaterialPageRoute(
-                                                    builder: (context) => SeguimientoEnvioScreen(envio: envio),
-                                                  ),
-                                                );
-                                              },
-                                              icon: const Icon(Icons.map),
-                                              label: const Text('Ver en Mapa'),
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: Colors.green.shade700,
-                                                foregroundColor: Colors.white,
+                                        if ((envio.estado == 'pendiente' || envio.estado == 'preparando') && 
+                                            (envio.conductorRepartidor == null || envio.conductorRepartidor!.isEmpty))
+                                          Padding(
+                                            padding: const EdgeInsets.only(bottom: 8),
+                                            child: SizedBox(
+                                              width: double.infinity,
+                                              child: ElevatedButton.icon(
+                                                onPressed: () async {
+                                                  final repartidor = await _mostrarDialogoAsignarRepartidor(envio);
+                                                  if (repartidor != null) {
+                                                    await _asignarRepartidor(envio, repartidor);
+                                                  }
+                                                },
+                                                icon: const Icon(Icons.person_add),
+                                                label: const Text('Asignar Repartidor'),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.blue.shade700,
+                                                  foregroundColor: Colors.white,
+                                                ),
                                               ),
                                             ),
                                           ),
-                                        if (envio.estado == 'en_camino' || envio.estado == 'preparando')
-                                          const SizedBox(width: 8),
-                                        Expanded(
-                                          child: ElevatedButton.icon(
-                                            onPressed: () => _mostrarOpcionesEstado(envio),
-                                            icon: const Icon(Icons.arrow_forward),
-                                            label: Text('Avanzar a ${_obtenerEstadosSiguientes(envio.estado).isNotEmpty ? _getEstadoTexto(_obtenerEstadosSiguientes(envio.estado)[0]) : "Siguiente"}'),
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: _getEstadoColor(envio.estado),
-                                              foregroundColor: Colors.white,
+                                        Row(
+                                          children: [
+                                            if (envio.estado == 'en_camino' || envio.estado == 'preparando')
+                                              Expanded(
+                                                child: ElevatedButton.icon(
+                                                  onPressed: () {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (context) => SeguimientoEnvioScreen(envio: envio),
+                                                      ),
+                                                    );
+                                                  },
+                                                  icon: const Icon(Icons.map),
+                                                  label: const Text('Ver en Mapa'),
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: Colors.green.shade700,
+                                                    foregroundColor: Colors.white,
+                                                  ),
+                                                ),
+                                              ),
+                                            if (envio.estado == 'en_camino' || envio.estado == 'preparando')
+                                              const SizedBox(width: 8),
+                                            Expanded(
+                                              child: ElevatedButton.icon(
+                                                onPressed: () => _mostrarOpcionesEstado(envio),
+                                                icon: const Icon(Icons.arrow_forward),
+                                                label: Text('Avanzar a ${_obtenerEstadosSiguientes(envio.estado).isNotEmpty ? _getEstadoTexto(_obtenerEstadosSiguientes(envio.estado)[0]) : "Siguiente"}'),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: _getEstadoColor(envio.estado),
+                                                  foregroundColor: Colors.white,
+                                                ),
+                                              ),
                                             ),
-                                          ),
+                                          ],
                                         ),
                                       ],
                                     ),

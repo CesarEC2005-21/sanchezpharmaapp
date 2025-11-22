@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import 'tienda_screen.dart';
+import 'seleccionar_ubicacion_screen.dart';
 
 class PagoScreen extends StatefulWidget {
   final List<Map<String, dynamic>> carrito;
@@ -29,6 +31,10 @@ class _PagoScreenState extends State<PagoScreen> {
   final TextEditingController _telefonoController = TextEditingController();
   final TextEditingController _nombreDestinatarioController = TextEditingController();
   final TextEditingController _referenciaController = TextEditingController();
+  
+  // Coordenadas de la ubicación seleccionada
+  double? _latitudDestino;
+  double? _longitudDestino;
   
   String _tipoEntrega = 'recojo_tienda'; // 'recojo_tienda' o 'envio_domicilio'
   int? _metodoPagoId;
@@ -92,6 +98,17 @@ class _PagoScreenState extends State<PagoScreen> {
       return;
     }
 
+    // Validar que el cliente_id esté disponible
+    if (_clienteId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Error: No se pudo identificar al cliente. Por favor, inicie sesión nuevamente.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     if (_metodoPagoId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -107,12 +124,16 @@ class _PagoScreenState extends State<PagoScreen> {
     });
 
     try {
+      // Obtener el userId
+      // Nota: Para clientes, el userId puede ser el clienteId, pero el backend necesita
+      // un usuario_id válido de la tabla usuarios. Si el backend no acepta NULL,
+      // necesitarás crear un usuario "sistema" o modificar el backend.
       // Preparar datos de la venta
+      // El backend espera 'productos' (array con producto_id y cantidad) no 'detalle'
+      // El backend obtendrá el usuario_id del token JWT automáticamente
       final productos = widget.carrito.map((item) => {
         'producto_id': item['id'],
         'cantidad': item['cantidad'],
-        'precio_unitario': item['precio'],
-        'subtotal': (item['precio'] as num).toDouble() * (item['cantidad'] as int),
       }).toList();
 
       final datosVenta = {
@@ -121,8 +142,7 @@ class _PagoScreenState extends State<PagoScreen> {
         'metodo_pago_id': _metodoPagoId,
         'subtotal': _subtotal,
         'descuento': 0.0,
-        'total': _total,
-        'detalle': productos,
+        'productos': productos, // El backend espera 'productos' no 'detalle'
       };
 
       // Si es envío a domicilio, agregar datos de envío
@@ -132,6 +152,12 @@ class _PagoScreenState extends State<PagoScreen> {
         datosVenta['nombre_destinatario'] = _nombreDestinatarioController.text;
         datosVenta['referencia_direccion'] = _referenciaController.text;
         datosVenta['costo_envio'] = _costoEnvio;
+        
+        // Agregar coordenadas si están disponibles
+        if (_latitudDestino != null && _longitudDestino != null) {
+          datosVenta['latitud_destino'] = _latitudDestino;
+          datosVenta['longitud_destino'] = _longitudDestino;
+        }
       }
 
       final response = await _apiService.registrarVenta(datosVenta);
@@ -139,6 +165,10 @@ class _PagoScreenState extends State<PagoScreen> {
       if (response.response.statusCode == 200) {
         final data = response.data;
         if (data['code'] == 1) {
+          // Limpiar el carrito después de una compra exitosa
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.remove('carrito_cliente');
+          
           if (mounted) {
             showDialog(
               context: context,
@@ -316,6 +346,7 @@ class _PagoScreenState extends State<PagoScreen> {
                   decoration: const InputDecoration(
                     labelText: 'Dirección',
                     border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.location_on),
                   ),
                   validator: (value) {
                     if (_tipoEntrega == 'envio_domicilio' && (value == null || value.isEmpty)) {
@@ -324,6 +355,65 @@ class _PagoScreenState extends State<PagoScreen> {
                     return null;
                   },
                 ),
+                const SizedBox(height: 8),
+                // Botón para marcar ubicación en el mapa
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final resultado = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => SeleccionarUbicacionScreen(
+                            direccionInicial: _direccionController.text,
+                            latitudInicial: _latitudDestino,
+                            longitudInicial: _longitudDestino,
+                          ),
+                        ),
+                      );
+                      
+                      if (resultado != null) {
+                        setState(() {
+                          _latitudDestino = resultado['latitud'] as double;
+                          _longitudDestino = resultado['longitud'] as double;
+                          _direccionController.text = resultado['direccion'] as String;
+                        });
+                        
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Ubicación seleccionada correctamente'),
+                            backgroundColor: Colors.green,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.map),
+                    label: const Text('Marcar Ubicación en el Mapa'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: BorderSide(color: Colors.green.shade700),
+                    ),
+                  ),
+                ),
+                if (_latitudDestino != null && _longitudDestino != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.green.shade700, size: 16),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Ubicación marcada: ${_latitudDestino!.toStringAsFixed(6)}, ${_longitudDestino!.toStringAsFixed(6)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.green.shade700,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _telefonoController,

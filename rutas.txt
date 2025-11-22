@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, g
 import pymysql.cursors
 from flask_jwt import JWT, jwt_required
 from flask_cors import CORS
@@ -1388,7 +1388,7 @@ def registrar_venta_sanchezpharma():
     try:
         data = request.json
 
-        campos_requeridos = ["usuario_id", "tipo_venta", "metodo_pago_id", "productos"]
+        campos_requeridos = ["tipo_venta", "metodo_pago_id", "productos"]
         if not all(data.get(c) for c in campos_requeridos):
             return jsonify({"code": 0, "message": "Faltan campos requeridos"})
 
@@ -1396,9 +1396,40 @@ def registrar_venta_sanchezpharma():
         if not isinstance(productos, list) or len(productos) == 0:
             return jsonify({"code": 0, "message": "Debe incluir al menos un producto"})
 
+        # Obtener usuario_id del token JWT
+        # Flask-JWT almacena el usuario actual en g.current_identity después de @jwt_required()
+        current_user = getattr(g, 'current_identity', None)
+        usuario_id_del_token = current_user.id if current_user else None
+        
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
+                # Determinar usuario_id: si el usuario del token es un cliente, buscar un usuario sistema
+                usuario_id_final = None
+                
+                # Verificar si el usuario_id del token existe en la tabla usuarios
+                if usuario_id_del_token:
+                    cursor.execute("SELECT id FROM usuarios WHERE id = %s", (usuario_id_del_token,))
+                    usuario_existe = cursor.fetchone()
+                    if usuario_existe:
+                        usuario_id_final = usuario_id_del_token
+                
+                # Si no existe en usuarios (es un cliente), buscar un usuario sistema
+                if not usuario_id_final:
+                    # Buscar un usuario con rol de sistema o administrador (rol_id = 1 generalmente es admin)
+                    cursor.execute("SELECT id FROM usuarios WHERE rol_id = 1 OR username = 'sistema' OR username = 'admin' LIMIT 1")
+                    usuario_sistema = cursor.fetchone()
+                    if usuario_sistema:
+                        usuario_id_final = usuario_sistema["id"]
+                    else:
+                        # Si no hay usuario sistema, usar el primer usuario disponible
+                        cursor.execute("SELECT id FROM usuarios ORDER BY id ASC LIMIT 1")
+                        primer_usuario = cursor.fetchone()
+                        if primer_usuario:
+                            usuario_id_final = primer_usuario["id"]
+                        else:
+                            return jsonify({"code": 0, "message": "No hay usuarios en el sistema. Contacte al administrador."})
+                
                 # Calcular totales
                 subtotal = 0
                 for producto in productos:
@@ -1427,7 +1458,7 @@ def registrar_venta_sanchezpharma():
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     data.get("cliente_id"),
-                    data.get("usuario_id"),
+                    usuario_id_final,
                     data.get("tipo_venta"),
                     data.get("metodo_pago_id"),
                     subtotal,

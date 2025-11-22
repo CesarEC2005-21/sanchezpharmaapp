@@ -44,6 +44,7 @@ class ApiConstants {
   static const String clientes = '/clientes_sanchezpharma';
   static const String registrarCliente = '/registrar_cliente_sanchezpharma';
   static const String editarCliente = '/editar_cliente_sanchezpharma';
+  static const String cambiarPasswordCliente = '/cambiar_password_cliente_sanchezpharma';
   
   // Endpoints - Ventas - Métodos de Pago
   static const String metodosPago = '/metodos_pago_sanchezpharma';

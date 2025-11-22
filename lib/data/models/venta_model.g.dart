@@ -10,7 +10,7 @@ VentaModel _$VentaModelFromJson(Map<String, dynamic> json) => VentaModel(
   id: (json['id'] as num?)?.toInt(),
   numeroVenta: json['numero_venta'] as String?,
   clienteId: (json['cliente_id'] as num?)?.toInt(),
-  usuarioId: (json['usuario_id'] as num).toInt(),
+  usuarioId: VentaModel._usuarioIdFromJson(json['usuario_id']),
   tipoVenta: json['tipo_venta'] as String,
   metodoPagoId: (json['metodo_pago_id'] as num?)?.toInt(),
   subtotal: VentaModel._precioFromJson(json['subtotal']),
