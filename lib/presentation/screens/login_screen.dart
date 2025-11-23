@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../data/models/login_request.dart';
@@ -7,6 +8,7 @@ import '../../core/utils/shared_prefs_helper.dart';
 import 'dashboard_screen.dart';
 import 'tienda_screen.dart';
 import 'registro_cliente_screen.dart';
+import 'completar_datos_google_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -21,6 +23,12 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+  // Para web, necesitas configurar el Client ID en web/index.html
+  // O puedes pasarlo aquí directamente (reemplaza con tu Client ID)
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: ['email', 'profile'],
+    // clientId: 'TU_CLIENT_ID_AQUI.apps.googleusercontent.com', // Descomenta y agrega tu Client ID si prefieres
+  );
 
   @override
   void dispose() {
@@ -104,6 +112,109 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (mounted) {
         _showErrorDialog('Error al conectar con el servidor: ${e.toString()}');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Iniciar sesión con Google
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      
+      if (googleUser == null) {
+        // El usuario canceló el login
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Obtener información del usuario
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      
+      // Obtener el token de acceso (este es el token de OAuth, diferente al de Google Maps)
+      final String? accessToken = googleAuth.accessToken;
+      final String? idToken = googleAuth.idToken;
+
+      if (accessToken == null) {
+        throw Exception('No se pudo obtener el token de Google');
+      }
+
+      // Enviar datos al backend para login/registro
+      final dio = DioClient.createDio();
+      final apiService = ApiService(dio);
+
+      final datosGoogle = {
+        'email': googleUser.email,
+        'nombre': googleUser.displayName ?? '',
+        'google_id': googleUser.id,
+        'foto_url': googleUser.photoUrl,
+        'access_token': accessToken,
+        'id_token': idToken,
+      };
+
+      final response = await apiService.loginGoogle(datosGoogle);
+
+      if (response.response.statusCode == 200) {
+        final data = response.data;
+        
+        if (data['code'] == 1) {
+          // Si necesita completar datos
+          if (data['necesita_completar_datos'] == true) {
+            if (mounted) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => CompletarDatosGoogleScreen(
+                    email: googleUser.email,
+                    nombre: googleUser.displayName ?? 'Usuario',
+                    fotoUrl: googleUser.photoUrl,
+                    googleId: googleUser.id,
+                  ),
+                ),
+              );
+            }
+          } else {
+            // Login exitoso, guardar datos y redirigir
+            await SharedPrefsHelper.saveAuthData(
+              token: data['token'],
+              userId: data['cliente_id'],
+              username: googleUser.email,
+              userType: 'cliente',
+              clienteId: data['cliente_id'],
+            );
+
+            if (mounted) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (context) => const TiendaScreen(),
+                ),
+              );
+            }
+          }
+        } else {
+          if (mounted) {
+            _showErrorDialog(data['message'] ?? 'Error al iniciar sesión con Google');
+          }
+        }
+      } else {
+        if (mounted) {
+          _showErrorDialog('Error de conexión con el servidor');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorDialog('Error al iniciar sesión con Google: ${e.toString()}');
       }
     } finally {
       if (mounted) {
@@ -285,6 +396,51 @@ class _LoginScreenState extends State<LoginScreen> {
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            
+                            // Divider con "O"
+                            Row(
+                              children: [
+                                Expanded(child: Divider(color: Colors.white70)),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  child: Text(
+                                    'O',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(child: Divider(color: Colors.white70)),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                            
+                            // Botón de Google Sign In
+                            SizedBox(
+                              width: double.infinity,
+                              height: 50,
+                              child: OutlinedButton.icon(
+                                onPressed: _isLoading ? null : _handleGoogleSignIn,
+                                icon: const Icon(Icons.g_mobiledata, size: 24),
+                                label: const Text(
+                                  'Continuar con Google',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: Colors.black87,
+                                  side: BorderSide(color: Colors.white70),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
                               ),
                             ),
                             const SizedBox(height: 16),

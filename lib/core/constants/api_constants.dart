@@ -44,6 +44,8 @@ class ApiConstants {
   static const String clientes = '/clientes_sanchezpharma';
   static const String registrarCliente = '/registrar_cliente_sanchezpharma';
   static const String registrarClientePublico = '/registrar_cliente_publico_sanchezpharma';
+  static const String loginGoogle = '/login_google_sanchezpharma';
+  static const String registrarClienteGoogle = '/registrar_cliente_google_sanchezpharma';
   static const String editarCliente = '/editar_cliente_sanchezpharma';
   static const String cambiarPasswordCliente = '/cambiar_password_cliente_sanchezpharma';
   

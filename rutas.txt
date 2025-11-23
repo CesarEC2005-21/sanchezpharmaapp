@@ -177,7 +177,8 @@ def verificar_token_blacklist():
     if request.method == "OPTIONS":
         return
     
-    endpoints_libres = ("api_login", "hello", "probar_conexion_sanchezpharma", "registrar_cliente_publico_sanchezpharma")
+    endpoints_libres = ("api_login", "hello", "probar_conexion_sanchezpharma", "registrar_cliente_publico_sanchezpharma", 
+                        "login_google_sanchezpharma", "registrar_cliente_google_sanchezpharma")
     if request.endpoint in endpoints_libres:
         return
 
@@ -414,6 +415,27 @@ def registrar_usuario_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
+                # Verificar si el username ya existe
+                cursor.execute("SELECT id FROM usuarios WHERE username = %s", (data.get("username"),))
+                usuario_con_username = cursor.fetchone()
+                
+                if usuario_con_username:
+                    return jsonify({"code": 0, "message": "El nombre de usuario ya está en uso. Por favor, elija otro."})
+                
+                # Verificar si el email ya existe en usuarios
+                cursor.execute("SELECT id FROM usuarios WHERE email = %s", (data.get("email"),))
+                usuario_con_email = cursor.fetchone()
+                
+                if usuario_con_email:
+                    return jsonify({"code": 0, "message": "El correo electrónico ya está en uso. Por favor, use otro correo."})
+                
+                # Verificar si el email existe en clientes (no debe haber duplicados entre clientes y usuarios)
+                cursor.execute("SELECT id FROM clientes WHERE email = %s", (data.get("email"),))
+                cliente_con_email = cursor.fetchone()
+                
+                if cliente_con_email:
+                    return jsonify({"code": 0, "message": "El correo electrónico ya está en uso. Por favor, use otro correo."})
+                
                 cursor.execute("""
                     INSERT INTO usuarios 
                     (username, email, password, nombre, apellido, edad, sexo, rol_id)
@@ -1197,15 +1219,26 @@ def registrar_cliente_publico_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                # Verificar si el email o documento ya existen
-                cursor.execute("""
-                    SELECT id FROM clientes 
-                    WHERE email = %s OR documento = %s
-                """, (data.get("email"), data.get("documento")))
-                cliente_existente = cursor.fetchone()
+                # Verificar si el email ya existe en clientes
+                cursor.execute("SELECT id FROM clientes WHERE email = %s", (data.get("email"),))
+                cliente_con_email = cursor.fetchone()
                 
-                if cliente_existente:
-                    return jsonify({"code": 0, "message": "Ya existe un cliente con este email o documento"})
+                if cliente_con_email:
+                    return jsonify({"code": 0, "message": "El correo electrónico ya está en uso. Por favor, use otro correo."})
+                
+                # Verificar si el documento ya existe en clientes
+                cursor.execute("SELECT id FROM clientes WHERE documento = %s", (data.get("documento"),))
+                cliente_con_documento = cursor.fetchone()
+                
+                if cliente_con_documento:
+                    return jsonify({"code": 0, "message": "El número de documento ya está registrado. Por favor, verifique su documento."})
+                
+                # Verificar si el email existe en usuarios (no debe haber duplicados entre clientes y usuarios)
+                cursor.execute("SELECT id FROM usuarios WHERE email = %s", (data.get("email"),))
+                usuario_con_email = cursor.fetchone()
+                
+                if usuario_con_email:
+                    return jsonify({"code": 0, "message": "El correo electrónico ya está en uso. Por favor, use otro correo."})
 
                 # Verificar si el campo password existe
                 cursor.execute("SHOW COLUMNS FROM clientes LIKE 'password'")
@@ -1244,6 +1277,204 @@ def registrar_cliente_publico_sanchezpharma():
     except Exception as e:
         logging.error(f"Error al registrar cliente: {repr(e)}")
         return jsonify({"code": 0, "message": f"Error al registrar cliente: {str(e)}"})
+
+
+# LOGIN/REGISTRO CON GOOGLE
+@app.route('/login_google_sanchezpharma', methods=['POST'])
+def login_google_sanchezpharma():
+    try:
+        data = request.json
+        
+        email = data.get("email")
+        google_id = data.get("google_id")
+        nombre = data.get("nombre", "")
+        foto_url = data.get("foto_url")
+        
+        if not email or not google_id:
+            return jsonify({"code": 0, "message": "Email y google_id son requeridos"})
+        
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Verificar si existe la columna google_id, si no, crearla
+                try:
+                    cursor.execute("SHOW COLUMNS FROM clientes LIKE 'google_id'")
+                    columna_existe = cursor.fetchone()
+                    
+                    if not columna_existe:
+                        cursor.execute("""
+                            ALTER TABLE clientes 
+                            ADD COLUMN google_id VARCHAR(255) NULL,
+                            ADD COLUMN foto_url VARCHAR(500) NULL
+                        """)
+                        conn.commit()
+                except Exception as e:
+                    logging.warning(f"Error al verificar/crear columnas de Google: {e}")
+                
+                # Buscar cliente por email o google_id
+                cursor.execute("""
+                    SELECT id, nombre, apellido, documento, telefono, direccion, estado
+                    FROM clientes 
+                    WHERE email = %s OR google_id = %s
+                """, (email, google_id))
+                cliente = cursor.fetchone()
+                
+                if cliente:
+                    # Cliente existe, verificar si tiene datos completos
+                    necesita_completar = (
+                        cliente.get("documento") is None or 
+                        cliente.get("documento") == "" or
+                        cliente.get("telefono") is None or
+                        cliente.get("telefono") == ""
+                    )
+                    
+                    # Actualizar google_id si no lo tiene
+                    cursor.execute("SELECT google_id FROM clientes WHERE id = %s", (cliente["id"],))
+                    cliente_actual = cursor.fetchone()
+                    if not cliente_actual.get("google_id"):
+                        cursor.execute("""
+                            UPDATE clientes 
+                            SET google_id = %s, foto_url = %s
+                            WHERE id = %s
+                        """, (google_id, foto_url, cliente["id"]))
+                        conn.commit()
+                    
+                    if necesita_completar:
+                        # Necesita completar datos
+                        return jsonify({
+                            "code": 1,
+                            "necesita_completar_datos": True,
+                            "message": "Por favor, complete sus datos para continuar",
+                            "cliente_id": cliente["id"]
+                        })
+                    else:
+                        # Cliente completo, generar token JWT
+                        cliente_user = UserSanchezPharma(
+                            cliente["id"],
+                            email,
+                            ""  # No necesita password para Google
+                        )
+                        token = jwt.jwt_encode_callback(cliente_user)
+                        
+                        return jsonify({
+                            "code": 1,
+                            "necesita_completar_datos": False,
+                            "message": "Login exitoso",
+                            "token": token.decode('utf-8') if hasattr(token, 'decode') else token,
+                            "cliente_id": cliente["id"]
+                        })
+                else:
+                    # Cliente no existe, necesita registrarse
+                    return jsonify({
+                        "code": 1,
+                        "necesita_completar_datos": True,
+                        "message": "Por favor, complete sus datos para registrarse",
+                        "es_nuevo": True
+                    })
+                    
+    except Exception as e:
+        logging.error(f"Error en login Google: {repr(e)}")
+        return jsonify({"code": 0, "message": f"Error: {str(e)}"})
+
+
+# REGISTRAR/COMPLETAR CLIENTE CON GOOGLE
+@app.route('/registrar_cliente_google_sanchezpharma', methods=['POST'])
+def registrar_cliente_google_sanchezpharma():
+    try:
+        data = request.json
+        
+        campos_requeridos = ["email", "google_id", "nombre", "documento"]
+        if not all(data.get(c) for c in campos_requeridos):
+            return jsonify({"code": 0, "message": "Faltan campos requeridos: email, google_id, nombre, documento"})
+        
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Verificar si existe la columna google_id, si no, crearla
+                try:
+                    cursor.execute("SHOW COLUMNS FROM clientes LIKE 'google_id'")
+                    columna_existe = cursor.fetchone()
+                    
+                    if not columna_existe:
+                        cursor.execute("""
+                            ALTER TABLE clientes 
+                            ADD COLUMN google_id VARCHAR(255) NULL,
+                            ADD COLUMN foto_url VARCHAR(500) NULL
+                        """)
+                        conn.commit()
+                except Exception as e:
+                    logging.warning(f"Error al verificar/crear columnas de Google: {e}")
+                
+                # Verificar si el documento ya existe
+                cursor.execute("SELECT id FROM clientes WHERE documento = %s", (data.get("documento"),))
+                cliente_con_documento = cursor.fetchone()
+                
+                if cliente_con_documento:
+                    return jsonify({"code": 0, "message": "El número de documento ya está registrado. Por favor, verifique su documento."})
+                
+                # Verificar si el email ya existe en clientes
+                cursor.execute("SELECT id FROM clientes WHERE email = %s", (data.get("email"),))
+                cliente_existente = cursor.fetchone()
+                
+                if cliente_existente:
+                    # Actualizar cliente existente
+                    cursor.execute("""
+                        UPDATE clientes 
+                        SET nombre = %s, apellido = %s, documento = %s, tipo_documento = %s,
+                            telefono = %s, direccion = %s, google_id = %s, foto_url = %s
+                        WHERE email = %s
+                    """, (
+                        data.get("nombre"),
+                        data.get("apellido"),
+                        data.get("documento"),
+                        data.get("tipo_documento", "DNI"),
+                        data.get("telefono"),
+                        data.get("direccion"),
+                        data.get("google_id"),
+                        data.get("foto_url"),
+                        data.get("email")
+                    ))
+                    cliente_id = cliente_existente["id"]
+                else:
+                    # Crear nuevo cliente
+                    cursor.execute("""
+                        INSERT INTO clientes (nombre, apellido, documento, tipo_documento, 
+                                             telefono, email, direccion, google_id, foto_url, estado)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        data.get("nombre"),
+                        data.get("apellido"),
+                        data.get("documento"),
+                        data.get("tipo_documento", "DNI"),
+                        data.get("telefono"),
+                        data.get("email"),
+                        data.get("direccion"),
+                        data.get("google_id"),
+                        data.get("foto_url"),
+                        "activo"
+                    ))
+                    cliente_id = cursor.lastrowid
+                
+                # Generar token JWT
+                cliente_user = UserSanchezPharma(
+                    cliente_id,
+                    data.get("email"),
+                    ""
+                )
+                token = jwt.jwt_encode_callback(cliente_user)
+                
+            conn.commit()
+        
+        return jsonify({
+            "code": 1,
+            "message": "Registro completado exitosamente",
+            "token": token.decode('utf-8') if hasattr(token, 'decode') else token,
+            "cliente_id": cliente_id
+        })
+        
+    except Exception as e:
+        logging.error(f"Error al registrar cliente Google: {repr(e)}")
+        return jsonify({"code": 0, "message": f"Error: {str(e)}"})
 
 
 # REGISTRAR CLIENTE (PRIVADO - REQUIERE AUTENTICACIÓN)
