@@ -6,9 +6,10 @@ import '../../data/api/api_service.dart';
 import '../../data/models/login_request.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import 'dashboard_screen.dart';
-import 'tienda_screen.dart';
+import 'home_cliente_screen.dart';
 import 'registro_cliente_screen.dart';
 import 'completar_datos_google_screen.dart';
+import 'recuperar_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -23,11 +24,12 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
-  // Para web, necesitas configurar el Client ID en web/index.html
-  // O puedes pasarlo aquí directamente (reemplaza con tu Client ID)
+  // Para Android: normalmente NO es necesario pasar clientId aquí.
+  // Solo asegúrate de tener creado en Google Cloud un cliente OAuth 2.0 de tipo Android
+  // con el mismo package name y SHA-1 que tu app.
+  // Para Web: Configura el Client ID en web/index.html
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
-    // clientId: 'TU_CLIENT_ID_AQUI.apps.googleusercontent.com', // Descomenta y agrega tu Client ID si prefieres
   );
 
   @override
@@ -92,7 +94,7 @@ class _LoginScreenState extends State<LoginScreen> {
             // Navegar a la tienda para clientes
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
-                builder: (context) => const TiendaScreen(),
+                builder: (context) => const HomeClienteScreen(),
               ),
             );
           } else {
@@ -106,12 +108,23 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       } else {
         if (mounted) {
-          _showErrorDialog(response.message);
+          // Mensajes de error específicos
+          String errorMessage = _getErrorMessage(response.message);
+          _showErrorDialog(
+            errorMessage,
+            icon: Icons.error_outline,
+            iconColor: Colors.red,
+          );
         }
       }
     } catch (e) {
       if (mounted) {
-        _showErrorDialog('Error al conectar con el servidor: ${e.toString()}');
+        String errorMessage = _getNetworkErrorMessage(e.toString());
+        _showErrorDialog(
+          errorMessage,
+          icon: Icons.wifi_off,
+          iconColor: Colors.orange,
+        );
       }
     } finally {
       if (mounted) {
@@ -119,6 +132,49 @@ class _LoginScreenState extends State<LoginScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  // Método para obtener mensajes de error personalizados
+  String _getErrorMessage(String message) {
+    String lowerMessage = message.toLowerCase();
+    
+    if (lowerMessage.contains('credenciales incorrectas') || 
+        lowerMessage.contains('incorrecta') ||
+        lowerMessage.contains('incorrect')) {
+      return '❌ Usuario o contraseña incorrectos\n\nPor favor, verifica tus credenciales e intenta nuevamente.';
+    } else if (lowerMessage.contains('no existe') || 
+               lowerMessage.contains('not found') ||
+               lowerMessage.contains('no encontrado')) {
+      return '❌ Usuario no encontrado\n\nEl usuario ingresado no está registrado. ¿Deseas crear una cuenta?';
+    } else if (lowerMessage.contains('inactivo') || 
+               lowerMessage.contains('bloqueado') ||
+               lowerMessage.contains('deshabilitado')) {
+      return '⚠️ Cuenta inactiva\n\nTu cuenta está deshabilitada. Contacta con soporte para más información.';
+    } else if (lowerMessage.contains('requerido') || 
+               lowerMessage.contains('obligatorio')) {
+      return '⚠️ Campos incompletos\n\nPor favor, completa todos los campos requeridos.';
+    } else {
+      return '❌ Error al iniciar sesión\n\n$message';
+    }
+  }
+
+  // Método para obtener mensajes de error de red personalizados
+  String _getNetworkErrorMessage(String error) {
+    if (error.contains('SocketException') || 
+        error.contains('Failed host lookup')) {
+      return '🌐 Sin conexión a Internet\n\nNo se pudo conectar al servidor. Verifica tu conexión a Internet e intenta nuevamente.';
+    } else if (error.contains('TimeoutException') || 
+               error.contains('timeout')) {
+      return '⏱️ Tiempo de espera agotado\n\nLa conexión está tardando demasiado. Por favor, intenta nuevamente.';
+    } else if (error.contains('Connection refused')) {
+      return '🔌 Servidor no disponible\n\nNo se pudo conectar al servidor. Por favor, intenta más tarde.';
+    } else if (error.contains('401') || error.contains('Unauthorized')) {
+      return '🔒 No autorizado\n\nTus credenciales no son válidas. Por favor, verifica tu usuario y contraseña.';
+    } else if (error.contains('500')) {
+      return '⚙️ Error del servidor\n\nHubo un problema en el servidor. Por favor, intenta más tarde.';
+    } else {
+      return '❌ Error de conexión\n\nOcurrió un error al conectar con el servidor. Por favor, intenta nuevamente.\n\nDetalle: $error';
     }
   }
 
@@ -186,10 +242,15 @@ class _LoginScreenState extends State<LoginScreen> {
             }
           } else {
             // Login exitoso, guardar datos y redirigir
+            final displayName = (googleUser.displayName ?? '').trim();
+            final usernameToSave =
+                displayName.isNotEmpty ? displayName : googleUser.email;
+
             await SharedPrefsHelper.saveAuthData(
               token: data['token'],
               userId: data['cliente_id'],
-              username: googleUser.email,
+              // Guardar el nombre visible del cliente en lugar del correo
+              username: usernameToSave,
               userType: 'cliente',
               clienteId: data['cliente_id'],
             );
@@ -197,24 +258,37 @@ class _LoginScreenState extends State<LoginScreen> {
             if (mounted) {
               Navigator.of(context).pushReplacement(
                 MaterialPageRoute(
-                  builder: (context) => const TiendaScreen(),
+                  builder: (context) => const HomeClienteScreen(),
                 ),
               );
             }
           }
         } else {
           if (mounted) {
-            _showErrorDialog(data['message'] ?? 'Error al iniciar sesión con Google');
+            _showErrorDialog(
+              _getErrorMessage(data['message'] ?? 'Error al iniciar sesión con Google'),
+              icon: Icons.login,
+              iconColor: Colors.blue,
+            );
           }
         }
       } else {
         if (mounted) {
-          _showErrorDialog('Error de conexión con el servidor');
+          _showErrorDialog(
+            '🌐 Error de conexión\n\nNo se pudo conectar con el servidor. Verifica tu conexión a Internet.',
+            icon: Icons.wifi_off,
+            iconColor: Colors.orange,
+          );
         }
       }
     } catch (e) {
       if (mounted) {
-        _showErrorDialog('Error al iniciar sesión con Google: ${e.toString()}');
+        String errorMsg = _getGoogleErrorMessage(e.toString());
+        _showErrorDialog(
+          errorMsg,
+          icon: Icons.error_outline,
+          iconColor: Colors.red,
+        );
       }
     } finally {
       if (mounted) {
@@ -225,18 +299,69 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _showErrorDialog(String message) {
+  // Método para obtener mensajes de error específicos de Google Sign-In
+  String _getGoogleErrorMessage(String error) {
+    if (error.contains('PlatformException') && error.contains('sign_in_failed')) {
+      return '🔐 Error de autenticación con Google\n\nNo se pudo completar el inicio de sesión. Asegúrate de tener Google Sign-In configurado correctamente.';
+    } else if (error.contains('ApiException: 10')) {
+      return '⚙️ Error de configuración\n\nHay un problema con la configuración de Google Sign-In. Por favor, contacta con soporte.';
+    } else if (error.contains('No se pudo obtener el token')) {
+      return '🔑 Error al obtener token\n\nNo se pudo obtener el token de autenticación de Google. Por favor, intenta nuevamente.';
+    } else if (error.contains('SocketException')) {
+      return '🌐 Sin conexión a Internet\n\nNo se pudo conectar. Verifica tu conexión a Internet e intenta nuevamente.';
+    } else {
+      return '❌ Error con Google Sign-In\n\nOcurrió un error al iniciar sesión con Google.\n\nDetalle: $error';
+    }
+  }
+
+  void _showErrorDialog(
+    String message, {
+    IconData icon = Icons.error_outline,
+    Color iconColor = Colors.red,
+  }) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Error'),
-        content: Text(message),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(15),
+        ),
+        title: Row(
+          children: [
+            Icon(icon, color: iconColor, size: 28),
+            const SizedBox(width: 10),
+            const Text(
+              'Atención',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Text(
+            message,
+            style: const TextStyle(fontSize: 16, height: 1.5),
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+            style: TextButton.styleFrom(
+              backgroundColor: Colors.green.shade700,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Entendido',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
+        actionsPadding: const EdgeInsets.only(right: 16, bottom: 16),
       ),
     );
   }
@@ -369,7 +494,30 @@ class _LoginScreenState extends State<LoginScreen> {
                                 return null;
                               },
                             ),
-                            const SizedBox(height: 30),
+                            
+                            // Botón "Olvidé mi contraseña"
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => const RecuperarPasswordScreen(),
+                                    ),
+                                  );
+                                },
+                                child: const Text(
+                                  '¿Olvidaste tu contraseña?',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
 
                             // Botón de login
                             SizedBox(

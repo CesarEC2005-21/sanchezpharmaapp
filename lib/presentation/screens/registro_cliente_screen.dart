@@ -90,17 +90,31 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
           }
         } else {
           if (mounted) {
-            _showErrorDialog(data['message'] ?? 'Error al registrar');
+            String errorMsg = _getRegistroErrorMessage(data['message'] ?? 'Error al registrar');
+            _showErrorDialog(
+              errorMsg,
+              icon: Icons.error_outline,
+              iconColor: Colors.red,
+            );
           }
         }
       } else {
         if (mounted) {
-          _showErrorDialog('Error de conexión con el servidor');
+          _showErrorDialog(
+            '🌐 Error de conexión\n\nNo se pudo conectar con el servidor. Verifica tu conexión a Internet.',
+            icon: Icons.wifi_off,
+            iconColor: Colors.orange,
+          );
         }
       }
     } catch (e) {
       if (mounted) {
-        _showErrorDialog('Error: ${e.toString()}');
+        String errorMsg = _getNetworkErrorMessage(e.toString());
+        _showErrorDialog(
+          errorMsg,
+          icon: Icons.wifi_off,
+          iconColor: Colors.orange,
+        );
       }
     } finally {
       if (mounted) {
@@ -111,18 +125,90 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
     }
   }
 
-  void _showErrorDialog(String message) {
+  // Método para obtener mensajes de error personalizados de registro
+  String _getRegistroErrorMessage(String message) {
+    String lowerMessage = message.toLowerCase();
+    
+    if (lowerMessage.contains('correo') && 
+        (lowerMessage.contains('en uso') || lowerMessage.contains('registrado') || lowerMessage.contains('existe'))) {
+      return '📧 Correo ya registrado\n\nEste correo electrónico ya está en uso. Por favor, usa otro correo o intenta iniciar sesión.';
+    } else if (lowerMessage.contains('documento') && 
+               (lowerMessage.contains('en uso') || lowerMessage.contains('registrado') || lowerMessage.contains('existe'))) {
+      return '🆔 Documento ya registrado\n\nEste número de documento ya está registrado. Por favor, verifica el número ingresado.';
+    } else if (lowerMessage.contains('requerido') || lowerMessage.contains('obligatorio') || lowerMessage.contains('faltan')) {
+      return '⚠️ Campos incompletos\n\nPor favor, completa todos los campos requeridos marcados con (*).';
+    } else if (lowerMessage.contains('contraseña') && lowerMessage.contains('débil')) {
+      return '🔒 Contraseña muy débil\n\nLa contraseña debe tener al menos 6 caracteres. Por favor, elige una contraseña más segura.';
+    } else {
+      return '❌ Error al registrar\n\n$message';
+    }
+  }
+
+  // Método para obtener mensajes de error de red personalizados
+  String _getNetworkErrorMessage(String error) {
+    if (error.contains('SocketException') || 
+        error.contains('Failed host lookup')) {
+      return '🌐 Sin conexión a Internet\n\nNo se pudo conectar al servidor. Verifica tu conexión a Internet e intenta nuevamente.';
+    } else if (error.contains('TimeoutException') || 
+               error.contains('timeout')) {
+      return '⏱️ Tiempo de espera agotado\n\nLa conexión está tardando demasiado. Por favor, intenta nuevamente.';
+    } else if (error.contains('Connection refused')) {
+      return '🔌 Servidor no disponible\n\nNo se pudo conectar al servidor. Por favor, intenta más tarde.';
+    } else if (error.contains('500')) {
+      return '⚙️ Error del servidor\n\nHubo un problema en el servidor. Por favor, intenta más tarde.';
+    } else {
+      return '❌ Error de conexión\n\nOcurrió un error al conectar con el servidor.\n\nDetalle: $error';
+    }
+  }
+
+  void _showErrorDialog(
+    String message, {
+    IconData icon = Icons.error_outline,
+    Color iconColor = Colors.red,
+  }) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Error'),
-        content: Text(message),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(15),
+        ),
+        title: Row(
+          children: [
+            Icon(icon, color: iconColor, size: 28),
+            const SizedBox(width: 10),
+            const Text(
+              'Atención',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Text(
+            message,
+            style: const TextStyle(fontSize: 16, height: 1.5),
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+            style: TextButton.styleFrom(
+              backgroundColor: Colors.green.shade700,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Entendido',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
+        actionsPadding: const EdgeInsets.only(right: 16, bottom: 16),
       ),
     );
   }

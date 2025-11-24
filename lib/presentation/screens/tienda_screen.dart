@@ -6,12 +6,18 @@ import '../../data/api/api_service.dart';
 import '../../data/models/producto_model.dart';
 import '../../data/models/categoria_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
-import '../widgets/cliente_drawer.dart';
 import 'carrito_screen.dart';
 import 'login_screen.dart';
 
 class TiendaScreen extends StatefulWidget {
-  const TiendaScreen({super.key});
+  final bool showBottomNav;
+  final int? categoriaIdInicial;
+
+  const TiendaScreen({
+    super.key,
+    this.showBottomNav = true,
+    this.categoriaIdInicial,
+  });
 
   @override
   State<TiendaScreen> createState() => _TiendaScreenState();
@@ -282,14 +288,11 @@ class _TiendaScreenState extends State<TiendaScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      drawer: ClienteDrawer(
-        username: _username,
-        onLogout: _handleLogout,
-      ),
       appBar: AppBar(
-        title: const Text('Tienda Sánchez Pharma'),
+        title: const Text('Sánchez Pharma'),
         backgroundColor: Colors.green.shade700,
         foregroundColor: Colors.white,
+        automaticallyImplyLeading: false,
         actions: [
           Stack(
             children: [

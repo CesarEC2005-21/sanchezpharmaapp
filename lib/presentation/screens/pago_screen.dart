@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
-import 'tienda_screen.dart';
+import 'home_cliente_screen.dart';
 import 'seleccionar_ubicacion_screen.dart';
 
 class PagoScreen extends StatefulWidget {
@@ -182,7 +182,7 @@ class _PagoScreenState extends State<PagoScreen> {
                       Navigator.of(context).pop(); // Cerrar diálogo
                       Navigator.of(context).pushAndRemoveUntil(
                         MaterialPageRoute(
-                          builder: (context) => const TiendaScreen(),
+                          builder: (context) => const HomeClienteScreen(initialIndex: 0),
                         ),
                         (route) => false,
                       );

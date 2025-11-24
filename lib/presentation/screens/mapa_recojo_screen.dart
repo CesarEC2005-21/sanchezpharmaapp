@@ -234,6 +234,26 @@ class _MapaRecojoScreenState extends State<MapaRecojoScreen> {
     ) / 1000; // Convertir a kilómetros
   }
 
+  String _calculateEstimatedTime() {
+    if (_miUbicacion == null || _ubicacionLocal == null) return 'N/A';
+    
+    final distanciaKm = _calculateDistance();
+    // Velocidad promedio en ciudad: 30 km/h
+    const velocidadPromedio = 30.0;
+    final tiempoHoras = distanciaKm / velocidadPromedio;
+    final tiempoMinutos = (tiempoHoras * 60).round();
+    
+    if (tiempoMinutos < 1) {
+      return 'Menos de 1 min';
+    } else if (tiempoMinutos < 60) {
+      return '$tiempoMinutos min';
+    } else {
+      final horas = tiempoMinutos ~/ 60;
+      final minutos = tiempoMinutos % 60;
+      return '$horas h ${minutos} min';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -362,10 +382,25 @@ class _MapaRecojoScreenState extends State<MapaRecojoScreen> {
                                   const SizedBox(height: 8),
                                   Row(
                                     children: [
-                                      Icon(Icons.straighten, color: Colors.green.shade700),
+                                      Icon(Icons.straighten, color: Colors.green.shade700, size: 18),
                                       const SizedBox(width: 4),
                                       Text(
                                         'Distancia: ${_calculateDistance().toStringAsFixed(2)} km',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.green.shade700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.access_time, color: Colors.green.shade700, size: 18),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Tiempo estimado: ${_calculateEstimatedTime()}',
                                         style: TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w500,

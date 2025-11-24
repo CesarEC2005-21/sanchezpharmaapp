@@ -24,7 +24,15 @@ class DioClient {
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           // Excluir endpoints públicos que no requieren token
-          final publicEndpoints = ['/api_login'];
+          final publicEndpoints = [
+            '/api_login',
+            '/registrar_cliente_publico_sanchezpharma',
+            '/login_google_sanchezpharma',
+            '/registrar_cliente_google_sanchezpharma',
+            '/enviar_codigo_recuperacion_sanchezpharma',
+            '/verificar_codigo_recuperacion_sanchezpharma',
+            '/cambiar_password_recuperacion_sanchezpharma',
+          ];
           final isPublicEndpoint = publicEndpoints.any((endpoint) => 
             options.path.contains(endpoint) || options.uri.path.contains(endpoint)
           );
@@ -89,7 +97,15 @@ class DioClient {
           // Si el token es inválido (401), verificar antes de limpiar
           if (error.response?.statusCode == 401) {
             // Verificar si es un endpoint público (login, etc.)
-            final publicEndpoints = ['/api_login'];
+            final publicEndpoints = [
+              '/api_login',
+              '/registrar_cliente_publico_sanchezpharma',
+              '/login_google_sanchezpharma',
+              '/registrar_cliente_google_sanchezpharma',
+              '/enviar_codigo_recuperacion_sanchezpharma',
+              '/verificar_codigo_recuperacion_sanchezpharma',
+              '/cambiar_password_recuperacion_sanchezpharma',
+            ];
             final isPublicEndpoint = publicEndpoints.any((endpoint) => 
               error.requestOptions.path.contains(endpoint) || 
               error.requestOptions.uri.path.contains(endpoint)

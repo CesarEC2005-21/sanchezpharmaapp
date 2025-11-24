@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../screens/pedidos_cliente_screen.dart';
 import '../screens/configuracion_cliente_screen.dart';
-import '../screens/tienda_screen.dart';
+import '../screens/home_cliente_screen.dart';
 import '../screens/login_screen.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../data/api/dio_client.dart';
@@ -80,7 +80,7 @@ class ClienteDrawer extends StatelessWidget {
                       Navigator.pushReplacement(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const TiendaScreen(),
+                          builder: (context) => const HomeClienteScreen(),
                         ),
                       );
                     },

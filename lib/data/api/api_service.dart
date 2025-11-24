@@ -116,6 +116,16 @@ abstract class ApiService {
   @PUT(ApiConstants.editarCliente)
   Future<HttpResponse<dynamic>> editarCliente(@Body() Map<String, dynamic> cliente);
 
+  // ========== RECUPERACIÓN DE CONTRASEÑA ==========
+  @POST(ApiConstants.enviarCodigoRecuperacion)
+  Future<HttpResponse<dynamic>> enviarCodigoRecuperacion(@Body() Map<String, dynamic> datos);
+
+  @POST(ApiConstants.verificarCodigoRecuperacion)
+  Future<HttpResponse<dynamic>> verificarCodigoRecuperacion(@Body() Map<String, dynamic> datos);
+
+  @POST(ApiConstants.cambiarPasswordRecuperacion)
+  Future<HttpResponse<dynamic>> cambiarPasswordRecuperacion(@Body() Map<String, dynamic> datos);
+
   // ========== VENTAS - MÉTODOS DE PAGO ==========
   @GET(ApiConstants.metodosPago)
   Future<HttpResponse<dynamic>> getMetodosPago();

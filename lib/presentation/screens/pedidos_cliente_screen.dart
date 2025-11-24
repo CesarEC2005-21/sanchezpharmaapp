@@ -8,7 +8,6 @@ import '../../data/models/venta_model.dart';
 import 'seguimiento_envio_screen.dart';
 import 'mapa_recojo_screen.dart';
 import 'login_screen.dart';
-import '../widgets/cliente_drawer.dart';
 
 class PedidosClienteScreen extends StatefulWidget {
   const PedidosClienteScreen({super.key});
@@ -230,10 +229,7 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
         title: const Text('Mis Pedidos'),
         backgroundColor: Colors.green.shade700,
         foregroundColor: Colors.white,
-      ),
-      drawer: ClienteDrawer(
-        username: _username,
-        onLogout: _handleLogout,
+        automaticallyImplyLeading: false,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -292,26 +288,51 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
                               ? '${pedido.fechaVenta!.day}/${pedido.fechaVenta!.month}/${pedido.fechaVenta!.year}'
                               : 'N/A';
 
+                          // Determinar si puede ver seguimiento
+                          final estadoEnvio = envio.isNotEmpty ? (envio['estado'] as String?) ?? 'pendiente' : 'pendiente';
+                          final puedVerSeguimiento = estadoEnvio == 'en_camino' || estadoEnvio == 'entregado';
+                          
+                          // Para envíos a domicilio, mostrar el estado del envío, no de la venta
+                          final estadoMostrar = pedido.tipoVenta == 'envio_domicilio' && envio.isNotEmpty 
+                              ? estadoEnvio 
+                              : pedido.estado;
+                          
                           return Card(
                             margin: const EdgeInsets.only(bottom: 8),
                             elevation: 2,
                             child: InkWell(
                               onTap: () {
-                                // Si es envío a domicilio, mostrar seguimiento
+                                // Si es envío a domicilio
                                 if (pedido.tipoVenta == 'envio_domicilio' && envio.isNotEmpty) {
-                                  try {
-                                    final envioModel = EnvioModel.fromJson(envio);
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => SeguimientoEnvioScreen(envio: envioModel),
-                                      ),
-                                    );
-                                  } catch (e) {
+                                  // Solo mostrar seguimiento si está en camino o entregado
+                                  if (puedVerSeguimiento) {
+                                    try {
+                                      final envioModel = EnvioModel.fromJson(envio);
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => SeguimientoEnvioScreen(envio: envioModel),
+                                        ),
+                                      );
+                                    } catch (e) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Error al cargar seguimiento: $e'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  } else {
+                                    // Mostrar mensaje informativo
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text('Error al cargar seguimiento: $e'),
-                                        backgroundColor: Colors.red,
+                                        content: Text(
+                                          estadoEnvio == 'pendiente'
+                                              ? 'Tu pedido está siendo procesado'
+                                              : 'Tu pedido está siendo preparado',
+                                        ),
+                                        backgroundColor: Colors.blue,
+                                        duration: const Duration(seconds: 2),
                                       ),
                                     );
                                   }
@@ -359,35 +380,35 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
                                             ],
                                           ),
                                         ),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: _getEstadoColor(pedido.estado).withOpacity(0.2),
-                                            borderRadius: BorderRadius.circular(20),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                _getEstadoIcon(pedido.estado),
-                                                size: 16,
-                                                color: _getEstadoColor(pedido.estado),
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                _getEstadoTexto(pedido.estado),
-                                                style: TextStyle(
-                                                  color: _getEstadoColor(pedido.estado),
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _getEstadoColor(estadoMostrar).withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _getEstadoIcon(estadoMostrar),
+                                size: 16,
+                                color: _getEstadoColor(estadoMostrar),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                _getEstadoTexto(estadoMostrar),
+                                style: TextStyle(
+                                  color: _getEstadoColor(estadoMostrar),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                                       ],
                                     ),
                                     const SizedBox(height: 12),
@@ -413,24 +434,62 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
                                     ),
                                     if (pedido.tipoVenta == 'envio_domicilio' && envio.isNotEmpty) ...[
                                       const SizedBox(height: 8),
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            Icons.local_shipping,
-                                            size: 16,
-                                            color: Colors.green.shade700,
+                                      Divider(height: 1, color: Colors.grey.shade300),
+                                      const SizedBox(height: 8),
+                                      if (!puedVerSeguimiento)
+                                        Padding(
+                                          padding: const EdgeInsets.only(bottom: 8),
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.info_outline,
+                                                size: 16,
+                                                color: Colors.blue.shade600,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  estadoEnvio == 'pendiente'
+                                                      ? 'Estamos procesando tu pedido'
+                                                      : estadoEnvio == 'preparando'
+                                                          ? 'Estamos preparando tu pedido'
+                                                          : 'Tu pedido está siendo procesado',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey.shade700,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            'Ver seguimiento de envío',
-                                            style: TextStyle(
-                                              fontSize: 14,
+                                        ),
+                                      if (puedVerSeguimiento) ...[
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.map,
+                                              size: 16,
                                               color: Colors.green.shade700,
-                                              fontWeight: FontWeight.w500,
                                             ),
-                                          ),
-                                        ],
-                                      ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Toca para ver seguimiento en tiempo real',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: Colors.green.shade700,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Icon(
+                                              Icons.arrow_forward_ios,
+                                              size: 12,
+                                              color: Colors.green.shade700,
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                     ] else if (pedido.tipoVenta == 'recojo_tienda') ...[
                                       const SizedBox(height: 8),
                                       Row(

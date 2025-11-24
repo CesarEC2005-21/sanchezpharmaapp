@@ -4,7 +4,6 @@ import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/constants/api_constants.dart';
-import '../widgets/cliente_drawer.dart';
 import 'login_screen.dart';
 
 class ConfiguracionClienteScreen extends StatefulWidget {
@@ -180,10 +179,7 @@ class _ConfiguracionClienteScreenState extends State<ConfiguracionClienteScreen>
         title: const Text('Configuración'),
         backgroundColor: Colors.green.shade700,
         foregroundColor: Colors.white,
-      ),
-      drawer: ClienteDrawer(
-        username: _username,
-        onLogout: _handleLogout,
+        automaticallyImplyLeading: false,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),

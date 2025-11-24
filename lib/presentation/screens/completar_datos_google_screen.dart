@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
-import 'tienda_screen.dart';
+import 'home_cliente_screen.dart';
 
 class CompletarDatosGoogleScreen extends StatefulWidget {
   final String email;
@@ -24,6 +24,7 @@ class CompletarDatosGoogleScreen extends StatefulWidget {
 
 class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen> {
   final _formKey = GlobalKey<FormState>();
+  final TextEditingController _nombreController = TextEditingController();
   final _apellidoController = TextEditingController();
   final _documentoController = TextEditingController();
   final _telefonoController = TextEditingController();
@@ -33,7 +34,15 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
   String _tipoDocumento = 'DNI';
 
   @override
+  void initState() {
+    super.initState();
+    // Prefill nombre con el nombre que viene de Google, pero permitiendo editarlo
+    _nombreController.text = widget.nombre;
+  }
+
+  @override
   void dispose() {
+    _nombreController.dispose();
     _apellidoController.dispose();
     _documentoController.dispose();
     _telefonoController.dispose();
@@ -55,7 +64,7 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
       final apiService = ApiService(dio);
 
       final datosCliente = {
-        'nombre': widget.nombre,
+        'nombre': _nombreController.text.trim(),
         'apellido': _apellidoController.text.trim(),
         'documento': _documentoController.text.trim(),
         'tipo_documento': _tipoDocumento,
@@ -71,10 +80,14 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
         final data = response.data;
         if (data['code'] == 1) {
           // Guardar datos de autenticación
+          final nombreCompleto =
+              '${_nombreController.text.trim()} ${_apellidoController.text.trim()}'.trim();
+
           await SharedPrefsHelper.saveAuthData(
             token: data['token'],
             userId: data['cliente_id'],
-            username: widget.email,
+            // Mostrar el nombre completo en la app, no el correo
+            username: nombreCompleto.isNotEmpty ? nombreCompleto : widget.email,
             userType: 'cliente',
             clienteId: data['cliente_id'],
           );
@@ -90,23 +103,37 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
             
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
-                builder: (context) => const TiendaScreen(),
+                builder: (context) => const HomeClienteScreen(),
               ),
             );
           }
         } else {
           if (mounted) {
-            _showErrorDialog(data['message'] ?? 'Error al completar registro');
+            String errorMsg = _getRegistroErrorMessage(data['message'] ?? 'Error al completar registro');
+            _showErrorDialog(
+              errorMsg,
+              icon: Icons.error_outline,
+              iconColor: Colors.red,
+            );
           }
         }
       } else {
         if (mounted) {
-          _showErrorDialog('Error de conexión con el servidor');
+          _showErrorDialog(
+            '🌐 Error de conexión\n\nNo se pudo conectar con el servidor. Verifica tu conexión a Internet.',
+            icon: Icons.wifi_off,
+            iconColor: Colors.orange,
+          );
         }
       }
     } catch (e) {
       if (mounted) {
-        _showErrorDialog('Error: ${e.toString()}');
+        String errorMsg = _getNetworkErrorMessage(e.toString());
+        _showErrorDialog(
+          errorMsg,
+          icon: Icons.wifi_off,
+          iconColor: Colors.orange,
+        );
       }
     } finally {
       if (mounted) {
@@ -117,18 +144,83 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
     }
   }
 
-  void _showErrorDialog(String message) {
+  // Método para obtener mensajes de error personalizados
+  String _getRegistroErrorMessage(String message) {
+    String lowerMessage = message.toLowerCase();
+    
+    if (lowerMessage.contains('documento') && 
+        (lowerMessage.contains('en uso') || lowerMessage.contains('registrado') || lowerMessage.contains('existe'))) {
+      return '🆔 Documento ya registrado\n\nEste número de documento ya está registrado. Por favor, verifica el número ingresado.';
+    } else if (lowerMessage.contains('requerido') || lowerMessage.contains('obligatorio') || lowerMessage.contains('faltan')) {
+      return '⚠️ Campos incompletos\n\nPor favor, completa todos los campos requeridos marcados con (*).';
+    } else {
+      return '❌ Error al completar registro\n\n$message';
+    }
+  }
+
+  // Método para obtener mensajes de error de red personalizados
+  String _getNetworkErrorMessage(String error) {
+    if (error.contains('SocketException') || error.contains('Failed host lookup')) {
+      return '🌐 Sin conexión a Internet\n\nNo se pudo conectar al servidor. Verifica tu conexión a Internet e intenta nuevamente.';
+    } else if (error.contains('TimeoutException') || error.contains('timeout')) {
+      return '⏱️ Tiempo de espera agotado\n\nLa conexión está tardando demasiado. Por favor, intenta nuevamente.';
+    } else if (error.contains('Connection refused')) {
+      return '🔌 Servidor no disponible\n\nNo se pudo conectar al servidor. Por favor, intenta más tarde.';
+    } else if (error.contains('500')) {
+      return '⚙️ Error del servidor\n\nHubo un problema en el servidor. Por favor, intenta más tarde.';
+    } else {
+      return '❌ Error de conexión\n\nOcurrió un error al conectar con el servidor.\n\nDetalle: $error';
+    }
+  }
+
+  void _showErrorDialog(
+    String message, {
+    IconData icon = Icons.error_outline,
+    Color iconColor = Colors.red,
+  }) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Error'),
-        content: Text(message),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(15),
+        ),
+        title: Row(
+          children: [
+            Icon(icon, color: iconColor, size: 28),
+            const SizedBox(width: 10),
+            const Text(
+              'Atención',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Text(
+            message,
+            style: const TextStyle(fontSize: 16, height: 1.5),
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+            style: TextButton.styleFrom(
+              backgroundColor: Colors.green.shade700,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Entendido',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
+        actionsPadding: const EdgeInsets.only(right: 16, bottom: 16),
       ),
     );
   }
@@ -209,6 +301,17 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 30),
+                  
+                  // Nombre
+                  TextFormField(
+                    controller: _nombreController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre',
+                      prefixIcon: Icon(Icons.person),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   
                   // Apellido
                   TextFormField(

@@ -3,6 +3,18 @@ import pymysql.cursors
 from flask_jwt import JWT, jwt_required
 from flask_cors import CORS
 import logging
+from decimal import Decimal
+import random
+import string
+from datetime import datetime, timedelta
+
+# Importar Flask-Mail de forma opcional
+try:
+    from flask_mail import Mail, Message
+    MAIL_AVAILABLE = True
+except ImportError:
+    MAIL_AVAILABLE = False
+    logging.warning("Flask-Mail no está instalado. Las funciones de email no estarán disponibles.")
 
 # ---------------------------------------------------
 # CONFIGURACIÓN LOGS
@@ -113,6 +125,35 @@ app.config['SECRET_KEY'] = 'super-secret'
 app.config['JWT_AUTH_HEADER_PREFIX'] = 'Bearer'
 
 # ---------------------------------------------------
+# CONFIGURACIÓN FLASK-MAIL
+# ---------------------------------------------------
+if MAIL_AVAILABLE:
+    # Configuración para Gmail
+    app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+    app.config['MAIL_PORT'] = 587  # Usar 465 si tienes problemas con 587
+    app.config['MAIL_USE_TLS'] = True
+    app.config['MAIL_USE_SSL'] = False  # Cambiar a True si usas puerto 465
+    app.config['MAIL_USERNAME'] = 'uortiznelsonfab@uss.edu.pe'
+    app.config['MAIL_PASSWORD'] = 'plrb xaqp kgyr rykq'  # Debe ser contraseña de aplicación de Google
+    app.config['MAIL_DEFAULT_SENDER'] = 'uortiznelsonfab@uss.edu.pe'
+    app.config['MAIL_MAX_EMAILS'] = None
+    app.config['MAIL_ASCII_ATTACHMENTS'] = False
+    
+    # Configuración adicional para depuración
+    app.config['MAIL_DEBUG'] = True
+    app.config['MAIL_SUPPRESS_SEND'] = False
+    
+    try:
+        mail = Mail(app)
+        logging.info("Flask-Mail configurado correctamente")
+    except Exception as e:
+        mail = None
+        logging.error(f"Error al inicializar Flask-Mail: {repr(e)}")
+else:
+    mail = None
+    logging.warning("Flask-Mail no configurado porque no está disponible")
+
+# ---------------------------------------------------
 # CONFIGURACIÓN CORS
 # ---------------------------------------------------
 CORS(app, resources={
@@ -147,6 +188,133 @@ def crear_tabla_blacklist():
 crear_tabla_blacklist()
 
 
+# ---------------------------------------------------
+# TABLA CÓDIGOS DE RECUPERACIÓN (crear si no existe)
+# ---------------------------------------------------
+def crear_tabla_codigos_recuperacion():
+    conn = obtenerconexion_sanchezpharma()
+    try:
+        with conn:
+            with conn.cursor() as cursor:
+                # Verificar si la tabla existe
+                cursor.execute("""
+                    SELECT COUNT(*) as count 
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'nxlsxx$PAF' 
+                    AND table_name = 'codigos_recuperacion'
+                """)
+                tabla_existe = cursor.fetchone()['count'] > 0
+                
+                if not tabla_existe:
+                    # Crear tabla nueva SIN restricciones de clave foránea
+                    cursor.execute("""
+                        CREATE TABLE codigos_recuperacion (
+                            id_codigo INT AUTO_INCREMENT PRIMARY KEY,
+                            email VARCHAR(255) NOT NULL,
+                            codigo VARCHAR(6) NOT NULL,
+                            fecha_creacion DATETIME NOT NULL,
+                            fecha_expiracion DATETIME NOT NULL,
+                            usado BOOLEAN DEFAULT FALSE,
+                            fecha_uso DATETIME NULL,
+                            INDEX idx_email (email),
+                            INDEX idx_codigo (codigo)
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """)
+                    logging.info("Tabla codigos_recuperacion creada correctamente")
+                else:
+                    # La tabla existe - verificar si tiene la restricción incorrecta
+                    try:
+                        cursor.execute("""
+                            SELECT CONSTRAINT_NAME
+                            FROM information_schema.KEY_COLUMN_USAGE
+                            WHERE TABLE_SCHEMA = 'nxlsxx$PAF'
+                            AND TABLE_NAME = 'codigos_recuperacion'
+                            AND REFERENCED_TABLE_NAME = 'usuarios'
+                        """)
+                        restriccion = cursor.fetchone()
+                        
+                        if restriccion:
+                            # Eliminar la restricción incorrecta
+                            constraint_name = restriccion['CONSTRAINT_NAME']
+                            cursor.execute(f"""
+                                ALTER TABLE codigos_recuperacion 
+                                DROP FOREIGN KEY {constraint_name}
+                            """)
+                            logging.info(f"Restricción incorrecta {constraint_name} eliminada")
+                    except Exception as e:
+                        logging.warning(f"No se pudo verificar/eliminar restricción: {e}")
+            
+            conn.commit()
+            logging.info("Tabla codigos_recuperacion lista")
+    except Exception as e:
+        logging.error(f"Error al crear/verificar tabla codigos_recuperacion: {repr(e)}")
+
+crear_tabla_codigos_recuperacion()
+
+
+# ---------------------------------------------------
+# VERIFICAR Y AGREGAR COLUMNAS PARA SEGUIMIENTO EN TIEMPO REAL
+# ---------------------------------------------------
+def verificar_columnas_seguimiento_envios():
+    """
+    Verifica y agrega las columnas necesarias para el seguimiento en tiempo real
+    de los repartidores en la tabla envios.
+    """
+    conn = obtenerconexion_sanchezpharma()
+    try:
+        with conn:
+            with conn.cursor() as cursor:
+                # Verificar si existen las columnas de coordenadas del repartidor
+                cursor.execute("""
+                    SELECT COLUMN_NAME 
+                    FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_SCHEMA = 'nxlsxx$PAF' 
+                    AND TABLE_NAME = 'envios' 
+                    AND COLUMN_NAME IN ('latitud_repartidor', 'longitud_repartidor', 'fecha_actualizacion')
+                """)
+                columnas_existentes = [row['COLUMN_NAME'] for row in cursor.fetchall()]
+                
+                # Agregar latitud_repartidor si no existe
+                if 'latitud_repartidor' not in columnas_existentes:
+                    try:
+                        cursor.execute("""
+                            ALTER TABLE envios 
+                            ADD COLUMN latitud_repartidor DECIMAL(10, 8) NULL
+                        """)
+                        logging.info("Columna latitud_repartidor agregada a la tabla envios")
+                    except Exception as e:
+                        logging.warning(f"No se pudo agregar columna latitud_repartidor: {e}")
+                
+                # Agregar longitud_repartidor si no existe
+                if 'longitud_repartidor' not in columnas_existentes:
+                    try:
+                        cursor.execute("""
+                            ALTER TABLE envios 
+                            ADD COLUMN longitud_repartidor DECIMAL(11, 8) NULL
+                        """)
+                        logging.info("Columna longitud_repartidor agregada a la tabla envios")
+                    except Exception as e:
+                        logging.warning(f"No se pudo agregar columna longitud_repartidor: {e}")
+                
+                # Agregar fecha_actualizacion si no existe
+                if 'fecha_actualizacion' not in columnas_existentes:
+                    try:
+                        cursor.execute("""
+                            ALTER TABLE envios 
+                            ADD COLUMN fecha_actualizacion DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                        """)
+                        logging.info("Columna fecha_actualizacion agregada a la tabla envios")
+                    except Exception as e:
+                        logging.warning(f"No se pudo agregar columna fecha_actualizacion: {e}")
+            
+            conn.commit()
+            logging.info("Verificación de columnas de seguimiento completada")
+    except Exception as e:
+        logging.error(f"Error al verificar columnas de seguimiento: {repr(e)}")
+
+verificar_columnas_seguimiento_envios()
+
+
 def token_en_lista_negra(token):
     conn = obtenerconexion_sanchezpharma()
     with conn:
@@ -178,7 +346,9 @@ def verificar_token_blacklist():
         return
     
     endpoints_libres = ("api_login", "hello", "probar_conexion_sanchezpharma", "registrar_cliente_publico_sanchezpharma", 
-                        "login_google_sanchezpharma", "registrar_cliente_google_sanchezpharma")
+                        "login_google_sanchezpharma", "registrar_cliente_google_sanchezpharma",
+                        "enviar_codigo_recuperacion_sanchezpharma", "verificar_codigo_recuperacion_sanchezpharma",
+                        "cambiar_password_recuperacion_sanchezpharma")
     if request.endpoint in endpoints_libres:
         return
 
@@ -1531,7 +1701,8 @@ def editar_cliente_sanchezpharma():
                 cursor.execute("""
                     UPDATE clientes 
                     SET nombre = %s, apellido = %s, documento = %s, tipo_documento = %s,
-                        telefono = %s, email = %s, direccion = %s, estado = %s
+                        telefono = %s, email = %s, direccion = %s, estado = %s,
+                        genero = %s, fecha_nacimiento = %s
                     WHERE id = %s
                 """, (
                     data.get("nombre"),
@@ -1542,6 +1713,8 @@ def editar_cliente_sanchezpharma():
                     data.get("email"),
                     data.get("direccion"),
                     data.get("estado", "activo"),
+                    data.get("genero"),
+                    data.get("fecha_nacimiento"),
                     data.get("id")
                 ))
             conn.commit()
@@ -1725,7 +1898,7 @@ def registrar_venta_sanchezpharma():
                             return jsonify({"code": 0, "message": "No hay usuarios en el sistema. Contacte al administrador."})
                 
                 # Calcular totales
-                subtotal = 0
+                subtotal = Decimal('0')
                 for producto in productos:
                     producto_id = producto.get("producto_id")
                     cantidad = producto.get("cantidad")
@@ -1739,10 +1912,24 @@ def registrar_venta_sanchezpharma():
                     if producto_info["stock_actual"] < cantidad:
                         return jsonify({"code": 0, "message": f"Stock insuficiente para producto {producto_id}"})
                     
-                    subtotal += producto_info["precio_venta"] * cantidad
+                    # Asegurar que precio_venta y cantidad sean Decimal
+                    precio_venta = Decimal(str(producto_info["precio_venta"]))
+                    cantidad_decimal = Decimal(str(cantidad))
+                    subtotal += precio_venta * cantidad_decimal
 
-                descuento = data.get("descuento", 0)
+                # Convertir descuento a Decimal para evitar errores de tipo
+                descuento_valor = data.get("descuento", 0)
+                descuento = Decimal(str(descuento_valor)) if descuento_valor else Decimal('0')
                 total = subtotal - descuento
+
+                # Determinar el estado inicial según el tipo de venta
+                # Para envío a domicilio y recojo en tienda, el estado inicial es 'pendiente'
+                tipo_venta = data.get("tipo_venta")
+                if tipo_venta in ['envio_domicilio', 'recojo_tienda']:
+                    estado_inicial = 'pendiente'
+                else:
+                    # Para otros tipos de venta (venta_directa, etc.), usar el estado proporcionado o 'completada'
+                    estado_inicial = data.get("estado", "completada")
 
                 # Insertar venta
                 cursor.execute("""
@@ -1758,7 +1945,7 @@ def registrar_venta_sanchezpharma():
                     subtotal,
                     descuento,
                     total,
-                    data.get("estado", "completada"),
+                    estado_inicial,
                     data.get("observaciones")
                 ))
 
@@ -1770,8 +1957,10 @@ def registrar_venta_sanchezpharma():
                     cantidad = producto.get("cantidad")
                     
                     cursor.execute("SELECT precio_venta FROM productos WHERE id = %s", (producto_id,))
-                    precio = cursor.fetchone()["precio_venta"]
-                    producto_subtotal = precio * cantidad
+                    precio_info = cursor.fetchone()
+                    precio = Decimal(str(precio_info["precio_venta"]))
+                    cantidad_decimal = Decimal(str(cantidad))
+                    producto_subtotal = precio * cantidad_decimal
 
                     cursor.execute("""
                         INSERT INTO detalle_venta 
@@ -1917,6 +2106,7 @@ def envios_sanchezpharma():
         estado = request.args.get('estado')
         fecha_desde = request.args.get('fecha_desde')
         fecha_hasta = request.args.get('fecha_hasta')
+        cliente_id = request.args.get('cliente_id')  # Para que clientes puedan ver sus envíos
 
         conn = obtenerconexion_sanchezpharma()
         with conn:
@@ -1931,12 +2121,16 @@ def envios_sanchezpharma():
                 """
                 params = []
 
+                # Filtrar por cliente si se especifica (para clientes que consultan sus propios envíos)
+                if cliente_id:
+                    query += " AND v.cliente_id = %s"
+                    params.append(cliente_id)
+
+                # Filtrar por estado si se especifica
                 if estado:
                     query += " AND e.estado = %s"
                     params.append(estado)
-                else:
-                    # Por defecto mostrar solo pendientes, preparando y en_camino
-                    query += " AND e.estado IN ('pendiente', 'preparando', 'en_camino')"
+                # Si no se especifica estado, mostrar todos (admin puede ver todos)
 
                 if fecha_desde:
                     query += " AND DATE(e.fecha_creacion) >= %s"
@@ -1946,7 +2140,7 @@ def envios_sanchezpharma():
                     query += " AND DATE(e.fecha_creacion) <= %s"
                     params.append(fecha_hasta)
 
-                query += " ORDER BY CASE e.estado WHEN 'pendiente' THEN 1 WHEN 'preparando' THEN 2 WHEN 'en_camino' THEN 3 ELSE 4 END, e.fecha_creacion ASC"
+                query += " ORDER BY CASE e.estado WHEN 'pendiente' THEN 1 WHEN 'preparando' THEN 2 WHEN 'en_camino' THEN 3 ELSE 4 END, e.fecha_creacion DESC"
 
                 cursor.execute(query, params)
                 data = cursor.fetchall()
@@ -2068,29 +2262,70 @@ def actualizar_envio_sanchezpharma(envio_id):
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE envios 
-                    SET direccion_entrega = %s, telefono_contacto = %s,
-                        nombre_destinatario = %s, referencia_direccion = %s,
-                        fecha_estimada_entrega = %s, conductor_repartidor = %s,
-                        costo_envio = %s, observaciones = %s
-                    WHERE id = %s
-                """, (
-                    data.get("direccion_entrega"),
-                    data.get("telefono_contacto"),
-                    data.get("nombre_destinatario"),
-                    data.get("referencia_direccion"),
-                    data.get("fecha_estimada_entrega"),
-                    data.get("conductor_repartidor"),
-                    data.get("costo_envio", 0),
-                    data.get("observaciones"),
-                    envio_id
-                ))
+                # Construir la consulta dinámicamente según los campos recibidos
+                campos = []
+                valores = []
+                
+                # Campos básicos de envío
+                if data.get("direccion_entrega") is not None:
+                    campos.append("direccion_entrega = %s")
+                    valores.append(data.get("direccion_entrega"))
+                
+                if data.get("telefono_contacto") is not None:
+                    campos.append("telefono_contacto = %s")
+                    valores.append(data.get("telefono_contacto"))
+                
+                if data.get("nombre_destinatario") is not None:
+                    campos.append("nombre_destinatario = %s")
+                    valores.append(data.get("nombre_destinatario"))
+                
+                if data.get("referencia_direccion") is not None:
+                    campos.append("referencia_direccion = %s")
+                    valores.append(data.get("referencia_direccion"))
+                
+                if data.get("fecha_estimada_entrega") is not None:
+                    campos.append("fecha_estimada_entrega = %s")
+                    valores.append(data.get("fecha_estimada_entrega"))
+                
+                if data.get("conductor_repartidor") is not None:
+                    campos.append("conductor_repartidor = %s")
+                    valores.append(data.get("conductor_repartidor"))
+                
+                if data.get("costo_envio") is not None:
+                    campos.append("costo_envio = %s")
+                    valores.append(data.get("costo_envio"))
+                
+                if data.get("observaciones") is not None:
+                    campos.append("observaciones = %s")
+                    valores.append(data.get("observaciones"))
+                
+                # Coordenadas del repartidor (para seguimiento en tiempo real)
+                if data.get("latitud_repartidor") is not None:
+                    campos.append("latitud_repartidor = %s")
+                    valores.append(data.get("latitud_repartidor"))
+                
+                if data.get("longitud_repartidor") is not None:
+                    campos.append("longitud_repartidor = %s")
+                    valores.append(data.get("longitud_repartidor"))
+                
+                # Siempre actualizar fecha de actualización
+                campos.append("fecha_actualizacion = NOW()")
+                
+                if not campos:
+                    return jsonify({"code": 0, "message": "No hay campos para actualizar"})
+                
+                # Agregar el ID del envío al final
+                valores.append(envio_id)
+                
+                # Construir y ejecutar la consulta
+                consulta = f"UPDATE envios SET {', '.join(campos)} WHERE id = %s"
+                cursor.execute(consulta, valores)
             conn.commit()
 
         return jsonify({"code": 1, "message": "Envío actualizado correctamente"})
 
     except Exception as e:
+        logging.error(f"Error al actualizar envío {envio_id}: {repr(e)}")
         return jsonify({"code": 0, "message": repr(e)})
 
 
@@ -2523,7 +2758,299 @@ def eliminar_reporte_sanchezpharma(reporte_id):
 
 
 # ---------------------------------------------------
+# RECUPERACIÓN DE CONTRASEÑA
+# ---------------------------------------------------
+
+# ENVIAR CÓDIGO DE RECUPERACIÓN
+@app.route('/enviar_codigo_recuperacion_sanchezpharma', methods=['POST'])
+def enviar_codigo_recuperacion_sanchezpharma():
+    """
+    Endpoint público para solicitar recuperación de contraseña.
+    Envía un código de 6 dígitos al correo del cliente.
+    """
+    try:
+        data = request.json
+        email = data.get("email")
+        
+        if not email:
+            return jsonify({"code": 0, "message": "El correo electrónico es requerido"})
+        
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Verificar que el email existe en la tabla clientes
+                cursor.execute("SELECT id, nombre FROM clientes WHERE email = %s AND estado = 'activo'", (email,))
+                cliente = cursor.fetchone()
+                
+                if not cliente:
+                    # Por seguridad, no revelar si el email existe o no
+                    return jsonify({
+                        "code": 1, 
+                        "message": "Si el correo existe, recibirás un código de recuperación en breve."
+                    })
+                
+                # Generar código de 6 dígitos
+                codigo = ''.join(random.choices(string.digits, k=6))
+                
+                # Calcular fecha de expiración (15 minutos)
+                fecha_creacion = datetime.now()
+                fecha_expiracion = fecha_creacion + timedelta(minutes=15)
+                
+                # Guardar código en la base de datos
+                cursor.execute("""
+                    INSERT INTO codigos_recuperacion (email, codigo, fecha_creacion, fecha_expiracion, usado)
+                    VALUES (%s, %s, %s, %s, FALSE)
+                """, (email, codigo, fecha_creacion, fecha_expiracion))
+                
+            conn.commit()
+        
+        # Enviar correo con el código
+        if not MAIL_AVAILABLE:
+            logging.error("Flask-Mail no está instalado. Instala con: pip install Flask-Mail")
+            return jsonify({
+                "code": 0,
+                "message": "El servicio de correo no está disponible. Flask-Mail no está instalado."
+            })
+        
+        if mail is None:
+            logging.error("Flask-Mail no está inicializado correctamente.")
+            return jsonify({
+                "code": 0,
+                "message": "El servicio de correo no está disponible. Contacta al administrador."
+            })
+        
+        try:
+            logging.info(f"Preparando correo para enviar a: {email}")
+            
+            msg = Message(
+                subject="Código de Recuperación - Sánchez Pharma",
+                recipients=[email],
+                sender=app.config.get('MAIL_DEFAULT_SENDER', 'uortiznelsonfab@uss.edu.pe')
+            )
+            
+            msg.body = f"""
+Hola {cliente.get('nombre', 'Cliente')},
+
+Has solicitado recuperar tu contraseña en Sánchez Pharma.
+
+Tu código de verificación es: {codigo}
+
+Este código es válido por 15 minutos.
+
+Si no solicitaste este cambio, ignora este correo.
+
+Saludos,
+Equipo de Sánchez Pharma
+            """
+            
+            msg.html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background-color: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }}
+        .content {{ background-color: #f9f9f9; padding: 30px; border: 1px solid #ddd; }}
+        .code-box {{ background-color: #4CAF50; color: white; font-size: 32px; font-weight: bold; text-align: center; padding: 20px; margin: 20px 0; border-radius: 5px; letter-spacing: 5px; }}
+        .footer {{ background-color: #f1f1f1; padding: 15px; text-align: center; font-size: 12px; color: #777; border-radius: 0 0 5px 5px; }}
+        .warning {{ color: #ff6b6b; margin-top: 20px; font-size: 14px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔐 Recuperación de Contraseña</h1>
+        </div>
+        <div class="content">
+            <p>Hola <strong>{cliente.get('nombre', 'Cliente')}</strong>,</p>
+            <p>Has solicitado recuperar tu contraseña en <strong>Sánchez Pharma</strong>.</p>
+            <p>Tu código de verificación es:</p>
+            <div class="code-box">{codigo}</div>
+            <p>⏱️ Este código es válido por <strong>15 minutos</strong>.</p>
+            <p class="warning">⚠️ Si no solicitaste este cambio, ignora este correo y tu contraseña permanecerá segura.</p>
+        </div>
+        <div class="footer">
+            <p>Este es un correo automático, por favor no respondas.</p>
+            <p>&copy; 2024 Sánchez Pharma. Todos los derechos reservados.</p>
+        </div>
+    </div>
+</body>
+</html>
+            """
+            
+            logging.info(f"Intentando enviar correo a: {email}")
+            mail.send(msg)
+            logging.info(f"✅ Código de recuperación enviado exitosamente a: {email}")
+            
+            return jsonify({
+                "code": 1, 
+                "message": "Código de recuperación enviado. Revisa tu correo electrónico."
+            })
+            
+        except Exception as e:
+            error_msg = str(e)
+            logging.error(f"❌ Error al enviar correo a {email}: {repr(e)}")
+            logging.error(f"Tipo de error: {type(e).__name__}")
+            logging.error(f"Detalles: {error_msg}")
+            
+            # Mensajes de error más específicos
+            if "Authentication" in error_msg or "Username and Password not accepted" in error_msg:
+                return jsonify({
+                    "code": 0, 
+                    "message": "Error de autenticación de correo. Verifica que la contraseña de aplicación de Google sea correcta."
+                })
+            elif "Connection" in error_msg or "timeout" in error_msg:
+                return jsonify({
+                    "code": 0, 
+                    "message": "Error de conexión con el servidor de correo. Verifica tu conexión a internet."
+                })
+            elif "SSL" in error_msg or "TLS" in error_msg:
+                return jsonify({
+                    "code": 0, 
+                    "message": "Error de seguridad SSL/TLS. Contacta al administrador."
+                })
+            else:
+                return jsonify({
+                    "code": 0, 
+                    "message": f"Error al enviar el correo: {error_msg}"
+                })
+    
+    except Exception as e:
+        logging.error(f"Error en enviar_codigo_recuperacion: {repr(e)}")
+        return jsonify({"code": 0, "message": f"Error: {str(e)}"})
+
+
+# VERIFICAR CÓDIGO DE RECUPERACIÓN
+@app.route('/verificar_codigo_recuperacion_sanchezpharma', methods=['POST'])
+def verificar_codigo_recuperacion_sanchezpharma():
+    """
+    Endpoint público para verificar si el código ingresado es válido.
+    """
+    try:
+        data = request.json
+        email = data.get("email")
+        codigo = data.get("codigo")
+        
+        if not email or not codigo:
+            return jsonify({"code": 0, "message": "Email y código son requeridos"})
+        
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Buscar código válido (no usado y no expirado)
+                cursor.execute("""
+                    SELECT id_codigo, fecha_expiracion 
+                    FROM codigos_recuperacion 
+                    WHERE email = %s 
+                    AND codigo = %s 
+                    AND usado = FALSE
+                    ORDER BY fecha_creacion DESC
+                    LIMIT 1
+                """, (email, codigo))
+                
+                codigo_registro = cursor.fetchone()
+                
+                if not codigo_registro:
+                    return jsonify({"code": 0, "message": "Código inválido o ya utilizado"})
+                
+                # Verificar si expiró
+                fecha_expiracion = codigo_registro["fecha_expiracion"]
+                if datetime.now() > fecha_expiracion:
+                    return jsonify({"code": 0, "message": "El código ha expirado. Solicita uno nuevo."})
+                
+                # Código válido
+                return jsonify({
+                    "code": 1, 
+                    "message": "Código verificado correctamente",
+                    "id_codigo": codigo_registro["id_codigo"]
+                })
+    
+    except Exception as e:
+        logging.error(f"Error en verificar_codigo_recuperacion: {repr(e)}")
+        return jsonify({"code": 0, "message": f"Error: {str(e)}"})
+
+
+# CAMBIAR CONTRASEÑA CON CÓDIGO DE RECUPERACIÓN
+@app.route('/cambiar_password_recuperacion_sanchezpharma', methods=['POST'])
+def cambiar_password_recuperacion_sanchezpharma():
+    """
+    Endpoint público para cambiar la contraseña usando un código válido.
+    """
+    try:
+        data = request.json
+        email = data.get("email")
+        codigo = data.get("codigo")
+        nueva_password = data.get("nueva_password")
+        
+        if not email or not codigo or not nueva_password:
+            return jsonify({"code": 0, "message": "Email, código y nueva contraseña son requeridos"})
+        
+        if len(nueva_password) < 6:
+            return jsonify({"code": 0, "message": "La contraseña debe tener al menos 6 caracteres"})
+        
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Buscar código válido
+                cursor.execute("""
+                    SELECT id_codigo, fecha_expiracion 
+                    FROM codigos_recuperacion 
+                    WHERE email = %s 
+                    AND codigo = %s 
+                    AND usado = FALSE
+                    ORDER BY fecha_creacion DESC
+                    LIMIT 1
+                """, (email, codigo))
+                
+                codigo_registro = cursor.fetchone()
+                
+                if not codigo_registro:
+                    return jsonify({"code": 0, "message": "Código inválido o ya utilizado"})
+                
+                # Verificar si expiró
+                fecha_expiracion = codigo_registro["fecha_expiracion"]
+                if datetime.now() > fecha_expiracion:
+                    return jsonify({"code": 0, "message": "El código ha expirado. Solicita uno nuevo."})
+                
+                # Verificar que el cliente existe
+                cursor.execute("SELECT id FROM clientes WHERE email = %s", (email,))
+                cliente = cursor.fetchone()
+                
+                if not cliente:
+                    return jsonify({"code": 0, "message": "Cliente no encontrado"})
+                
+                # Actualizar contraseña del cliente (con SHA256)
+                cursor.execute("""
+                    UPDATE clientes 
+                    SET password = SHA2(%s, 256)
+                    WHERE email = %s
+                """, (nueva_password, email))
+                
+                # Marcar código como usado
+                cursor.execute("""
+                    UPDATE codigos_recuperacion 
+                    SET usado = TRUE, fecha_uso = NOW()
+                    WHERE id_codigo = %s
+                """, (codigo_registro["id_codigo"],))
+                
+            conn.commit()
+        
+        logging.info(f"Contraseña cambiada exitosamente para: {email}")
+        
+        return jsonify({
+            "code": 1, 
+            "message": "Contraseña cambiada exitosamente. Ya puedes iniciar sesión con tu nueva contraseña."
+        })
+    
+    except Exception as e:
+        logging.error(f"Error en cambiar_password_recuperacion: {repr(e)}")
+        return jsonify({"code": 0, "message": f"Error: {str(e)}"})
+
+
+# ---------------------------------------------------
 # FIN
 # ---------------------------------------------------
 if __name__ == "__main__":
     app.run()
+    

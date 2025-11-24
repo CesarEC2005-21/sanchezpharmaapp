@@ -1,7 +1,6 @@
 import 'dart:async';
-import 'dart:ui' as ui;
+import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
@@ -28,7 +27,6 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
   Position? _destinoPosition;
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
-  List<LatLng> _rutaRecorrida = []; // Lista de puntos de la ruta recorrida
   bool _isLoading = true;
   String? _errorMessage;
   bool _esRepartidor = false;
@@ -90,23 +88,11 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
         );
       } else {
         // Fallback: convertir dirección de texto a coordenadas (menos preciso)
-        try {
-          _destinoPosition = await _getLocationFromAddress(widget.envio.direccionEntrega);
-        } catch (e) {
-          print('Error al geocodificar dirección: $e');
-          // Usar ubicación por defecto (Lima, Perú)
-          _destinoPosition = Position(
-            latitude: -12.0464,
-            longitude: -77.0428,
-            timestamp: DateTime.now(),
-            accuracy: 0,
-            altitude: 0,
-            altitudeAccuracy: 0,
-            heading: 0,
-            headingAccuracy: 0,
-            speed: 0,
-            speedAccuracy: 0,
-          );
+        _destinoPosition = await _getLocationFromAddress(widget.envio.direccionEntrega);
+        
+        // Si no se pudo geocodificar, lanzar error
+        if (_destinoPosition == null) {
+          throw Exception('No se pudo obtener la ubicación del destino. Verifica que la dirección de entrega sea válida.');
         }
       }
       
@@ -124,38 +110,37 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
           speed: 0,
           speedAccuracy: 0,
         );
-        // Inicializar ruta recorrida con la posición inicial
-        _rutaRecorrida = [LatLng(widget.envio.latitudRepartidor!, widget.envio.longitudRepartidor!)];
+        print('📍 Repartidor inicial: ${widget.envio.latitudRepartidor}, ${widget.envio.longitudRepartidor}');
       } else {
         // Obtener ubicación actual del dispositivo (simulando ubicación del repartidor)
         try {
           _repartidorPosition = await _getCurrentLocation();
+          if (_repartidorPosition != null) {
+            print('📍 Repartidor (ubicación actual): ${_repartidorPosition!.latitude}, ${_repartidorPosition!.longitude}');
+          }
         } catch (e) {
-          print('Error al obtener ubicación actual: $e');
-          // Si no se puede obtener la ubicación, usar la posición del destino como fallback
-          _repartidorPosition = _destinoPosition;
+          print('Error al obtener ubicación actual del repartidor: $e');
+          // El mapa simplemente mostrará solo el destino hasta que el repartidor tenga ubicación
         }
       }
 
-      // Asegurar que al menos una posición esté disponible
+      // Asegurar que tengamos al menos la ubicación del destino
       if (_destinoPosition == null) {
         throw Exception('No se pudo obtener la ubicación del destino');
       }
 
+      // Si no hay posición del repartidor, el mapa solo mostrará el destino
+      // NO agregar el destino a la ruta recorrida
       if (_repartidorPosition == null) {
-        _repartidorPosition = _destinoPosition;
+        print('Advertencia: No hay ubicación del repartidor disponible. El mapa mostrará solo el destino.');
       }
 
-      // Inicializar la ruta recorrida con la posición inicial del repartidor
-      if (_repartidorPosition != null && _rutaRecorrida.isEmpty) {
-        _rutaRecorrida = [LatLng(_repartidorPosition!.latitude, _repartidorPosition!.longitude)];
-      }
-
-      if (_repartidorPosition != null && _destinoPosition != null) {
+      // Actualizar marcadores y ruta INMEDIATAMENTE
+      if (_repartidorPosition != null) {
         await _updateMarkers();
-        _updateRoute();
-        // No llamar _moveCameraToFitBoth aquí porque el controlador aún no está listo
-        // Se llamará cuando el mapa se cree en onMapCreated
+        _updateRoute(); // Dibujar la ruta automáticamente
+      } else if (_destinoPosition != null) {
+        await _updateMarkers(); // Al menos mostrar el destino
       }
 
       setState(() {
@@ -216,7 +201,7 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
     return position;
   }
 
-  Future<Position> _getLocationFromAddress(String address) async {
+  Future<Position?> _getLocationFromAddress(String address) async {
     try {
       List<Location> locations = await locationFromAddress(address);
       if (locations.isNotEmpty) {
@@ -234,115 +219,29 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
         );
       }
     } catch (e) {
-      // Si no se puede geocodificar, usar una ubicación por defecto
-      print('Error al geocodificar: $e');
+      print('Error al geocodificar dirección "$address": $e');
     }
     
-    // Ubicación por defecto (Lima, Perú)
-    return Position(
-      latitude: -12.0464,
-      longitude: -77.0428,
-      timestamp: DateTime.now(),
-      accuracy: 0,
-      altitude: 0,
-      altitudeAccuracy: 0,
-      heading: 0,
-      headingAccuracy: 0,
-      speed: 0,
-      speedAccuracy: 0,
-    );
+    // Si no se puede geocodificar, retornar null en lugar de una ubicación por defecto
+    print('No se pudo obtener coordenadas para la dirección: $address');
+    return null;
   }
 
-  Future<BitmapDescriptor> _crearIconoAutomovil() async {
-    return await _crearIconoPersonalizado(
-      icono: Icons.directions_car,
-      color: Colors.blue.shade700,
-    );
-  }
-
-  Future<BitmapDescriptor> _crearIconoHumano() async {
-    return await _crearIconoPersonalizado(
-      icono: Icons.person,
-      color: Colors.red,
-      texto: 'C',
-    );
-  }
-
-  Future<BitmapDescriptor> _crearIconoPersonalizado({
-    required IconData icono,
-    required Color color,
-    String? texto,
-  }) async {
-    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
-    final Canvas canvas = Canvas(pictureRecorder);
-    final Paint paint = Paint()..color = color;
-    final Paint paintFondo = Paint()..color = Colors.white;
-
-    // Dibujar círculo de fondo
-    canvas.drawCircle(
-      const Offset(50, 50),
-      40,
-      paintFondo,
-    );
-    canvas.drawCircle(
-      const Offset(50, 50),
-      40,
-      paint..style = PaintingStyle.stroke..strokeWidth = 3,
-    );
-
-    // Dibujar icono
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: String.fromCharCode(icono.codePoint),
-        style: TextStyle(
-          fontSize: 50,
-          fontFamily: icono.fontFamily,
-          color: color,
-          package: icono.fontPackage,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      Offset(
-        (100 - textPainter.width) / 2,
-        (100 - textPainter.height) / 2,
-      ),
-    );
-
-    final picture = pictureRecorder.endRecording();
-    final image = await picture.toImage(100, 100);
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    final uint8List = byteData!.buffer.asUint8List();
-
-    return BitmapDescriptor.fromBytes(uint8List);
-  }
 
   Future<void> _updateMarkers() async {
     _markers.clear();
 
+    // NO MOSTRAR marcador del repartidor - usar solo myLocation (punto azul GPS)
+    // La ubicación del repartidor se muestra con el punto azul nativo de Google Maps
+    print('📍 Repartidor: usando ubicación GPS real (punto azul del mapa)');
     if (_repartidorPosition != null) {
-      final iconoAutomovil = await _crearIconoAutomovil();
-      _markers.add(
-        Marker(
-          markerId: const MarkerId('repartidor'),
-          position: LatLng(
-            _repartidorPosition!.latitude,
-            _repartidorPosition!.longitude,
-          ),
-          icon: iconoAutomovil,
-          infoWindow: InfoWindow(
-            title: 'Repartidor',
-            snippet: widget.envio.conductorRepartidor ?? 'En camino',
-          ),
-        ),
-      );
+      print('   Posición GPS: ${_repartidorPosition!.latitude}, ${_repartidorPosition!.longitude}');
     }
 
+    // SOLO mostrar marcador del DESTINO (rojo) - donde debe llegar el repartidor
     if (_destinoPosition != null) {
-      final iconoHumano = await _crearIconoHumano();
+      print('📍 Actualizando marcador del destino en: ${_destinoPosition!.latitude}, ${_destinoPosition!.longitude}');
+      
       _markers.add(
         Marker(
           markerId: const MarkerId('destino'),
@@ -350,49 +249,62 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
             _destinoPosition!.latitude,
             _destinoPosition!.longitude,
           ),
-          icon: iconoHumano,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
           infoWindow: InfoWindow(
-            title: 'Destino',
+            title: '📍 Destino',
             snippet: widget.envio.direccionEntrega,
           ),
         ),
       );
     }
     
-    setState(() {});
+    print('✅ Total de marcadores: ${_markers.length} (solo destino)');
+    
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _updateRoute() {
     _polylines.clear();
     
-    // Ruta recorrida (línea sólida azul)
-    if (_rutaRecorrida.length > 1) {
-      _polylines.add(
-        Polyline(
-          polylineId: const PolylineId('ruta_recorrida'),
-          points: _rutaRecorrida,
-          color: Colors.blue,
-          width: 5,
-          patterns: [],
-        ),
-      );
-    }
-    
-    // Ruta restante hasta el destino (línea punteada verde)
+    // Dibujar ruta desde la ubicación GPS real (punto azul) hasta el destino (punto rojo)
     if (_repartidorPosition != null && _destinoPosition != null) {
+      print('✅ Dibujando ruta desde ubicación GPS real hasta destino');
+      print('   Tu ubicación GPS: (${_repartidorPosition!.latitude}, ${_repartidorPosition!.longitude})');
+      print('   Destino: (${_destinoPosition!.latitude}, ${_destinoPosition!.longitude})');
+      
       _polylines.add(
         Polyline(
-          polylineId: const PolylineId('ruta_restante'),
+          polylineId: const PolylineId('ruta_gps_a_destino'),
           points: [
             LatLng(_repartidorPosition!.latitude, _repartidorPosition!.longitude),
             LatLng(_destinoPosition!.latitude, _destinoPosition!.longitude),
           ],
           color: Colors.green,
-          width: 4,
+          width: 6,
           patterns: [PatternItem.dash(20), PatternItem.gap(10)],
         ),
       );
+    } else {
+      print('⚠️ Esperando ubicación GPS o destino para dibujar ruta');
     }
+  }
+
+  // Calcular distancia en kilómetros entre dos coordenadas (fórmula de Haversine)
+  double _calcularDistancia(double lat1, double lon1, double lat2, double lon2) {
+    const R = 6371; // Radio de la Tierra en kilómetros
+    final dLat = _gradosARadianes(lat2 - lat1);
+    final dLon = _gradosARadianes(lon2 - lon1);
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(_gradosARadianes(lat1)) * cos(_gradosARadianes(lat2)) *
+        sin(dLon / 2) * sin(dLon / 2);
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return R * c;
+  }
+
+  double _gradosARadianes(double grados) {
+    return grados * pi / 180;
   }
 
   void _moveCameraToFitBoth() {
@@ -423,28 +335,34 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
   }
 
   void _startLocationUpdates() {
+    // Log inicial
+    print('🚀 Iniciando actualizaciones de ubicación...');
+    print('   Estado del envío: ${widget.envio.estado}');
+    print('   ID del envío: ${widget.envio.id}');
+    print('   Es repartidor: $_esRepartidor');
+    
     // Actualizar ubicación cada 10 segundos si el envío está en camino
     _locationUpdateTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+      // Verificar que el widget todavía esté montado
+      if (!mounted) {
+        print('❌ Widget no montado, cancelando timer');
+        timer.cancel();
+        return;
+      }
+      
       if (widget.envio.estado == 'en_camino' && widget.envio.id != null) {
         try {
           if (_esRepartidor) {
             // Si es el repartidor, actualizar su ubicación y enviarla al backend
             final nuevaPosicion = await _getCurrentLocation();
             if (nuevaPosicion != null) {
-              final nuevaLatLng = LatLng(nuevaPosicion.latitude, nuevaPosicion.longitude);
-              
               setState(() {
                 _repartidorPosition = nuevaPosicion;
-                // Agregar nueva posición a la ruta recorrida si es diferente a la anterior
-                if (_rutaRecorrida.isEmpty || 
-                    _rutaRecorrida.last.latitude != nuevaLatLng.latitude ||
-                    _rutaRecorrida.last.longitude != nuevaLatLng.longitude) {
-                  _rutaRecorrida.add(nuevaLatLng);
-                }
               });
               
               // Actualizar ubicación en el backend
               try {
+                print('📤 Repartidor: enviando ubicación al backend...');
                 await _apiService.actualizarEnvio(
                   widget.envio.id!,
                   {
@@ -452,8 +370,9 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
                     'longitud_repartidor': nuevaPosicion.longitude,
                   },
                 );
+                print('✅ Ubicación del repartidor actualizada en backend');
               } catch (e) {
-                print('Error al actualizar ubicación en backend: $e');
+                print('❌ Error al actualizar ubicación en backend: $e');
               }
               
               await _updateMarkers();
@@ -473,6 +392,7 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
           } else {
             // Si es cliente, obtener la ubicación actualizada del repartidor desde el backend
             try {
+              print('🔄 Cliente: consultando ubicación del repartidor...');
               final response = await _apiService.getEnvio(widget.envio.id!);
               if (response.response.statusCode == 200) {
                 final data = response.data;
@@ -480,47 +400,47 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
                   final envioActualizado = EnvioModel.fromJson(data['data']);
                   if (envioActualizado.latitudRepartidor != null && 
                       envioActualizado.longitudRepartidor != null) {
-                    final nuevaLatLng = LatLng(
-                      envioActualizado.latitudRepartidor!,
-                      envioActualizado.longitudRepartidor!,
-                    );
+                    print('✅ Nueva ubicación del repartidor: ${envioActualizado.latitudRepartidor}, ${envioActualizado.longitudRepartidor}');
                     
-                    setState(() {
-                      _repartidorPosition = Position(
-                        latitude: envioActualizado.latitudRepartidor!,
-                        longitude: envioActualizado.longitudRepartidor!,
-                        timestamp: DateTime.now(),
-                        accuracy: 0,
-                        altitude: 0,
-                        altitudeAccuracy: 0,
-                        heading: 0,
-                        headingAccuracy: 0,
-                        speed: 0,
-                        speedAccuracy: 0,
-                      );
+                    if (mounted) {
+                      setState(() {
+                        _repartidorPosition = Position(
+                          latitude: envioActualizado.latitudRepartidor!,
+                          longitude: envioActualizado.longitudRepartidor!,
+                          timestamp: DateTime.now(),
+                          accuracy: 0,
+                          altitude: 0,
+                          altitudeAccuracy: 0,
+                          heading: 0,
+                          headingAccuracy: 0,
+                          speed: 0,
+                          speedAccuracy: 0,
+                        );
+                      });
                       
-                      // Agregar nueva posición a la ruta recorrida si es diferente a la anterior
-                      if (_rutaRecorrida.isEmpty || 
-                          _rutaRecorrida.last.latitude != nuevaLatLng.latitude ||
-                          _rutaRecorrida.last.longitude != nuevaLatLng.longitude) {
-                        _rutaRecorrida.add(nuevaLatLng);
+                      await _updateMarkers();
+                      _updateRoute();
+                      
+                      // Mover cámara para mostrar ambas ubicaciones
+                      if (_mapController != null && mounted) {
+                        _moveCameraToFitBoth();
                       }
-                    });
-                    
-                    await _updateMarkers();
-                    _updateRoute();
+                    }
+                  } else {
+                    print('⚠️ El repartidor aún no tiene ubicación GPS');
                   }
                 }
               }
             } catch (e) {
-              print('Error al obtener ubicación del repartidor: $e');
+              print('❌ Error al obtener ubicación del repartidor: $e');
             }
           }
         } catch (e) {
-          print('Error al actualizar ubicación: $e');
+          print('❌ Error general al actualizar ubicación: $e');
         }
-      } else {
-        timer.cancel();
+      } else if (widget.envio.estado != 'en_camino') {
+        print('⏸️ El envío ya no está en camino (estado: ${widget.envio.estado}), pausando actualizaciones');
+        // No cancelar el timer, solo saltar esta iteración por si vuelve a "en_camino"
       }
     });
   }

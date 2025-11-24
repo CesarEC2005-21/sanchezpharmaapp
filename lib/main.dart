@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'core/utils/shared_prefs_helper.dart';
 import 'presentation/screens/login_screen.dart';
 import 'presentation/screens/dashboard_screen.dart';
-import 'presentation/screens/tienda_screen.dart';
+import 'presentation/screens/home_cliente_screen.dart';
 
 // NavigatorKey global para poder navegar desde cualquier parte de la app
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -57,7 +57,7 @@ class _SplashScreenState extends State<SplashScreen> {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (context) => isCliente 
-                ? const TiendaScreen() 
+                ? const HomeClienteScreen() 
                 : const DashboardScreen(),
           ),
         );

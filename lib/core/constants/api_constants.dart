@@ -49,6 +49,11 @@ class ApiConstants {
   static const String editarCliente = '/editar_cliente_sanchezpharma';
   static const String cambiarPasswordCliente = '/cambiar_password_cliente_sanchezpharma';
   
+  // Endpoints - Recuperación de Contraseña
+  static const String enviarCodigoRecuperacion = '/enviar_codigo_recuperacion_sanchezpharma';
+  static const String verificarCodigoRecuperacion = '/verificar_codigo_recuperacion_sanchezpharma';
+  static const String cambiarPasswordRecuperacion = '/cambiar_password_recuperacion_sanchezpharma';
+  
   // Endpoints - Ventas - Métodos de Pago
   static const String metodosPago = '/metodos_pago_sanchezpharma';
   
