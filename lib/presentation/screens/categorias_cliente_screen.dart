@@ -4,6 +4,7 @@ import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../data/models/categoria_model.dart';
 import 'carrito_screen.dart';
+import 'productos_categoria_screen.dart';
 
 class CategoriasClienteScreen extends StatefulWidget {
   final Function(int?)? onCategoriaSeleccionada;
@@ -257,6 +258,18 @@ class _CategoriasClienteScreenState extends State<CategoriasClienteScreen> {
                                     color: Colors.grey.shade400,
                                   ),
                                   onTap: () {
+                                    if (categoria.id != null) {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => ProductosCategoriaScreen(
+                                            categoriaId: categoria.id!,
+                                            categoriaNombre: categoria.nombre,
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    // También mantener el callback por si acaso
                                     if (widget.onCategoriaSeleccionada != null) {
                                       widget.onCategoriaSeleccionada!(categoria.id);
                                     }

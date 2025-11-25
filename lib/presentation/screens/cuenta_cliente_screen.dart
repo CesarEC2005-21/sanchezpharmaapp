@@ -6,6 +6,7 @@ import 'pedidos_cliente_screen.dart';
 import 'configuracion_cliente_screen.dart';
 import 'editar_perfil_screen.dart';
 import 'login_screen.dart';
+import 'favoritos_cliente_screen.dart';
 
 class CuentaClienteScreen extends StatefulWidget {
   const CuentaClienteScreen({super.key});
@@ -236,10 +237,10 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                       icon: Icons.favorite_outline,
                       title: 'Mis favoritos',
                       onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Funcionalidad en desarrollo'),
-                            duration: Duration(seconds: 1),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const FavoritosClienteScreen(),
                           ),
                         );
                       },
