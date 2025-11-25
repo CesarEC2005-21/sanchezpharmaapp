@@ -39,13 +39,14 @@ def obtenerconexion_sanchezpharma():
 # MODELO DE USUARIO
 # ---------------------------------------------------
 class UserSanchezPharma(object):
-    def __init__(self, id, username, password):
+    def __init__(self, id, username, password, rol_id=None):
         self.id = id
         self.username = username
         self.password = password
+        self.rol_id = rol_id
 
     def __str__(self):
-        return f"User(id='{self.id}')"
+        return f"User(id='{self.id}', rol_id='{self.rol_id}')"
 
 
 # ---------------------------------------------------
@@ -57,13 +58,19 @@ def authenticate(username, password):
     conn = obtenerconexion_sanchezpharma()
     with conn:
         with conn.cursor() as cursor:
-            sql = "SELECT id, username, password FROM usuarios WHERE username = %s"
+            sql = "SELECT id, username, password, rol_id FROM usuarios WHERE username = %s"
             cursor.execute(sql, (username,))
             result = cursor.fetchone()
 
     if result and result["password"] == password:
-        logging.info(f"Autenticado correctamente Sánchez Pharma: {username}")
-        return UserSanchezPharma(result["id"], result["username"], result["password"])
+        logging.info(f"Autenticado correctamente Sánchez Pharma: {username} (Rol: {result.get('rol_id', 'N/A')})")
+        # Devolver un diccionario con toda la info (incluido rol_id)
+        return {
+            "id": result["id"],
+            "username": result["username"],
+            "password": result["password"],
+            "rol_id": result.get("rol_id")
+        }
 
     logging.warning("Credenciales incorrectas")
     return None
@@ -396,13 +403,21 @@ def api_login():
         if user:
             # Es usuario interno
             logging.info(f"Usuario interno autenticado: {username}")
-            token = jwt.jwt_encode_callback(user)
+            
+            # Crear objeto UserSanchezPharma para el token
+            user_obj = UserSanchezPharma(user["id"], user["username"], user["password"])
+            token = jwt.jwt_encode_callback(user_obj)
+            
             return jsonify({
                 "code": 1,
                 "message": "Inicio de sesión exitoso",
                 "token": token.decode('utf-8') if hasattr(token, 'decode') else token,
                 "user_type": "usuario",
-                "user": {"id": user.id, "username": user.username}
+                "user": {
+                    "id": user["id"], 
+                    "username": user["username"],
+                    "rol_id": user.get("rol_id")  # ✨ AGREGAR ROL_ID
+                }
             })
         
         # ============================================================
@@ -548,6 +563,32 @@ def usuarios_sanchezpharma():
 
     except Exception as e:
         return jsonify({"code": 0, "data": {}, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# OBTENER SOLO REPARTIDORES (rol_id = 4)
+# ---------------------------------------------------
+@app.route('/repartidores_sanchezpharma')
+@jwt_required()
+def repartidores_sanchezpharma():
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Solo usuarios con rol_id = 4 (repartidor)
+                cursor.execute("""
+                    SELECT id, username, email, nombre, apellido, edad, sexo, rol_id 
+                    FROM usuarios 
+                    WHERE rol_id = 4
+                """)
+                data = cursor.fetchall()
+
+        logging.info(f"Repartidores encontrados: {len(data)}")
+        return jsonify({"code": 1, "data": data, "message": "Repartidores listados correctamente"})
+
+    except Exception as e:
+        logging.error(f"Error al listar repartidores: {repr(e)}")
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
 # ---------------------------------------------------

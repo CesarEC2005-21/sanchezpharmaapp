@@ -1,0 +1,120 @@
+╔══════════════════════════════════════════════════════════════╗
+║  🚀 INICIO RÁPIDO: Asignación de Repartidores              ║
+╚══════════════════════════════════════════════════════════════╝
+
+📌 PROBLEMA: "No funciona la asignación de repartidores"
+
+✅ SOLUCIÓN EN 3 PASOS:
+
+╔══════════════════════════════════════════════════════════════╗
+║  PASO 1: Crear Repartidores en la Base de Datos            ║
+╚══════════════════════════════════════════════════════════════╝
+
+Ejecuta este SQL en tu base de datos MySQL:
+
+INSERT INTO usuarios (username, password, email, nombre, apellido, edad, sexo, rol_id)
+VALUES 
+('repartidor1', '123456', 'repartidor1@test.com', 'Carlos', 'Mendoza', 28, 'M', 4),
+('repartidor2', '123456', 'repartidor2@test.com', 'María', 'Torres', 26, 'F', 4),
+('repartidor3', '123456', 'repartidor3@test.com', 'Luis', 'García', 30, 'M', 4);
+
+Nota: El rol_id = 4 es OBLIGATORIO para repartidores.
+
+╔══════════════════════════════════════════════════════════════╗
+║  PASO 2: Verificar que tu Usuario sea Vendedor             ║
+╚══════════════════════════════════════════════════════════════╝
+
+Verifica tu rol con este SQL:
+
+SELECT username, rol_id FROM usuarios WHERE username = 'TU_USUARIO';
+
+Debe mostrar: rol_id = 3 (vendedor) o rol_id = 1 (admin)
+
+Si no es correcto, actualiza tu rol:
+
+UPDATE usuarios SET rol_id = 3 WHERE username = 'TU_USUARIO';
+
+╔══════════════════════════════════════════════════════════════╗
+║  PASO 3: Probar en la Aplicación                           ║
+╚══════════════════════════════════════════════════════════════╝
+
+1. Cierra la app completamente
+2. Vuelve a abrir la app
+3. Inicia sesión con tu usuario vendedor
+4. Ve a "Envíos" en el menú
+5. Busca un envío en estado "Pendiente" sin repartidor
+6. Haz clic en el botón azul "Asignar Repartidor"
+7. Selecciona un repartidor
+8. ¡Listo! ✅
+
+╔══════════════════════════════════════════════════════════════╗
+║  🔍 VERIFICACIÓN RÁPIDA                                     ║
+╚══════════════════════════════════════════════════════════════╝
+
+Ejecuta estos SQL para verificar todo:
+
+-- ¿Hay repartidores?
+SELECT COUNT(*) AS total_repartidores FROM usuarios WHERE rol_id = 4;
+-- Debe ser mayor a 0
+
+-- ¿Tu usuario es vendedor?
+SELECT username, rol_id FROM usuarios WHERE username = 'TU_USUARIO';
+-- rol_id debe ser 3 (vendedor) o 1 (admin)
+
+-- ¿Hay envíos disponibles?
+SELECT COUNT(*) AS envios_disponibles FROM envios 
+WHERE estado IN ('pendiente', 'preparando') 
+AND (conductor_repartidor IS NULL OR conductor_repartidor = '');
+-- Debe ser mayor a 0
+
+╔══════════════════════════════════════════════════════════════╗
+║  ❓ PREGUNTAS FRECUENTES                                    ║
+╚══════════════════════════════════════════════════════════════╝
+
+P: ¿Por qué no veo el botón "Asignar Repartidor"?
+R: Verifica:
+   - Tu usuario debe tener rol_id = 1 (admin) o 3 (vendedor)
+   - El envío debe estar en estado "pendiente" o "preparando"
+   - El envío NO debe tener repartidor asignado
+
+P: ¿Por qué dice "No hay repartidores disponibles"?
+R: No hay usuarios con rol_id = 4 en la base de datos.
+   Ejecuta el SQL del PASO 1.
+
+P: ¿Puedo cambiar el repartidor después de asignarlo?
+R: No automáticamente. Debes actualizar manualmente:
+   UPDATE envios SET conductor_repartidor = NULL WHERE id = X;
+
+P: ¿Los repartidores pueden verse a sí mismos?
+R: Sí, pero NO pueden asignar repartidores a otros envíos.
+   Solo Admin y Vendedor tienen ese permiso.
+
+╔══════════════════════════════════════════════════════════════╗
+║  📚 DOCUMENTACIÓN COMPLETA                                  ║
+╚══════════════════════════════════════════════════════════════╝
+
+Para información detallada, revisa:
+- DIAGNOSTICO_REPARTIDORES.md  → Troubleshooting completo
+- RESUMEN_CAMBIOS.md           → Cambios en el código
+- setup_repartidores.sql       → Script SQL completo
+
+╔══════════════════════════════════════════════════════════════╗
+║  💡 RECORDATORIO                                            ║
+╚══════════════════════════════════════════════════════════════╝
+
+Credenciales de prueba (si ejecutaste el script SQL):
+
+Vendedor:
+  Usuario: vendedor1
+  Contraseña: 123456
+
+Repartidores:
+  Usuario: repartidor1, repartidor2, repartidor3
+  Contraseña: 123456 (todos)
+
+¡CAMBIA ESTAS CONTRASEÑAS EN PRODUCCIÓN!
+
+╔══════════════════════════════════════════════════════════════╗
+║  ✅ ¡Listo para Usar!                                       ║
+╚══════════════════════════════════════════════════════════════╝
+

@@ -5,6 +5,7 @@ import '../../data/api/api_service.dart';
 import '../../data/models/envio_model.dart';
 import '../../data/models/usuario_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/constants/role_constants.dart';
 import 'seguimiento_envio_screen.dart';
 
 class EnviosScreen extends StatefulWidget {
@@ -21,32 +22,72 @@ class _EnviosScreenState extends State<EnviosScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   String? _filtroEstado;
+  int? _rolId; // ✨ Para controlar permisos
 
   @override
   void initState() {
     super.initState();
+    _cargarDatosIniciales();
+  }
+
+  Future<void> _cargarDatosIniciales() async {
+    // Cargar el rol del usuario PRIMERO
+    _rolId = await SharedPrefsHelper.getRolId();
+    print('🔐 EnviosScreen - Rol ID cargado: ${_rolId ?? "NULL"}');
+    
+    if (_rolId != null) {
+      print('✅ Rol ID es ${_rolId}');
+      print('✅ Es Admin: ${RoleConstants.esAdministrador(_rolId)}');
+      print('✅ Es Vendedor: ${RoleConstants.esVendedor(_rolId)}');
+      print('✅ Puede asignar repartidor: ${RoleConstants.puedeAsignarRepartidor(_rolId)}');
+    } else {
+      print('❌ ERROR: _rolId es NULL - el usuario debe cerrar sesión y volver a iniciar');
+    }
+    
+    // Actualizar UI para reflejar el rol
+    setState(() {});
+    
+    // Luego cargar datos
     _cargarEnvios();
     _cargarRepartidores();
   }
 
   Future<void> _cargarRepartidores() async {
     try {
-      final response = await _apiService.getUsuarios();
+      print('🔄 Cargando repartidores...');
+      // ✨ Usar el nuevo endpoint que solo devuelve repartidores (rol_id = 4)
+      final response = await _apiService.getRepartidores();
+      print('📡 Respuesta del servidor: ${response.response.statusCode}');
+      
       if (response.response.statusCode == 200) {
         final data = response.data;
+        print('📦 Data recibida: $data');
+        
         if (data['code'] == 1 && data['data'] != null) {
           final List<dynamic> usuariosJson = data['data'];
           setState(() {
-            // Filtrar usuarios que pueden ser repartidores (puedes ajustar el filtro según tu lógica)
-            // Por ahora, cargamos todos los usuarios
             _repartidores = usuariosJson
                 .map((json) => UsuarioModel.fromJson(json))
                 .toList();
           });
+          print('✅ Repartidores cargados: ${_repartidores.length}');
+          
+          if (_repartidores.isEmpty) {
+            print('⚠️ ADVERTENCIA: No hay repartidores (usuarios con rol_id = 4) en la base de datos');
+          } else {
+            for (var rep in _repartidores) {
+              print('   - ${rep.nombre} ${rep.apellido} (${rep.email})');
+            }
+          }
+        } else {
+          print('⚠️ Respuesta sin datos: ${data['message']}');
         }
+      } else {
+        print('❌ Error HTTP: ${response.response.statusCode}');
       }
-    } catch (e) {
-      print('Error al cargar repartidores: $e');
+    } catch (e, stackTrace) {
+      print('❌ Error al cargar repartidores: $e');
+      print('Stack trace: $stackTrace');
     }
   }
 
@@ -163,21 +204,29 @@ class _EnviosScreenState extends State<EnviosScreen> {
   }
 
   Future<String?> _mostrarDialogoAsignarRepartidor(EnvioModel envio) async {
+    print('🚀 Iniciando proceso de asignación de repartidor...');
+    print('   - Repartidores en memoria: ${_repartidores.length}');
+    
     if (_repartidores.isEmpty) {
+      print('⚠️ No hay repartidores en memoria, cargando...');
       await _cargarRepartidores();
     }
 
     if (_repartidores.isEmpty) {
+      print('❌ ERROR: No hay repartidores disponibles después de cargar');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No hay repartidores disponibles'),
+            content: Text('No hay repartidores disponibles. Asegúrate de tener usuarios con rol "Repartidor" en el sistema.'),
             backgroundColor: Colors.orange,
+            duration: Duration(seconds: 5),
           ),
         );
       }
       return null;
     }
+    
+    print('✅ Mostrando diálogo con ${_repartidores.length} repartidores');
 
     return await showDialog<String>(
       context: context,
@@ -267,6 +316,18 @@ class _EnviosScreenState extends State<EnviosScreen> {
         );
       }
     }
+  }
+
+  /// Verificar si el usuario actual puede asignar repartidores
+  /// Solo Admin (1) y Vendedor (3) tienen este permiso
+  bool _puedeAsignarRepartidor() {
+    if (_rolId == null) {
+      print('⚠️ _rolId es NULL en _puedeAsignarRepartidor()');
+      return false; // Si no hay rol, no permitir
+    }
+    final puedeAsignar = RoleConstants.puedeAsignarRepartidor(_rolId);
+    print('🔑 _puedeAsignarRepartidor() → rolId: $_rolId, puede: $puedeAsignar');
+    return puedeAsignar;
   }
 
   Future<void> _mostrarOpcionesEstado(EnvioModel envio) async {
@@ -657,7 +718,8 @@ class _EnviosScreenState extends State<EnviosScreen> {
                                             ],
                                           ),
                                         ),
-                                      if ((envio.estado == 'pendiente' || envio.estado == 'preparando') && 
+                                      if (_puedeAsignarRepartidor() &&
+                                          (envio.estado == 'pendiente' || envio.estado == 'preparando') && 
                                           (envio.conductorRepartidor == null || envio.conductorRepartidor!.isEmpty))
                                         const PopupMenuItem(
                                           value: 'asignar',
@@ -712,28 +774,44 @@ class _EnviosScreenState extends State<EnviosScreen> {
                                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                     child: Column(
                                       children: [
-                                        if ((envio.estado == 'pendiente' || envio.estado == 'preparando') && 
-                                            (envio.conductorRepartidor == null || envio.conductorRepartidor!.isEmpty))
-                                          Padding(
-                                            padding: const EdgeInsets.only(bottom: 8),
-                                            child: SizedBox(
-                                              width: double.infinity,
-                                              child: ElevatedButton.icon(
-                                                onPressed: () async {
-                                                  final repartidor = await _mostrarDialogoAsignarRepartidor(envio);
-                                                  if (repartidor != null) {
-                                                    await _asignarRepartidor(envio, repartidor);
-                                                  }
-                                                },
-                                                icon: const Icon(Icons.person_add),
-                                                label: const Text('Asignar Repartidor'),
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: Colors.blue.shade700,
-                                                  foregroundColor: Colors.white,
+                                        // ✨ Solo Admin y Vendedor pueden asignar repartidor
+                                        Builder(
+                                          builder: (context) {
+                                            final puedeAsignar = _puedeAsignarRepartidor();
+                                            final estadoCorrecto = (envio.estado == 'pendiente' || envio.estado == 'preparando');
+                                            final sinRepartidor = (envio.conductorRepartidor == null || envio.conductorRepartidor!.isEmpty);
+                                            
+                                            print('🔍 Envío ${envio.id}:');
+                                            print('   - puedeAsignar: $puedeAsignar (rolId: $_rolId)');
+                                            print('   - estadoCorrecto: $estadoCorrecto (estado: ${envio.estado})');
+                                            print('   - sinRepartidor: $sinRepartidor (repartidor: ${envio.conductorRepartidor})');
+                                            print('   - MOSTRAR BOTÓN: ${puedeAsignar && estadoCorrecto && sinRepartidor}');
+                                            
+                                            if (puedeAsignar && estadoCorrecto && sinRepartidor) {
+                                              return Padding(
+                                                padding: const EdgeInsets.only(bottom: 8),
+                                                child: SizedBox(
+                                                  width: double.infinity,
+                                                  child: ElevatedButton.icon(
+                                                    onPressed: () async {
+                                                      final repartidor = await _mostrarDialogoAsignarRepartidor(envio);
+                                                      if (repartidor != null) {
+                                                        await _asignarRepartidor(envio, repartidor);
+                                                      }
+                                                    },
+                                                    icon: const Icon(Icons.person_add),
+                                                    label: const Text('Asignar Repartidor'),
+                                                    style: ElevatedButton.styleFrom(
+                                                      backgroundColor: Colors.blue.shade700,
+                                                      foregroundColor: Colors.white,
+                                                    ),
+                                                  ),
                                                 ),
-                                              ),
-                                            ),
-                                          ),
+                                              );
+                                            }
+                                            return const SizedBox.shrink(); // No mostrar nada si no cumple condiciones
+                                          },
+                                        ),
                                         Row(
                                           children: [
                                             if (envio.estado == 'en_camino' || envio.estado == 'preparando')

@@ -79,12 +79,30 @@ class _LoginScreenState extends State<LoginScreen> {
         } else {
           // Login de usuario interno
           if (response.user != null) {
+            print('═══════════════════════════════════════════════════');
+            print('✅ LOGIN EXITOSO - Usuario Interno');
+            print('═══════════════════════════════════════════════════');
+            print('📋 Datos del usuario:');
+            print('   - ID: ${response.user!.id}');
+            print('   - Username: ${response.user!.username}');
+            print('   - Rol ID: ${response.user!.rolId ?? "❌ NULL - Usando Admin (1) por defecto"}');
+            print('   - User Type: usuario');
+            print('═══════════════════════════════════════════════════');
+            
+            final rolParaGuardar = response.user!.rolId ?? 1;
+            print('💾 Guardando en SharedPreferences:');
+            print('   - Rol ID a guardar: $rolParaGuardar');
+            
             await SharedPrefsHelper.saveAuthData(
               token: response.token!,
               userId: response.user!.id,
               username: response.user!.username,
               userType: 'usuario',
+              rolId: rolParaGuardar, // ✨ Si no hay rol, usar Admin (1) por defecto
             );
+            
+            print('✅ Datos guardados correctamente');
+            print('═══════════════════════════════════════════════════');
           }
         }
 

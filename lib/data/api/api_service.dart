@@ -23,6 +23,9 @@ abstract class ApiService {
   @GET(ApiConstants.usuarios)
   Future<HttpResponse<dynamic>> getUsuarios();
 
+  @GET(ApiConstants.repartidores)
+  Future<HttpResponse<dynamic>> getRepartidores();
+
   @GET(ApiConstants.roles)
   Future<HttpResponse<dynamic>> getRoles();
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/constants/role_constants.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../widgets/custom_drawer.dart';
@@ -9,6 +10,9 @@ import 'productos_screen.dart';
 import 'ventas_screen.dart';
 import 'envios_screen.dart';
 import 'reportes_screen.dart';
+import 'clientes_screen.dart';
+import 'categorias_screen.dart';
+import 'proveedores_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -19,6 +23,9 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   String _username = '';
+  int? _rolId;
+  String _nombreRol = '';
+  Color _colorRol = Colors.grey;
 
   @override
   void initState() {
@@ -28,8 +35,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _loadUserData() async {
     final username = await SharedPrefsHelper.getUsername();
+    final rolId = await SharedPrefsHelper.getRolId();
+    
+    print('📊 Dashboard - Datos cargados:');
+    print('   - Username: $username');
+    print('   - Rol ID: ${rolId ?? "NULL - usando Admin por defecto"}');
+    
     setState(() {
       _username = username ?? 'Usuario';
+      // Si rolId es null, usar Admin (1) por defecto para que se muestren todas las opciones
+      _rolId = rolId ?? 1;
+      _nombreRol = RoleConstants.getNombreRol(_rolId);
+      _colorRol = RoleConstants.getColorRol(_rolId);
     });
   }
 
@@ -96,6 +113,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       drawer: CustomDrawer(
         username: _username,
         onLogout: _handleLogout,
+        rolId: _rolId,
       ),
       body: Container(
         decoration: BoxDecoration(
@@ -131,21 +149,69 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        '¡Bienvenido!',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _username,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          color: Colors.white70,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  '¡Bienvenido!',
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _username,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Badge de rol
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _colorRol,
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.3),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  RoleConstants.getIconoRol(_rolId),
+                                  size: 18,
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _nombreRol,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -164,86 +230,182 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Grid de opciones
+              // Grid de opciones filtradas por rol
               Expanded(
-                child: GridView.count(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  children: [
-                    _buildDashboardCard(
-                      icon: Icons.people,
-                      title: 'Usuarios',
-                      color: Colors.green,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const UsuariosScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    _buildDashboardCard(
-                      icon: Icons.inventory,
-                      title: 'Inventario',
-                      color: Colors.green,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const ProductosScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    _buildDashboardCard(
-                      icon: Icons.shopping_cart,
-                      title: 'Ventas',
-                      color: Colors.orange,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const VentasScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    _buildDashboardCard(
-                      icon: Icons.local_shipping,
-                      title: 'Envíos',
-                      color: Colors.purple,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const EnviosScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    _buildDashboardCard(
-                      icon: Icons.assessment,
-                      title: 'Reportes',
-                      color: Colors.teal,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const ReportesScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
+                child: _rolId == null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(
+                              color: Colors.green.shade700,
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Cargando...',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : GridView.count(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 16,
+                        mainAxisSpacing: 16,
+                        children: _buildDashboardCards(),
+                      ),
               ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  /// Construir las cards del dashboard según el rol
+  List<Widget> _buildDashboardCards() {
+    List<Widget> cards = [];
+    
+    // Usar rol efectivo (si es null, usar Admin)
+    final efectiveRolId = _rolId ?? 1;
+    
+    print('🎯 Building Dashboard Cards con Rol ID: $efectiveRolId');
+
+    // === USUARIOS (Solo Admin) ===
+    if (RoleConstants.tieneAccesoAUsuarios(efectiveRolId)) {
+      cards.add(_buildDashboardCard(
+        icon: Icons.people,
+        title: 'Usuarios',
+        color: Colors.red,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const UsuariosScreen(),
+            ),
+          );
+        },
+      ));
+    }
+
+    // === INVENTARIO (Admin y Almacén) ===
+    if (RoleConstants.tieneAccesoAInventario(efectiveRolId)) {
+      cards.add(_buildDashboardCard(
+        icon: Icons.inventory_2,
+        title: 'Productos',
+        color: Colors.blue,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const ProductosScreen(),
+            ),
+          );
+        },
+      ));
+      cards.add(_buildDashboardCard(
+        icon: Icons.category,
+        title: 'Categorías',
+        color: Colors.indigo,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const CategoriasScreen(),
+            ),
+          );
+        },
+      ));
+      cards.add(_buildDashboardCard(
+        icon: Icons.local_shipping_outlined,
+        title: 'Proveedores',
+        color: Colors.cyan,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const ProveedoresScreen(),
+            ),
+          );
+        },
+      ));
+    }
+
+    // === VENTAS (Admin y Vendedor) ===
+    if (RoleConstants.tieneAccesoAVentas(efectiveRolId)) {
+      cards.add(_buildDashboardCard(
+        icon: Icons.point_of_sale,
+        title: 'Ventas',
+        color: Colors.orange,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const VentasScreen(),
+            ),
+          );
+        },
+      ));
+      cards.add(_buildDashboardCard(
+        icon: Icons.people_outline,
+        title: 'Clientes',
+        color: Colors.deepOrange,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const ClientesScreen(),
+            ),
+          );
+        },
+      ));
+    }
+
+    // === ENVÍOS (Admin y Repartidor) ===
+    if (RoleConstants.tieneAccesoAEnvios(efectiveRolId)) {
+      cards.add(_buildDashboardCard(
+        icon: Icons.local_shipping,
+        title: 'Envíos',
+        color: Colors.purple,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const EnviosScreen(),
+            ),
+          );
+        },
+      ));
+    }
+
+    // === REPORTES (Admin) ===
+    if (RoleConstants.tieneAccesoAReportes(efectiveRolId)) {
+      cards.add(_buildDashboardCard(
+        icon: Icons.assessment,
+        title: 'Reportes',
+        color: Colors.teal,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const ReportesScreen(),
+            ),
+          );
+        },
+      ));
+    }
+    
+    print('✅ Total de cards generadas: ${cards.length}');
+    
+    // Si no hay cards (no debería pasar con el fallback), al menos mostrar un mensaje
+    if (cards.isEmpty) {
+      print('⚠️ ADVERTENCIA: No se generaron cards!');
+    }
+
+    return cards;
   }
 
   Widget _buildDashboardCard({
@@ -253,7 +415,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required VoidCallback onTap,
   }) {
     return Card(
-      elevation: 4,
+      elevation: 6,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(15),
       ),
@@ -271,6 +433,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 color.shade700,
               ],
             ),
+            boxShadow: [
+              BoxShadow(
+                color: color.shade300.withOpacity(0.4),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -281,12 +450,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 color: Colors.white,
               ),
               const SizedBox(height: 12),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ],

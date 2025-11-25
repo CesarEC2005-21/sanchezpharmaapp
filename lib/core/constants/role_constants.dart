@@ -1,58 +1,124 @@
+import 'package:flutter/material.dart';
+
 /// Constantes para los roles del sistema
-/// IMPORTANTE: Ajustar estos valores según los IDs reales en tu base de datos
+/// Basado en la tabla roles de MySQL:
+/// 1 = admin, 3 = vendedor, 4 = repartidor, 5 = almacen
 class RoleConstants {
-  // IDs de roles (ajustar según la base de datos)
+  // IDs de roles según la base de datos
   static const int ROL_ADMINISTRADOR = 1;
-  static const int ROL_ENCARGADO_ALMACEN = 2;
   static const int ROL_VENDEDOR = 3;
   static const int ROL_REPARTIDOR = 4;
-  static const int ROL_CLIENTE = 5;
+  static const int ROL_ALMACEN = 5;
 
-  /// Verifica si un rol tiene acceso a una funcionalidad específica
-  static bool tieneAccesoAInventario(int? rolId) {
-    if (rolId == null) return false;
-    return rolId == ROL_ADMINISTRADOR || 
-           rolId == ROL_ENCARGADO_ALMACEN || 
-           rolId == ROL_VENDEDOR;
+  /// Obtener nombre del rol
+  static String getNombreRol(int? rolId) {
+    switch (rolId) {
+      case ROL_ADMINISTRADOR:
+        return 'Administrador';
+      case ROL_VENDEDOR:
+        return 'Vendedor';
+      case ROL_REPARTIDOR:
+        return 'Repartidor';
+      case ROL_ALMACEN:
+        return 'Almacén';
+      default:
+        return 'Usuario';
+    }
   }
 
-  static bool tieneAccesoAVentas(int? rolId) {
-    if (rolId == null) return false;
-    return rolId == ROL_ADMINISTRADOR || 
-           rolId == ROL_VENDEDOR || 
-           rolId == ROL_ENCARGADO_ALMACEN ||
-           rolId == ROL_CLIENTE;  // Cliente puede hacer compras
+  /// Obtener badge de color según el rol
+  static Color getColorRol(int? rolId) {
+    switch (rolId) {
+      case ROL_ADMINISTRADOR:
+        return Colors.red;
+      case ROL_VENDEDOR:
+        return Colors.orange;
+      case ROL_REPARTIDOR:
+        return Colors.purple;
+      case ROL_ALMACEN:
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
   }
 
-  static bool tieneAccesoAEnvios(int? rolId) {
-    if (rolId == null) return false;
-    return rolId == ROL_ADMINISTRADOR || 
-           rolId == ROL_REPARTIDOR || 
-           rolId == ROL_ENCARGADO_ALMACEN;
+  /// Obtener icono según el rol
+  static IconData getIconoRol(int? rolId) {
+    switch (rolId) {
+      case ROL_ADMINISTRADOR:
+        return Icons.admin_panel_settings;
+      case ROL_VENDEDOR:
+        return Icons.shopping_cart;
+      case ROL_REPARTIDOR:
+        return Icons.local_shipping;
+      case ROL_ALMACEN:
+        return Icons.warehouse;
+      default:
+        return Icons.person;
+    }
   }
 
-  static bool tieneAccesoAReportes(int? rolId) {
-    if (rolId == null) return false;
-    return rolId == ROL_ADMINISTRADOR || 
-           rolId == ROL_REPARTIDOR || 
-           rolId == ROL_ENCARGADO_ALMACEN;
-  }
+  // ============================================================
+  // PERMISOS DE ACCESO POR ROL
+  // ============================================================
 
+  /// USUARIOS: Solo Admin
   static bool tieneAccesoAUsuarios(int? rolId) {
     if (rolId == null) return false;
     return rolId == ROL_ADMINISTRADOR;
   }
 
-  static bool esCliente(int? rolId) {
-    return rolId == ROL_CLIENTE;
+  /// INVENTARIO (Productos, Categorías, Proveedores): Admin y Almacén
+  static bool tieneAccesoAInventario(int? rolId) {
+    if (rolId == null) return false;
+    return rolId == ROL_ADMINISTRADOR || 
+           rolId == ROL_ALMACEN;
+  }
+
+  /// VENTAS (Registrar Venta, Clientes): Admin y Vendedor
+  static bool tieneAccesoAVentas(int? rolId) {
+    if (rolId == null) return false;
+    return rolId == ROL_ADMINISTRADOR || 
+           rolId == ROL_VENDEDOR;
+  }
+
+  /// ENVÍOS: Admin, Vendedor y Repartidor
+  /// Vendedor necesita acceso para asignar repartidores
+  static bool tieneAccesoAEnvios(int? rolId) {
+    if (rolId == null) return false;
+    return rolId == ROL_ADMINISTRADOR || 
+           rolId == ROL_VENDEDOR ||
+           rolId == ROL_REPARTIDOR;
+  }
+
+  /// REPORTES: Admin (podría extenderse a otros roles según necesidad)
+  static bool tieneAccesoAReportes(int? rolId) {
+    if (rolId == null) return false;
+    return rolId == ROL_ADMINISTRADOR;
+  }
+
+  // Verificadores de rol específico
+  static bool esAdministrador(int? rolId) {
+    return rolId == ROL_ADMINISTRADOR;
+  }
+
+  static bool esVendedor(int? rolId) {
+    return rolId == ROL_VENDEDOR;
   }
 
   static bool esRepartidor(int? rolId) {
     return rolId == ROL_REPARTIDOR;
   }
 
-  static bool esEncargadoAlmacen(int? rolId) {
-    return rolId == ROL_ENCARGADO_ALMACEN;
+  static bool esAlmacen(int? rolId) {
+    return rolId == ROL_ALMACEN;
+  }
+
+  /// Verifica si el rol puede asignar repartidores
+  /// Solo Admin (1) y Vendedor (3)
+  static bool puedeAsignarRepartidor(int? rolId) {
+    if (rolId == null) return false;
+    return rolId == ROL_ADMINISTRADOR || rolId == ROL_VENDEDOR;
   }
 }
 

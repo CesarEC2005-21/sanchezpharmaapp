@@ -6,6 +6,7 @@ class SharedPrefsHelper {
   static const String _keyUsername = 'username';
   static const String _keyUserType = 'user_type'; // 'cliente' o 'usuario'
   static const String _keyClienteId = 'cliente_id'; // ID del cliente si es tipo 'cliente'
+  static const String _keyRolId = 'rol_id'; // ID del rol del usuario
 
   // Guardar token y datos de usuario
   static Future<void> saveAuthData({
@@ -14,6 +15,7 @@ class SharedPrefsHelper {
     required String username,
     String? userType,
     int? clienteId,
+    int? rolId,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     // Limpiar el token (eliminar espacios en blanco)
@@ -27,6 +29,9 @@ class SharedPrefsHelper {
     if (clienteId != null) {
       await prefs.setInt(_keyClienteId, clienteId);
     }
+    if (rolId != null) {
+      await prefs.setInt(_keyRolId, rolId);
+    }
     
     // Log para verificar que se guardó
     print('✅ Token guardado exitosamente');
@@ -37,6 +42,9 @@ class SharedPrefsHelper {
     print('   - User Type: ${userType ?? 'usuario'}');
     if (clienteId != null) {
       print('   - Cliente ID: $clienteId');
+    }
+    if (rolId != null) {
+      print('   - Rol ID: $rolId');
     }
   }
 
@@ -103,6 +111,12 @@ class SharedPrefsHelper {
     return userType == 'usuario' || userType == null;
   }
 
+  // Obtener ID de rol del usuario
+  static Future<int?> getRolId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_keyRolId);
+  }
+
   // Limpiar datos (logout)
   static Future<void> clearAuthData() async {
     final prefs = await SharedPreferences.getInstance();
@@ -111,6 +125,7 @@ class SharedPrefsHelper {
     await prefs.remove(_keyUsername);
     await prefs.remove(_keyUserType);
     await prefs.remove(_keyClienteId);
+    await prefs.remove(_keyRolId);
     
     print('🗑️ Token y datos de usuario eliminados (logout)');
   }
