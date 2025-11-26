@@ -705,33 +705,63 @@ class _ReportesScreenState extends State<ReportesScreen> {
   void _mostrarDialogoReporte(String titulo, List<dynamic> datos, Widget Function(List<dynamic>) builder) {
     showDialog(
       context: context,
-      builder: (context) => Dialog(
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.9,
-          height: MediaQuery.of(context).size.height * 0.8,
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      builder: (context) {
+        final screenSize = MediaQuery.of(context).size;
+        final isTablet = screenSize.width > 600;
+        final isSmallScreen = screenSize.height < 600;
+        
+        return Dialog(
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: isTablet ? screenSize.width * 0.1 : 16,
+            vertical: isSmallScreen ? 8 : 24,
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: isTablet ? 800 : screenSize.width * 0.95,
+              maxHeight: screenSize.height * (isSmallScreen ? 0.95 : 0.85),
+            ),
+            child: Container(
+              padding: EdgeInsets.all(isSmallScreen ? 8 : 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(titulo, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          titulo,
+                          style: TextStyle(
+                            fontSize: isSmallScreen ? 16 : 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.vertical,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: builder(datos),
+                      ),
+                    ),
                   ),
                 ],
               ),
-              const Divider(),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: builder(datos),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -782,11 +812,45 @@ class _ReportesScreenState extends State<ReportesScreen> {
 
   Widget _buildVentasTable(List<dynamic> datos) {
     if (datos.isEmpty) {
-      return const Center(child: Text('No hay datos disponibles'));
+      return const Center(child: Padding(
+        padding: EdgeInsets.all(32.0),
+        child: Text('No hay datos disponibles'),
+      ));
     }
+    final screenSize = MediaQuery.of(context).size;
+    final isSmallScreen = screenSize.width < 600;
+    
+    if (isSmallScreen) {
+      // Para pantallas pequeñas, mostrar como lista
+      return ListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: datos.take(50).length,
+        itemBuilder: (context, index) {
+          final item = datos[index];
+          return Card(
+            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+            child: ListTile(
+              title: Text('${item['cliente_nombre'] ?? ''} ${item['cliente_apellido'] ?? ''}'),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(DateFormat('dd/MM/yyyy').format(DateTime.parse(item['fecha_venta']))),
+                  Text('S/ ${_formatNumber(item['total'] ?? 0)}'),
+                  Text(item['tipo_venta']?.toString().replaceAll('_', ' ') ?? ''),
+                ],
+              ),
+              trailing: Text(item['metodo_pago_nombre'] ?? ''),
+            ),
+          );
+        },
+      );
+    }
+    
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
+        columnSpacing: 16,
         columns: const [
           DataColumn(label: Text('Fecha')),
           DataColumn(label: Text('Cliente')),
@@ -831,11 +895,44 @@ class _ReportesScreenState extends State<ReportesScreen> {
 
   Widget _buildVentasPorClienteTable(List<dynamic> datos) {
     if (datos.isEmpty) {
-      return const Center(child: Text('No hay datos disponibles'));
+      return const Center(child: Padding(
+        padding: EdgeInsets.all(32.0),
+        child: Text('No hay datos disponibles'),
+      ));
     }
+    final screenSize = MediaQuery.of(context).size;
+    final isSmallScreen = screenSize.width < 600;
+    
+    if (isSmallScreen) {
+      // Para pantallas pequeñas, mostrar como lista
+      return ListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: datos.length,
+        itemBuilder: (context, index) {
+          final item = datos[index];
+          return Card(
+            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+            child: ListTile(
+              title: Text('${item['nombre'] ?? ''} ${item['apellido'] ?? ''}'),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Ventas: ${item['total_ventas']?.toString() ?? '0'}'),
+                  Text('Total: S/ ${_formatNumber(item['monto_total'] ?? 0)}'),
+                  Text('Promedio: S/ ${_formatNumber(item['promedio_venta'] ?? 0)}'),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+    
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
+        columnSpacing: 16,
         columns: const [
           DataColumn(label: Text('Cliente')),
           DataColumn(label: Text('Ventas')),
@@ -897,11 +994,45 @@ class _ReportesScreenState extends State<ReportesScreen> {
 
   Widget _buildProductosMasVendidosTable(List<dynamic> datos) {
     if (datos.isEmpty) {
-      return const Center(child: Text('No hay datos disponibles'));
+      return const Center(child: Padding(
+        padding: EdgeInsets.all(32.0),
+        child: Text('No hay datos disponibles'),
+      ));
     }
+    final screenSize = MediaQuery.of(context).size;
+    final isSmallScreen = screenSize.width < 600;
+    
+    if (isSmallScreen) {
+      // Para pantallas pequeñas, mostrar como lista
+      return ListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: datos.length,
+        itemBuilder: (context, index) {
+          final item = datos[index];
+          return Card(
+            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+            child: ListTile(
+              title: Text(item['nombre'] ?? 'N/A'),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Categoría: ${item['categoria_nombre'] ?? ''}'),
+                  Text('Vendido: ${item['total_vendido']?.toString() ?? '0'}'),
+                  Text('Ingreso: S/ ${_formatNumber(item['ingreso_total'] ?? 0)}'),
+                  Text('Veces: ${item['veces_vendido']?.toString() ?? '0'}'),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+    
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
+        columnSpacing: 16,
         columns: const [
           DataColumn(label: Text('Producto')),
           DataColumn(label: Text('Categoría')),
@@ -924,11 +1055,45 @@ class _ReportesScreenState extends State<ReportesScreen> {
 
   Widget _buildRotacionProductosTable(List<dynamic> datos) {
     if (datos.isEmpty) {
-      return const Center(child: Text('No hay datos disponibles'));
+      return const Center(child: Padding(
+        padding: EdgeInsets.all(32.0),
+        child: Text('No hay datos disponibles'),
+      ));
     }
+    final screenSize = MediaQuery.of(context).size;
+    final isSmallScreen = screenSize.width < 600;
+    
+    if (isSmallScreen) {
+      // Para pantallas pequeñas, mostrar como lista
+      return ListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: datos.length,
+        itemBuilder: (context, index) {
+          final item = datos[index];
+          return Card(
+            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+            child: ListTile(
+              title: Text(item['nombre'] ?? 'N/A'),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Stock: ${item['stock_actual']?.toString() ?? '0'}'),
+                  Text('Vendido: ${item['unidades_vendidas']?.toString() ?? '0'}'),
+                  Text('Veces: ${item['veces_vendido']?.toString() ?? '0'}'),
+                  Text('Rotación: ${_formatNumber(item['indice_rotacion'] ?? 0)}'),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+    
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
+        columnSpacing: 16,
         columns: const [
           DataColumn(label: Text('Producto')),
           DataColumn(label: Text('Stock')),
@@ -992,11 +1157,44 @@ class _ReportesScreenState extends State<ReportesScreen> {
 
   Widget _buildEnviosTable(List<dynamic> datos) {
     if (datos.isEmpty) {
-      return const Center(child: Text('No hay datos disponibles'));
+      return const Center(child: Padding(
+        padding: EdgeInsets.all(32.0),
+        child: Text('No hay datos disponibles'),
+      ));
     }
+    final screenSize = MediaQuery.of(context).size;
+    final isSmallScreen = screenSize.width < 600;
+    
+    if (isSmallScreen) {
+      // Para pantallas pequeñas, mostrar como lista
+      return ListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: datos.take(50).length,
+        itemBuilder: (context, index) {
+          final item = datos[index];
+          return Card(
+            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+            child: ListTile(
+              title: Text(item['cliente_nombre'] ?? ''),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(DateFormat('dd/MM/yyyy').format(DateTime.parse(item['fecha_creacion']))),
+                  Text('Estado: ${item['estado']?.toString().replaceAll('_', ' ') ?? ''}'),
+                  Text('Días: ${item['dias_transcurridos']?.toString() ?? '0'}'),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+    
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
+        columnSpacing: 16,
         columns: const [
           DataColumn(label: Text('Fecha')),
           DataColumn(label: Text('Cliente')),

@@ -23,15 +23,19 @@ class CustomModalDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final keyboardHeight = mediaQuery.viewInsets.bottom;
+    final screenHeight = mediaQuery.size.height;
+    
     return Dialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),
       elevation: 8,
       child: Container(
-        width: maxWidth ?? MediaQuery.of(context).size.width * 0.9,
+        width: maxWidth ?? mediaQuery.size.width * 0.9,
         constraints: BoxConstraints(
-          maxHeight: maxHeight ?? MediaQuery.of(context).size.height * 0.85,
+          maxHeight: (maxHeight ?? screenHeight * 0.85) - keyboardHeight,
         ),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),

@@ -69,6 +69,12 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
         },
       );
       
+      // Log para depuración
+      print('📧 Respuesta del servidor: ${response.statusCode}');
+      print('   Data: ${response.data}');
+      print('   Code: ${response.data['code']}');
+      print('   Message: ${response.data['message']}');
+      
       if (response.data['code'] == 1) {
         setState(() {
           _codigoEnviado = true;
@@ -88,18 +94,62 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(response.data['message']),
+              content: Text(response.data['message'] ?? 'Error al enviar el código'),
               backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 5),
             ),
           );
         }
       }
-    } catch (e) {
+    } on DioException catch (e) {
+      String errorMessage = 'Error al enviar el código';
+      
+      // Intentar obtener el mensaje del servidor
+      if (e.response?.data != null) {
+        final responseData = e.response!.data;
+        if (responseData is Map && responseData.containsKey('message')) {
+          errorMessage = responseData['message'].toString();
+        }
+      }
+      
+      // Manejar diferentes tipos de errores de conexión
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout) {
+        errorMessage = 'Tiempo de espera agotado. Verifica tu conexión a internet.';
+      } else if (e.type == DioExceptionType.connectionError) {
+        errorMessage = 'Error de conexión. Verifica tu conexión a internet y que el servidor esté disponible.';
+      } else if (e.message != null && e.message!.contains('Network is unreachable')) {
+        errorMessage = 'No hay conexión a internet. Verifica tu conexión de red.';
+      } else if (e.message != null && e.message!.contains('Failed host lookup')) {
+        errorMessage = 'No se puede conectar al servidor. Verifica tu conexión a internet.';
+      }
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Error al enviar el código. Verifica tu conexión.'),
-            backgroundColor: Colors.red,
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      String errorMessage = 'Error al enviar el código';
+      
+      if (e.toString().contains('Network is unreachable') || 
+          e.toString().contains('Errno 101')) {
+        errorMessage = 'No hay conexión a internet. Verifica tu conexión de red.';
+      } else if (e.toString().contains('Failed host lookup')) {
+        errorMessage = 'No se puede conectar al servidor. Verifica tu conexión a internet.';
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -158,12 +208,38 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
           );
         }
       }
+    } on DioException catch (e) {
+      String errorMessage = 'Error al verificar el código';
+      
+      if (e.response?.data != null) {
+        final responseData = e.response!.data;
+        if (responseData is Map && responseData.containsKey('message')) {
+          errorMessage = responseData['message'].toString();
+        }
+      }
+      
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.connectionError) {
+        errorMessage = 'Error de conexión. Verifica tu conexión a internet.';
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Error al verificar el código'),
+          SnackBar(
+            content: Text('Error al verificar el código: ${e.toString()}'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -226,12 +302,38 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
           );
         }
       }
+    } on DioException catch (e) {
+      String errorMessage = 'Error al cambiar la contraseña';
+      
+      if (e.response?.data != null) {
+        final responseData = e.response!.data;
+        if (responseData is Map && responseData.containsKey('message')) {
+          errorMessage = responseData['message'].toString();
+        }
+      }
+      
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.connectionError) {
+        errorMessage = 'Error de conexión. Verifica tu conexión a internet.';
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Error al cambiar la contraseña'),
+          SnackBar(
+            content: Text('Error al cambiar la contraseña: ${e.toString()}'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }

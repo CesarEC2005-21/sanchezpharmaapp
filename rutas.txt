@@ -141,7 +141,7 @@ if MAIL_AVAILABLE:
     app.config['MAIL_USE_TLS'] = True
     app.config['MAIL_USE_SSL'] = False  # Cambiar a True si usas puerto 465
     app.config['MAIL_USERNAME'] = 'uortiznelsonfab@uss.edu.pe'
-    app.config['MAIL_PASSWORD'] = 'plrb xaqp kgyr rykq'  # Debe ser contraseña de aplicación de Google
+    app.config['MAIL_PASSWORD'] = 'oduxhbgvwhfjjuey'  # Debe ser contraseña de aplicación de Google
     app.config['MAIL_DEFAULT_SENDER'] = 'uortiznelsonfab@uss.edu.pe'
     app.config['MAIL_MAX_EMAILS'] = None
     app.config['MAIL_ASCII_ATTACHMENTS'] = False
@@ -1936,7 +1936,10 @@ def registrar_venta_sanchezpharma():
                         if primer_usuario:
                             usuario_id_final = primer_usuario["id"]
                         else:
-                            return jsonify({"code": 0, "message": "No hay usuarios en el sistema. Contacte al administrador."})
+                            # Si no hay usuarios, permitir NULL o crear uno temporal
+                            # Por ahora, permitimos NULL y el sistema debería manejarlo
+                            logging.warning("No hay usuarios en el sistema. Registrando venta con usuario_id NULL.")
+                            usuario_id_final = None
                 
                 # Calcular totales
                 subtotal = Decimal('0')
@@ -1973,6 +1976,33 @@ def registrar_venta_sanchezpharma():
                     estado_inicial = data.get("estado", "completada")
 
                 # Insertar venta
+                # Si usuario_id_final es None, intentar crear un usuario sistema o usar NULL
+                if usuario_id_final is None:
+                    # Intentar crear un usuario sistema si no existe
+                    try:
+                        cursor.execute("""
+                            INSERT INTO usuarios (username, email, password, nombre, apellido, rol_id)
+                            SELECT 'sistema', 'sistema@sanchezpharma.com', 'sistema123', 'Sistema', 'Automático', 1
+                            WHERE NOT EXISTS (SELECT 1 FROM usuarios WHERE username = 'sistema')
+                        """)
+                        if cursor.rowcount > 0:
+                            usuario_id_final = cursor.lastrowid
+                            logging.info(f"Usuario sistema creado automáticamente con ID: {usuario_id_final}")
+                        else:
+                            # Si ya existe, obtenerlo
+                            cursor.execute("SELECT id FROM usuarios WHERE username = 'sistema' LIMIT 1")
+                            usuario_sistema = cursor.fetchone()
+                            if usuario_sistema:
+                                usuario_id_final = usuario_sistema["id"]
+                    except Exception as e:
+                        logging.error(f"Error al crear usuario sistema: {e}")
+                        # Si falla, intentar obtener cualquier usuario
+                        cursor.execute("SELECT id FROM usuarios ORDER BY id ASC LIMIT 1")
+                        primer_usuario = cursor.fetchone()
+                        if primer_usuario:
+                            usuario_id_final = primer_usuario["id"]
+                
+                # Si aún no hay usuario_id, registrar con NULL (si la tabla lo permite)
                 cursor.execute("""
                     INSERT INTO ventas 
                     (cliente_id, usuario_id, tipo_venta, metodo_pago_id,
@@ -1991,6 +2021,24 @@ def registrar_venta_sanchezpharma():
                 ))
 
                 venta_id = cursor.lastrowid
+                
+                # Verificar la fecha guardada y el estado
+                cursor.execute("SELECT fecha_venta, estado, tipo_venta FROM ventas WHERE id = %s", (venta_id,))
+                venta_guardada = cursor.fetchone()
+                logging.info(f"Venta registrada - ID: {venta_id}, Cliente: {data.get('cliente_id')}, Total: {total}, Estado: {estado_inicial}, Tipo: {data.get('tipo_venta')}")
+                logging.info(f"Fecha guardada: {venta_guardada.get('fecha_venta') if venta_guardada else 'N/A'}, Estado guardado: {venta_guardada.get('estado') if venta_guardada else 'N/A'}")
+                
+                # Verificar que la venta se pueda encontrar en las consultas de reportes
+                cursor.execute("""
+                    SELECT COUNT(*) as encontrada
+                    FROM ventas
+                    WHERE id = %s
+                    AND estado != 'anulada'
+                    AND estado IS NOT NULL
+                    AND DATE(fecha_venta) = CURDATE()
+                """, (venta_id,))
+                venta_encontrada_hoy = cursor.fetchone()
+                logging.info(f"Venta encontrada en consulta del día: {venta_encontrada_hoy.get('encontrada') if venta_encontrada_hoy else 0}")
 
                 # Insertar detalle y actualizar stock
                 for producto in productos:
@@ -2427,12 +2475,218 @@ def dashboard_resumen_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.callproc('dashboard_resumen')
-                results = cursor.fetchall()
+                # Intentar usar stored procedure si existe
+                try:
+                    cursor.callproc('dashboard_resumen')
+                    results = cursor.fetchall()
+                    # Si el stored procedure devuelve datos, usarlos
+                    if results:
+                        return jsonify({"code": 1, "data": results, "message": "Dashboard resumen obtenido correctamente"})
+                except Exception as proc_error:
+                    logging.warning(f"Stored procedure no disponible, usando consultas directas: {proc_error}")
+                
+                # Si el stored procedure no existe o no devuelve datos, calcular manualmente
+                resultados = []
+                
+                # Obtener fecha actual del servidor para debug
+                cursor.execute("SELECT NOW() as ahora, CURDATE() as hoy, DATE_SUB(NOW(), INTERVAL 5 HOUR) as ahora_peru, DATE(DATE_SUB(NOW(), INTERVAL 5 HOUR)) as hoy_peru")
+                fecha_info = cursor.fetchone()
+                logging.info(f"Fechas del servidor - NOW(): {fecha_info.get('ahora')}, CURDATE(): {fecha_info.get('hoy')}, Perú: {fecha_info.get('ahora_peru')}, Hoy Perú: {fecha_info.get('hoy_peru')}")
+                
+                # Ventas del día - usar múltiples métodos para asegurar que funcione
+                # IMPORTANTE: Incluir todas las ventas excepto las anuladas (pendiente, completada, etc.)
+                # Método 1: CURDATE() (zona horaria del servidor)
+                cursor.execute("""
+                    SELECT 
+                        COUNT(*) as cantidad, 
+                        COALESCE(SUM(total), 0) as monto
+                    FROM ventas
+                    WHERE DATE(fecha_venta) = CURDATE()
+                    AND estado != 'anulada'
+                    AND estado IS NOT NULL
+                """)
+                ventas_dia = cursor.fetchone()
+                logging.info(f"Ventas del día (CURDATE): {ventas_dia}")
+                
+                # Método 2: Ajuste UTC-5 (Perú/Lima)
+                cursor.execute("""
+                    SELECT 
+                        COUNT(*) as cantidad, 
+                        COALESCE(SUM(total), 0) as monto
+                    FROM ventas
+                    WHERE DATE(fecha_venta) = DATE(DATE_SUB(NOW(), INTERVAL 5 HOUR))
+                    AND estado != 'anulada'
+                    AND estado IS NOT NULL
+                """)
+                ventas_dia_utc5 = cursor.fetchone()
+                logging.info(f"Ventas del día (UTC-5): {ventas_dia_utc5}")
+                
+                # Método 3: Consulta más amplia que incluya ventas de las últimas 24 horas
+                cursor.execute("""
+                    SELECT 
+                        COUNT(*) as cantidad, 
+                        COALESCE(SUM(total), 0) as monto
+                    FROM ventas
+                    WHERE fecha_venta >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                    AND fecha_venta < DATE_ADD(NOW(), INTERVAL 1 DAY)
+                    AND estado != 'anulada'
+                    AND estado IS NOT NULL
+                """)
+                ventas_dia_24h = cursor.fetchone()
+                logging.info(f"Ventas del día (últimas 24h): {ventas_dia_24h}")
+                
+                # Usar el que tenga más resultados
+                if ventas_dia_24h and (ventas_dia_24h.get('cantidad', 0) or 0) > (ventas_dia.get('cantidad', 0) or 0):
+                    ventas_dia = ventas_dia_24h
+                    logging.info("Usando ventas del día con rango de 24 horas")
+                elif ventas_dia_utc5 and (ventas_dia_utc5.get('cantidad', 0) or 0) > (ventas_dia.get('cantidad', 0) or 0):
+                    ventas_dia = ventas_dia_utc5
+                    logging.info("Usando ventas del día con ajuste UTC-5")
+                
+                # Asegurar que cantidad sea un entero
+                cantidad_dia = 0
+                monto_dia = 0.0
+                if ventas_dia:
+                    cantidad_dia = int(ventas_dia.get('cantidad', 0) or 0)
+                    monto_dia = float(ventas_dia.get('monto', 0) or 0)
+                    logging.info(f"Ventas del día finales - Cantidad: {cantidad_dia}, Monto: {monto_dia}")
+                
+                resultados.append({
+                    'tipo': 'ventas_dia',
+                    'cantidad': cantidad_dia,
+                    'monto': monto_dia
+                })
+                
+                # Ventas del mes - usar múltiples métodos
+                # IMPORTANTE: Incluir todas las ventas excepto las anuladas (pendiente, completada, etc.)
+                # Método 1: YEAR/MONTH con CURDATE()
+                cursor.execute("""
+                    SELECT 
+                        COUNT(*) as cantidad, 
+                        COALESCE(SUM(total), 0) as monto
+                    FROM ventas
+                    WHERE YEAR(fecha_venta) = YEAR(CURDATE())
+                    AND MONTH(fecha_venta) = MONTH(CURDATE())
+                    AND estado != 'anulada'
+                    AND estado IS NOT NULL
+                """)
+                ventas_mes = cursor.fetchone()
+                logging.info(f"Ventas del mes (CURDATE): {ventas_mes}")
+                
+                # Método 2: Ajuste UTC-5
+                cursor.execute("""
+                    SELECT 
+                        COUNT(*) as cantidad, 
+                        COALESCE(SUM(total), 0) as monto
+                    FROM ventas
+                    WHERE YEAR(fecha_venta) = YEAR(DATE_SUB(NOW(), INTERVAL 5 HOUR))
+                    AND MONTH(fecha_venta) = MONTH(DATE_SUB(NOW(), INTERVAL 5 HOUR))
+                    AND estado != 'anulada'
+                    AND estado IS NOT NULL
+                """)
+                ventas_mes_utc5 = cursor.fetchone()
+                logging.info(f"Ventas del mes (UTC-5): {ventas_mes_utc5}")
+                
+                # Método 3: Consulta más amplia usando DATE_FORMAT
+                cursor.execute("""
+                    SELECT 
+                        COUNT(*) as cantidad, 
+                        COALESCE(SUM(total), 0) as monto
+                    FROM ventas
+                    WHERE DATE_FORMAT(fecha_venta, '%Y-%m') = DATE_FORMAT(NOW(), '%Y-%m')
+                    AND estado != 'anulada'
+                    AND estado IS NOT NULL
+                """)
+                ventas_mes_format = cursor.fetchone()
+                logging.info(f"Ventas del mes (DATE_FORMAT): {ventas_mes_format}")
+                
+                # Usar el que tenga más resultados
+                if ventas_mes_format and (ventas_mes_format.get('cantidad', 0) or 0) > (ventas_mes.get('cantidad', 0) or 0):
+                    ventas_mes = ventas_mes_format
+                    logging.info("Usando ventas del mes con DATE_FORMAT")
+                elif ventas_mes_utc5 and (ventas_mes_utc5.get('cantidad', 0) or 0) > (ventas_mes.get('cantidad', 0) or 0):
+                    ventas_mes = ventas_mes_utc5
+                    logging.info("Usando ventas del mes con ajuste UTC-5")
+                
+                # Asegurar que cantidad sea un entero
+                cantidad_mes = 0
+                monto_mes = 0.0
+                if ventas_mes:
+                    cantidad_mes = int(ventas_mes.get('cantidad', 0) or 0)
+                    monto_mes = float(ventas_mes.get('monto', 0) or 0)
+                    logging.info(f"Ventas del mes finales - Cantidad: {cantidad_mes}, Monto: {monto_mes}")
+                
+                # Verificar todas las ventas para debug (incluyendo estado pendiente)
+                cursor.execute("""
+                    SELECT 
+                        COUNT(*) as total, 
+                        COUNT(CASE WHEN estado = 'pendiente' THEN 1 END) as ventas_pendientes,
+                        COUNT(CASE WHEN estado = 'completada' THEN 1 END) as ventas_completadas,
+                        MIN(fecha_venta) as primera_venta,
+                        MAX(fecha_venta) as ultima_venta,
+                        COUNT(CASE WHEN DATE(fecha_venta) = CURDATE() THEN 1 END) as ventas_hoy_curdate,
+                        COUNT(CASE WHEN DATE(fecha_venta) = DATE(DATE_SUB(NOW(), INTERVAL 5 HOUR)) THEN 1 END) as ventas_hoy_utc5,
+                        COUNT(CASE WHEN YEAR(fecha_venta) = YEAR(CURDATE()) AND MONTH(fecha_venta) = MONTH(CURDATE()) THEN 1 END) as ventas_mes_curdate,
+                        COUNT(CASE WHEN YEAR(fecha_venta) = YEAR(DATE_SUB(NOW(), INTERVAL 5 HOUR)) AND MONTH(fecha_venta) = MONTH(DATE_SUB(NOW(), INTERVAL 5 HOUR)) THEN 1 END) as ventas_mes_utc5
+                    FROM ventas
+                    WHERE estado != 'anulada'
+                """)
+                debug_info = cursor.fetchone()
+                logging.info(f"Debug ventas - Total: {debug_info.get('total')}, Pendientes: {debug_info.get('ventas_pendientes')}, Completadas: {debug_info.get('ventas_completadas')}")
+                logging.info(f"Debug - Primera: {debug_info.get('primera_venta')}, Última: {debug_info.get('ultima_venta')}")
+                logging.info(f"Debug - Hoy (CURDATE): {debug_info.get('ventas_hoy_curdate')}, Hoy (UTC-5): {debug_info.get('ventas_hoy_utc5')}")
+                logging.info(f"Debug - Mes (CURDATE): {debug_info.get('ventas_mes_curdate')}, Mes (UTC-5): {debug_info.get('ventas_mes_utc5')}")
+                
+                resultados.append({
+                    'tipo': 'ventas_mes',
+                    'cantidad': cantidad_mes,
+                    'monto': monto_mes
+                })
+                
+                # Stock bajo
+                cursor.execute("""
+                    SELECT COUNT(*) as cantidad
+                    FROM productos
+                    WHERE stock_actual <= stock_minimo
+                    AND estado = 'activo'
+                """)
+                stock_bajo = cursor.fetchone()
+                resultados.append({
+                    'tipo': 'stock_bajo',
+                    'cantidad': stock_bajo['cantidad'] if stock_bajo else 0,
+                    'monto': 0.0
+                })
+                
+                # Envíos pendientes
+                cursor.execute("""
+                    SELECT COUNT(*) as cantidad
+                    FROM envios
+                    WHERE estado IN ('pendiente', 'preparando', 'en_camino')
+                """)
+                envios_pendientes = cursor.fetchone()
+                resultados.append({
+                    'tipo': 'envios_pendientes',
+                    'cantidad': envios_pendientes['cantidad'] if envios_pendientes else 0,
+                    'monto': 0.0
+                })
+                
+                # Valor del inventario (precio de compra)
+                cursor.execute("""
+                    SELECT COALESCE(SUM(stock_actual * precio_compra), 0) as monto
+                    FROM productos
+                    WHERE estado = 'activo'
+                """)
+                valor_inventario = cursor.fetchone()
+                resultados.append({
+                    'tipo': 'valor_inventario',
+                    'cantidad': 0,
+                    'monto': float(valor_inventario['monto']) if valor_inventario and valor_inventario['monto'] else 0.0
+                })
 
-        return jsonify({"code": 1, "data": results, "message": "Dashboard resumen obtenido correctamente"})
+        return jsonify({"code": 1, "data": resultados, "message": "Dashboard resumen obtenido correctamente"})
 
     except Exception as e:
+        logging.error(f"Error en dashboard_resumen: {repr(e)}")
         return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
@@ -2451,12 +2705,35 @@ def reporte_ventas_periodo_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.callproc('reporte_ventas_periodo', (fecha_desde, fecha_hasta))
+                # Intentar usar stored procedure si existe
+                try:
+                    cursor.callproc('reporte_ventas_periodo', (fecha_desde, fecha_hasta))
+                    results = cursor.fetchall()
+                    if results:
+                        return jsonify({"code": 1, "data": results, "message": "Reporte de ventas generado correctamente"})
+                except Exception as proc_error:
+                    logging.warning(f"Stored procedure no disponible, usando consulta directa: {proc_error}")
+                
+                # Calcular directamente
+                cursor.execute("""
+                    SELECT 
+                        v.*,
+                        c.nombre as cliente_nombre,
+                        c.apellido as cliente_apellido,
+                        mp.nombre as metodo_pago_nombre
+                    FROM ventas v
+                    LEFT JOIN clientes c ON v.cliente_id = c.id
+                    LEFT JOIN metodos_pago mp ON v.metodo_pago_id = mp.id
+                    WHERE DATE(v.fecha_venta) BETWEEN %s AND %s
+                    AND v.estado != 'anulada'
+                    ORDER BY v.fecha_venta DESC
+                """, (fecha_desde, fecha_hasta))
                 results = cursor.fetchall()
 
         return jsonify({"code": 1, "data": results, "message": "Reporte de ventas generado correctamente"})
 
     except Exception as e:
+        logging.error(f"Error en reporte_ventas_periodo: {repr(e)}")
         return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
@@ -2494,12 +2771,35 @@ def reporte_ingresos_totales_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.callproc('reporte_ingresos_totales', (fecha_desde, fecha_hasta))
+                # Intentar usar stored procedure si existe
+                try:
+                    cursor.callproc('reporte_ingresos_totales', (fecha_desde, fecha_hasta))
+                    results = cursor.fetchone()
+                    if results:
+                        return jsonify({"code": 1, "data": results, "message": "Reporte de ingresos totales generado correctamente"})
+                except Exception as proc_error:
+                    logging.warning(f"Stored procedure no disponible, usando consulta directa: {proc_error}")
+                
+                # Calcular directamente
+                cursor.execute("""
+                    SELECT 
+                        COALESCE(SUM(total), 0) as ingreso_total,
+                        COUNT(*) as total_ventas,
+                        COALESCE(AVG(total), 0) as promedio_venta,
+                        COALESCE(MIN(total), 0) as venta_minima,
+                        COALESCE(MAX(total), 0) as venta_maxima,
+                        COALESCE(SUM(CASE WHEN tipo_venta = 'recojo_tienda' THEN total ELSE 0 END), 0) as ingresos_recojo,
+                        COALESCE(SUM(CASE WHEN tipo_venta = 'envio_domicilio' THEN total ELSE 0 END), 0) as ingresos_envio
+                    FROM ventas
+                    WHERE DATE(fecha_venta) BETWEEN %s AND %s
+                    AND estado != 'anulada'
+                """, (fecha_desde, fecha_hasta))
                 results = cursor.fetchone()
 
         return jsonify({"code": 1, "data": results, "message": "Reporte de ingresos totales generado correctamente"})
 
     except Exception as e:
+        logging.error(f"Error en reporte_ingresos_totales: {repr(e)}")
         return jsonify({"code": 0, "data": {}, "message": repr(e)})
 
 
@@ -2516,12 +2816,42 @@ def reporte_envios_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.callproc('reporte_envios', (fecha_desde, fecha_hasta, estado))
+                # Intentar usar stored procedure si existe
+                try:
+                    cursor.callproc('reporte_envios', (fecha_desde, fecha_hasta, estado))
+                    results = cursor.fetchall()
+                    if results:
+                        return jsonify({"code": 1, "data": results, "message": "Reporte de envíos generado correctamente"})
+                except Exception as proc_error:
+                    logging.warning(f"Stored procedure no disponible, usando consulta directa: {proc_error}")
+                
+                # Calcular directamente
+                query = """
+                    SELECT 
+                        e.*,
+                        v.numero_venta,
+                        c.nombre as cliente_nombre,
+                        DATEDIFF(COALESCE(e.fecha_real_entrega, CURDATE()), e.fecha_creacion) as dias_transcurridos
+                    FROM envios e
+                    LEFT JOIN ventas v ON e.venta_id = v.id
+                    LEFT JOIN clientes c ON v.cliente_id = c.id
+                    WHERE DATE(e.fecha_creacion) BETWEEN %s AND %s
+                """
+                params = [fecha_desde, fecha_hasta]
+                
+                if estado:
+                    query += " AND e.estado = %s"
+                    params.append(estado)
+                
+                query += " ORDER BY e.fecha_creacion DESC"
+                
+                cursor.execute(query, params)
                 results = cursor.fetchall()
 
         return jsonify({"code": 1, "data": results, "message": "Reporte de envíos generado correctamente"})
 
     except Exception as e:
+        logging.error(f"Error en reporte_envios: {repr(e)}")
         return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
@@ -2533,12 +2863,36 @@ def vista_ventas_diarias_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM vista_ventas_diarias ORDER BY fecha DESC LIMIT 30")
+                # Intentar usar vista si existe, sino calcular directamente
+                try:
+                    cursor.execute("SELECT * FROM vista_ventas_diarias ORDER BY fecha DESC LIMIT 30")
+                    data = cursor.fetchall()
+                    if data:
+                        return jsonify({"code": 1, "data": data, "message": "Ventas diarias obtenidas correctamente"})
+                except Exception as view_error:
+                    logging.warning(f"Vista no disponible, usando consulta directa: {view_error}")
+                
+                # Calcular directamente (usando zona horaria de Perú/Lima - UTC-5)
+                # IMPORTANTE: Incluir todas las ventas excepto las anuladas (pendiente, completada, etc.)
+                cursor.execute("""
+                    SELECT 
+                        DATE(DATE_SUB(fecha_venta, INTERVAL 5 HOUR)) as fecha,
+                        COUNT(*) as total_ventas,
+                        COALESCE(SUM(total), 0) as ingreso_total,
+                        COALESCE(AVG(total), 0) as promedio_venta
+                    FROM ventas
+                    WHERE estado != 'anulada'
+                    AND estado IS NOT NULL
+                    GROUP BY DATE(DATE_SUB(fecha_venta, INTERVAL 5 HOUR))
+                    ORDER BY fecha DESC
+                    LIMIT 30
+                """)
                 data = cursor.fetchall()
 
         return jsonify({"code": 1, "data": data, "message": "Ventas diarias obtenidas correctamente"})
 
     except Exception as e:
+        logging.error(f"Error en vista_ventas_diarias: {repr(e)}")
         return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
@@ -2550,12 +2904,37 @@ def vista_ventas_mensuales_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM vista_ventas_mensuales ORDER BY año DESC, mes DESC LIMIT 12")
+                # Intentar usar vista si existe, sino calcular directamente
+                try:
+                    cursor.execute("SELECT * FROM vista_ventas_mensuales ORDER BY año DESC, mes DESC LIMIT 12")
+                    data = cursor.fetchall()
+                    if data:
+                        return jsonify({"code": 1, "data": data, "message": "Ventas mensuales obtenidas correctamente"})
+                except Exception as view_error:
+                    logging.warning(f"Vista no disponible, usando consulta directa: {view_error}")
+                
+                # Calcular directamente (usando zona horaria de Perú/Lima - UTC-5)
+                # IMPORTANTE: Incluir todas las ventas excepto las anuladas (pendiente, completada, etc.)
+                cursor.execute("""
+                    SELECT 
+                        MONTH(DATE_SUB(fecha_venta, INTERVAL 5 HOUR)) as mes,
+                        YEAR(DATE_SUB(fecha_venta, INTERVAL 5 HOUR)) as año,
+                        COUNT(*) as total_ventas,
+                        COALESCE(SUM(total), 0) as ingreso_total,
+                        COUNT(DISTINCT cliente_id) as clientes_unicos
+                    FROM ventas
+                    WHERE estado != 'anulada'
+                    AND estado IS NOT NULL
+                    GROUP BY YEAR(DATE_SUB(fecha_venta, INTERVAL 5 HOUR)), MONTH(DATE_SUB(fecha_venta, INTERVAL 5 HOUR))
+                    ORDER BY año DESC, mes DESC
+                    LIMIT 12
+                """)
                 data = cursor.fetchall()
 
         return jsonify({"code": 1, "data": data, "message": "Ventas mensuales obtenidas correctamente"})
 
     except Exception as e:
+        logging.error(f"Error en vista_ventas_mensuales: {repr(e)}")
         return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
@@ -2569,12 +2948,39 @@ def vista_productos_mas_vendidos_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM vista_productos_mas_vendidos LIMIT %s", (limite,))
+                # Intentar usar vista si existe, sino calcular directamente
+                try:
+                    cursor.execute("SELECT * FROM vista_productos_mas_vendidos LIMIT %s", (limite,))
+                    data = cursor.fetchall()
+                    if data:
+                        return jsonify({"code": 1, "data": data, "message": "Productos más vendidos obtenidos correctamente"})
+                except Exception as view_error:
+                    logging.warning(f"Vista no disponible, usando consulta directa: {view_error}")
+                
+                # Calcular directamente
+                cursor.execute("""
+                    SELECT 
+                        p.id,
+                        p.nombre,
+                        c.nombre as categoria_nombre,
+                        COALESCE(SUM(dv.cantidad), 0) as total_vendido,
+                        COALESCE(SUM(dv.subtotal), 0) as ingreso_total,
+                        COUNT(DISTINCT dv.venta_id) as veces_vendido
+                    FROM productos p
+                    LEFT JOIN categorias c ON p.categoria_id = c.id
+                    LEFT JOIN detalle_venta dv ON p.id = dv.producto_id
+                    LEFT JOIN ventas v ON dv.venta_id = v.id AND v.estado != 'anulada'
+                    WHERE p.estado = 'activo'
+                    GROUP BY p.id, p.nombre, c.nombre
+                    ORDER BY total_vendido DESC
+                    LIMIT %s
+                """, (limite,))
                 data = cursor.fetchall()
 
         return jsonify({"code": 1, "data": data, "message": "Productos más vendidos obtenidos correctamente"})
 
     except Exception as e:
+        logging.error(f"Error en vista_productos_mas_vendidos: {repr(e)}")
         return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
@@ -2586,12 +2992,35 @@ def vista_ventas_por_vendedor_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM vista_ventas_por_vendedor")
+                # Intentar usar vista si existe, sino calcular directamente
+                try:
+                    cursor.execute("SELECT * FROM vista_ventas_por_vendedor")
+                    data = cursor.fetchall()
+                    if data:
+                        return jsonify({"code": 1, "data": data, "message": "Ventas por vendedor obtenidas correctamente"})
+                except Exception as view_error:
+                    logging.warning(f"Vista no disponible, usando consulta directa: {view_error}")
+                
+                # Calcular directamente
+                cursor.execute("""
+                    SELECT 
+                        u.id,
+                        u.username,
+                        COUNT(v.id) as total_ventas,
+                        COALESCE(SUM(v.total), 0) as ingreso_total,
+                        COALESCE(AVG(v.total), 0) as promedio_venta
+                    FROM usuarios u
+                    LEFT JOIN ventas v ON u.id = v.usuario_id AND v.estado != 'anulada'
+                    GROUP BY u.id, u.username
+                    HAVING total_ventas > 0
+                    ORDER BY ingreso_total DESC
+                """)
                 data = cursor.fetchall()
 
         return jsonify({"code": 1, "data": data, "message": "Ventas por vendedor obtenidas correctamente"})
 
     except Exception as e:
+        logging.error(f"Error en vista_ventas_por_vendedor: {repr(e)}")
         return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
@@ -2603,12 +3032,37 @@ def vista_ventas_por_cliente_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM vista_ventas_por_cliente")
+                # Intentar usar vista si existe, sino calcular directamente
+                try:
+                    cursor.execute("SELECT * FROM vista_ventas_por_cliente")
+                    data = cursor.fetchall()
+                    if data:
+                        return jsonify({"code": 1, "data": data, "message": "Ventas por cliente obtenidas correctamente"})
+                except Exception as view_error:
+                    logging.warning(f"Vista no disponible, usando consulta directa: {view_error}")
+                
+                # Calcular directamente
+                cursor.execute("""
+                    SELECT 
+                        c.id,
+                        c.nombre,
+                        c.apellido,
+                        COUNT(v.id) as total_ventas,
+                        COALESCE(SUM(v.total), 0) as monto_total,
+                        COALESCE(AVG(v.total), 0) as promedio_venta
+                    FROM clientes c
+                    LEFT JOIN ventas v ON c.id = v.cliente_id AND v.estado != 'anulada'
+                    WHERE c.estado = 'activo'
+                    GROUP BY c.id, c.nombre, c.apellido
+                    HAVING total_ventas > 0
+                    ORDER BY monto_total DESC
+                """)
                 data = cursor.fetchall()
 
         return jsonify({"code": 1, "data": data, "message": "Ventas por cliente obtenidas correctamente"})
 
     except Exception as e:
+        logging.error(f"Error en vista_ventas_por_cliente: {repr(e)}")
         return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
@@ -2620,12 +3074,35 @@ def vista_ventas_por_metodo_pago_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM vista_ventas_por_metodo_pago")
+                # Intentar usar vista si existe, sino calcular directamente
+                try:
+                    cursor.execute("SELECT * FROM vista_ventas_por_metodo_pago")
+                    data = cursor.fetchall()
+                    if data:
+                        return jsonify({"code": 1, "data": data, "message": "Ventas por método de pago obtenidas correctamente"})
+                except Exception as view_error:
+                    logging.warning(f"Vista no disponible, usando consulta directa: {view_error}")
+                
+                # Calcular directamente
+                cursor.execute("""
+                    SELECT 
+                        mp.id,
+                        mp.nombre as metodo_pago,
+                        COUNT(v.id) as total_ventas,
+                        COALESCE(SUM(v.total), 0) as monto_total,
+                        ROUND((COUNT(v.id) * 100.0 / (SELECT COUNT(*) FROM ventas WHERE estado != 'anulada')), 2) as porcentaje
+                    FROM metodos_pago mp
+                    LEFT JOIN ventas v ON mp.id = v.metodo_pago_id AND v.estado != 'anulada'
+                    WHERE mp.estado = 'activo'
+                    GROUP BY mp.id, mp.nombre
+                    ORDER BY monto_total DESC
+                """)
                 data = cursor.fetchall()
 
         return jsonify({"code": 1, "data": data, "message": "Ventas por método de pago obtenidas correctamente"})
 
     except Exception as e:
+        logging.error(f"Error en vista_ventas_por_metodo_pago: {repr(e)}")
         return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
@@ -2637,12 +3114,43 @@ def vista_resumen_envios_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM vista_resumen_envios")
+                # Intentar usar vista si existe, sino calcular directamente
+                try:
+                    cursor.execute("SELECT * FROM vista_resumen_envios")
+                    data = cursor.fetchall()
+                    if data:
+                        return jsonify({"code": 1, "data": data, "message": "Resumen de envíos obtenido correctamente"})
+                except Exception as view_error:
+                    logging.warning(f"Vista no disponible, usando consulta directa: {view_error}")
+                
+                # Calcular directamente
+                cursor.execute("""
+                    SELECT 
+                        estado,
+                        COUNT(*) as total_envios,
+                        SUM(CASE WHEN estado = 'entregado' THEN 1 ELSE 0 END) as entregados,
+                        AVG(CASE 
+                            WHEN estado = 'entregado' AND fecha_real_entrega IS NOT NULL AND fecha_creacion IS NOT NULL
+                            THEN DATEDIFF(fecha_real_entrega, fecha_creacion)
+                            ELSE NULL
+                        END) as dias_promedio_entrega
+                    FROM envios
+                    GROUP BY estado
+                    ORDER BY 
+                        CASE estado
+                            WHEN 'pendiente' THEN 1
+                            WHEN 'preparando' THEN 2
+                            WHEN 'en_camino' THEN 3
+                            WHEN 'entregado' THEN 4
+                            ELSE 5
+                        END
+                """)
                 data = cursor.fetchall()
 
         return jsonify({"code": 1, "data": data, "message": "Resumen de envíos obtenido correctamente"})
 
     except Exception as e:
+        logging.error(f"Error en vista_resumen_envios: {repr(e)}")
         return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
@@ -2654,12 +3162,33 @@ def vista_analisis_inventario_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM vista_analisis_inventario")
+                # Intentar usar vista si existe, sino calcular directamente
+                try:
+                    cursor.execute("SELECT * FROM vista_analisis_inventario")
+                    data = cursor.fetchone()
+                    if data:
+                        return jsonify({"code": 1, "data": data, "message": "Análisis de inventario obtenido correctamente"})
+                except Exception as view_error:
+                    logging.warning(f"Vista no disponible, usando consulta directa: {view_error}")
+                
+                # Calcular directamente
+                cursor.execute("""
+                    SELECT 
+                        COUNT(*) as total_productos,
+                        SUM(CASE WHEN estado = 'activo' THEN 1 ELSE 0 END) as productos_activos,
+                        SUM(CASE WHEN estado = 'agotado' THEN 1 ELSE 0 END) as productos_agotados,
+                        SUM(CASE WHEN stock_actual <= stock_minimo AND estado = 'activo' THEN 1 ELSE 0 END) as productos_stock_bajo,
+                        COALESCE(SUM(stock_actual * precio_compra), 0) as valor_inventario_compra,
+                        COALESCE(SUM(stock_actual * precio_venta), 0) as valor_inventario_venta,
+                        COALESCE(SUM(stock_actual * (precio_venta - precio_compra)), 0) as ganancia_potencial
+                    FROM productos
+                """)
                 data = cursor.fetchone()
 
         return jsonify({"code": 1, "data": data, "message": "Análisis de inventario obtenido correctamente"})
 
     except Exception as e:
+        logging.error(f"Error en vista_analisis_inventario: {repr(e)}")
         return jsonify({"code": 0, "data": {}, "message": repr(e)})
 
 
@@ -2673,12 +3202,42 @@ def vista_rotacion_productos_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM vista_rotacion_productos ORDER BY unidades_vendidas DESC LIMIT %s", (limite,))
+                # Intentar usar vista si existe, sino calcular directamente
+                try:
+                    cursor.execute("SELECT * FROM vista_rotacion_productos ORDER BY unidades_vendidas DESC LIMIT %s", (limite,))
+                    data = cursor.fetchall()
+                    if data:
+                        return jsonify({"code": 1, "data": data, "message": "Rotación de productos obtenida correctamente"})
+                except Exception as view_error:
+                    logging.warning(f"Vista no disponible, usando consulta directa: {view_error}")
+                
+                # Calcular directamente
+                cursor.execute("""
+                    SELECT 
+                        p.id,
+                        p.nombre,
+                        p.stock_actual,
+                        COALESCE(SUM(dv.cantidad), 0) as unidades_vendidas,
+                        COUNT(DISTINCT dv.venta_id) as veces_vendido,
+                        CASE 
+                            WHEN p.stock_actual > 0 
+                            THEN ROUND(COALESCE(SUM(dv.cantidad), 0) / p.stock_actual, 2)
+                            ELSE 0
+                        END as indice_rotacion
+                    FROM productos p
+                    LEFT JOIN detalle_venta dv ON p.id = dv.producto_id
+                    LEFT JOIN ventas v ON dv.venta_id = v.id AND v.estado != 'anulada'
+                    WHERE p.estado = 'activo'
+                    GROUP BY p.id, p.nombre, p.stock_actual
+                    ORDER BY unidades_vendidas DESC
+                    LIMIT %s
+                """, (limite,))
                 data = cursor.fetchall()
 
         return jsonify({"code": 1, "data": data, "message": "Rotación de productos obtenida correctamente"})
 
     except Exception as e:
+        logging.error(f"Error en vista_rotacion_productos: {repr(e)}")
         return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
@@ -2690,12 +3249,35 @@ def vista_comparativa_periodos_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM vista_comparativa_periodos")
+                # Intentar usar vista si existe, sino calcular directamente
+                try:
+                    cursor.execute("SELECT * FROM vista_comparativa_periodos")
+                    data = cursor.fetchall()
+                    if data:
+                        return jsonify({"code": 1, "data": data, "message": "Comparativa de períodos obtenida correctamente"})
+                except Exception as view_error:
+                    logging.warning(f"Vista no disponible, usando consulta directa: {view_error}")
+                
+                # Calcular directamente - comparar últimos 3 meses
+                cursor.execute("""
+                    SELECT 
+                        CONCAT(MONTHNAME(fecha_venta), ' ', YEAR(fecha_venta)) as periodo,
+                        COUNT(*) as total_ventas,
+                        COALESCE(SUM(total), 0) as ingreso_total,
+                        COALESCE(AVG(total), 0) as promedio_venta,
+                        COUNT(DISTINCT cliente_id) as clientes_unicos
+                    FROM ventas
+                    WHERE estado != 'anulada'
+                    AND fecha_venta >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
+                    GROUP BY YEAR(fecha_venta), MONTH(fecha_venta)
+                    ORDER BY YEAR(fecha_venta) DESC, MONTH(fecha_venta) DESC
+                """)
                 data = cursor.fetchall()
 
         return jsonify({"code": 1, "data": data, "message": "Comparativa de períodos obtenida correctamente"})
 
     except Exception as e:
+        logging.error(f"Error en vista_comparativa_periodos: {repr(e)}")
         return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
@@ -2959,7 +3541,8 @@ Equipo de Sánchez Pharma
             
         except Exception as e:
             error_msg = str(e)
-            logging.error(f"❌ Error al enviar correo a {email}: {repr(e)}")
+            error_repr = repr(e)
+            logging.error(f"❌ Error al enviar correo a {email}: {error_repr}")
             logging.error(f"Tipo de error: {type(e).__name__}")
             logging.error(f"Detalles: {error_msg}")
             
@@ -2969,10 +3552,15 @@ Equipo de Sánchez Pharma
                     "code": 0, 
                     "message": "Error de autenticación de correo. Verifica que la contraseña de aplicación de Google sea correcta."
                 })
-            elif "Connection" in error_msg or "timeout" in error_msg:
+            elif "Errno 101" in error_msg or "Errno 101" in error_repr or "Network is unreachable" in error_msg:
                 return jsonify({
                     "code": 0, 
-                    "message": "Error de conexión con el servidor de correo. Verifica tu conexión a internet."
+                    "message": "No se puede conectar al servidor de correo. El servidor no tiene acceso a internet o el servicio de correo no está disponible. Contacta al administrador."
+                })
+            elif "Connection" in error_msg or "timeout" in error_msg or "Connection refused" in error_msg:
+                return jsonify({
+                    "code": 0, 
+                    "message": "Error de conexión con el servidor de correo. El servidor no puede conectarse al servicio de correo electrónico."
                 })
             elif "SSL" in error_msg or "TLS" in error_msg:
                 return jsonify({
@@ -2980,9 +3568,10 @@ Equipo de Sánchez Pharma
                     "message": "Error de seguridad SSL/TLS. Contacta al administrador."
                 })
             else:
+                # Ocultar detalles técnicos del error al usuario final
                 return jsonify({
                     "code": 0, 
-                    "message": f"Error al enviar el correo: {error_msg}"
+                    "message": "Error al enviar el correo. Por favor, intenta nuevamente más tarde o contacta al administrador si el problema persiste."
                 })
     
     except Exception as e:

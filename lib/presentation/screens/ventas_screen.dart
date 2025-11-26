@@ -744,7 +744,12 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
               ],
             ),
       bottomNavigationBar: Container(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: 16 + MediaQuery.of(context).viewInsets.bottom,
+        ),
         decoration: BoxDecoration(
           color: Colors.white,
           boxShadow: [
@@ -763,7 +768,13 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
             ExpansionTile(
               title: const Text('Configurar Venta'),
               children: [
-                DropdownButtonFormField<int?>(
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        DropdownButtonFormField<int?>(
                   value: _clienteIdSeleccionado,
                   decoration: const InputDecoration(
                     labelText: 'Cliente',
@@ -929,6 +940,10 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                       _descuento = double.tryParse(value) ?? 0.0;
                     });
                   },
+                ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),

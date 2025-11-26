@@ -109,18 +109,23 @@ class _ProveedoresScreenState extends State<ProveedoresScreen> {
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.9,
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.75,
+      builder: (context) {
+        final mediaQuery = MediaQuery.of(context);
+        final keyboardHeight = mediaQuery.viewInsets.bottom;
+        final screenHeight = mediaQuery.size.height;
+        
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+          child: Container(
+            width: mediaQuery.size.width * 0.9,
+            constraints: BoxConstraints(
+              maxHeight: (screenHeight * 0.75) - keyboardHeight,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
               // Header
               Container(
                 padding: const EdgeInsets.all(20),
@@ -370,7 +375,8 @@ class _ProveedoresScreenState extends State<ProveedoresScreen> {
             ],
           ),
         ),
-      ),
+      );
+      },
     );
   }
 
