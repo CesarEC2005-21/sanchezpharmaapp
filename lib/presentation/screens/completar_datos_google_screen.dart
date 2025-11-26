@@ -71,6 +71,7 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
         'telefono': _telefonoController.text.trim(),
         'email': widget.email,
         'google_id': widget.googleId,
+        'foto_url': widget.fotoUrl,
         'direccion': _direccionController.text.trim(),
       };
 
@@ -306,10 +307,16 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
                   TextFormField(
                     controller: _nombreController,
                     decoration: const InputDecoration(
-                      labelText: 'Nombre',
+                      labelText: 'Nombre *',
                       prefixIcon: Icon(Icons.person),
                       border: OutlineInputBorder(),
                     ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'El nombre es requerido';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 16),
                   
