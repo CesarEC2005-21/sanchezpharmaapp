@@ -13,6 +13,7 @@ import 'reportes_screen.dart';
 import 'clientes_screen.dart';
 import 'categorias_screen.dart';
 import 'proveedores_screen.dart';
+import 'banners_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -328,6 +329,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
             context,
             MaterialPageRoute(
               builder: (context) => const ProveedoresScreen(),
+            ),
+          );
+        },
+      ));
+    }
+
+    // === BANNERS (Solo Admin) ===
+    if (RoleConstants.tieneAccesoAUsuarios(efectiveRolId)) {
+      cards.add(_buildDashboardCard(
+        icon: Icons.image,
+        title: 'Banners',
+        color: Colors.pink,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const BannersScreen(),
             ),
           );
         },

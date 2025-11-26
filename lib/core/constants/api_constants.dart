@@ -91,5 +91,14 @@ class ApiConstants {
   static const String reportesGenerados = '/reportes_generados_sanchezpharma';
   static const String reporteGenerado = '/reporte_generado_sanchezpharma';
   static const String eliminarReporte = '/eliminar_reporte_sanchezpharma';
+  
+  // Endpoints - Banners Promocionales
+  static const String bannersActivos = '/banners_activos_sanchezpharma';
+  static const String banners = '/banners_sanchezpharma';
+  static const String banner = '/banner_sanchezpharma';
+  static const String registrarBanner = '/registrar_banner_sanchezpharma';
+  static const String editarBanner = '/editar_banner_sanchezpharma';
+  static const String eliminarBanner = '/eliminar_banner_sanchezpharma';
+  static const String toggleBanner = '/toggle_banner_sanchezpharma';
 }
 

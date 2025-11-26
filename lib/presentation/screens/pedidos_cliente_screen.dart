@@ -363,7 +363,7 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
                                             crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
                                               Text(
-                                                'Pedido #${pedido.id ?? 'N/A'}',
+                                                'Pedido',
                                                 style: const TextStyle(
                                                   fontSize: 18,
                                                   fontWeight: FontWeight.bold,

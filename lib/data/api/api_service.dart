@@ -219,5 +219,43 @@ abstract class ApiService {
 
   @DELETE('${ApiConstants.eliminarReporte}/{id}')
   Future<HttpResponse<dynamic>> eliminarReporte(@Path('id') int id);
+
+  // ========== BANNERS PROMOCIONALES ==========
+  @GET(ApiConstants.bannersActivos)
+  Future<HttpResponse<dynamic>> getBannersActivos();
+
+  @GET(ApiConstants.banners)
+  Future<HttpResponse<dynamic>> getBanners();
+
+  @GET('${ApiConstants.banner}/{id}')
+  Future<HttpResponse<dynamic>> getBanner(@Path('id') int id);
+
+  @POST(ApiConstants.registrarBanner)
+  Future<HttpResponse<dynamic>> registrarBanner(@Body() Map<String, dynamic> banner);
+
+  @PUT(ApiConstants.editarBanner)
+  Future<HttpResponse<dynamic>> editarBanner(@Body() Map<String, dynamic> banner);
+
+  @DELETE('${ApiConstants.eliminarBanner}/{id}')
+  Future<HttpResponse<dynamic>> eliminarBanner(@Path('id') int id);
+
+  @PUT('${ApiConstants.toggleBanner}/{id}')
+  Future<HttpResponse<dynamic>> toggleBanner(@Path('id') int id);
+
+  // ========== DIRECCIONES DE CLIENTES ==========
+  @GET('/direcciones_cliente_sanchezpharma/{clienteId}')
+  Future<HttpResponse<dynamic>> getDireccionesCliente(@Path('clienteId') int clienteId);
+
+  @POST('/registrar_direccion_sanchezpharma')
+  Future<HttpResponse<dynamic>> registrarDireccion(@Body() Map<String, dynamic> direccion);
+
+  @PUT('/editar_direccion_sanchezpharma')
+  Future<HttpResponse<dynamic>> editarDireccion(@Body() Map<String, dynamic> direccion);
+
+  @DELETE('/eliminar_direccion_sanchezpharma/{id}')
+  Future<HttpResponse<dynamic>> eliminarDireccion(@Path('id') int id);
+
+  @PUT('/marcar_direccion_principal_sanchezpharma/{id}')
+  Future<HttpResponse<dynamic>> marcarDireccionPrincipal(@Path('id') int id);
 }
 

@@ -528,7 +528,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 child: const Text(
                                   '¿Olvidaste tu contraseña?',
                                   style: TextStyle(
-                                    color: Colors.white,
+                                    color: Colors.black,
                                     fontSize: 14,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -569,14 +569,15 @@ class _LoginScreenState extends State<LoginScreen> {
                             // Divider con "O"
                             Row(
                               children: [
-                                Expanded(child: Divider(color: Colors.white70)),
+                                Expanded(child: Divider(color: Colors.grey.shade400)),
                                 Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 16),
                                   child: Text(
                                     'O',
                                     style: TextStyle(
-                                      color: Colors.white70,
+                                      color: Colors.grey.shade700,
                                       fontSize: 16,
+                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                 ),

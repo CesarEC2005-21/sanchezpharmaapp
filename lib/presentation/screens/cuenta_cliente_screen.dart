@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
+import '../../core/constants/documentos_legales.dart';
 import 'pedidos_cliente_screen.dart';
 import 'configuracion_cliente_screen.dart';
 import 'editar_perfil_screen.dart';
 import 'login_screen.dart';
 import 'favoritos_cliente_screen.dart';
+import 'mis_direcciones_screen.dart';
+import 'documento_legal_screen.dart';
+import 'atencion_cliente_screen.dart';
 
 class CuentaClienteScreen extends StatefulWidget {
   const CuentaClienteScreen({super.key});
@@ -271,23 +275,10 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                       icon: Icons.location_on_outlined,
                       title: 'Mis direcciones',
                       onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Funcionalidad en desarrollo'),
-                            duration: Duration(seconds: 1),
-                          ),
-                        );
-                      },
-                    ),
-                    const Divider(height: 1),
-                    _buildMenuItem(
-                      icon: Icons.map_outlined,
-                      title: 'Zonas de cobertura',
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Funcionalidad en desarrollo'),
-                            duration: Duration(seconds: 1),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const MisDireccionesScreen(),
                           ),
                         );
                       },
@@ -318,10 +309,13 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                       icon: Icons.description_outlined,
                       title: 'Legales',
                       onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Funcionalidad en desarrollo'),
-                            duration: Duration(seconds: 1),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => DocumentoLegalScreen(
+                              titulo: 'Información Legal',
+                              contenido: DocumentosLegales.legales,
+                            ),
                           ),
                         );
                       },
@@ -331,10 +325,13 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                       icon: Icons.privacy_tip_outlined,
                       title: 'Políticas de privacidad',
                       onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Funcionalidad en desarrollo'),
-                            duration: Duration(seconds: 1),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => DocumentoLegalScreen(
+                              titulo: 'Políticas de Privacidad',
+                              contenido: DocumentosLegales.politicasPrivacidad,
+                            ),
                           ),
                         );
                       },
@@ -344,10 +341,13 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                       icon: Icons.article_outlined,
                       title: 'Términos y condiciones',
                       onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Funcionalidad en desarrollo'),
-                            duration: Duration(seconds: 1),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => DocumentoLegalScreen(
+                              titulo: 'Términos y Condiciones',
+                              contenido: DocumentosLegales.terminosCondiciones,
+                            ),
                           ),
                         );
                       },
@@ -389,10 +389,10 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                   icon: Icons.headset_mic_outlined,
                   title: 'Atención al cliente',
                   onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Funcionalidad en desarrollo'),
-                        duration: Duration(seconds: 1),
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const AtencionClienteScreen(),
                       ),
                     );
                   },

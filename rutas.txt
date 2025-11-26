@@ -3090,6 +3090,450 @@ def cambiar_password_recuperacion_sanchezpharma():
 
 
 # ---------------------------------------------------
+# BANNERS PROMOCIONALES
+# ---------------------------------------------------
+
+# CREAR TABLA DE BANNERS
+def crear_tabla_banners():
+    """
+    Crea la tabla de banners si no existe.
+    """
+    conn = obtenerconexion_sanchezpharma()
+    try:
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS banners (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        titulo VARCHAR(255) NOT NULL,
+                        descripcion TEXT,
+                        imagen_url VARCHAR(500) NOT NULL,
+                        enlace VARCHAR(500),
+                        orden INT DEFAULT 0,
+                        activo BOOLEAN DEFAULT TRUE,
+                        fecha_inicio DATETIME,
+                        fecha_fin DATETIME,
+                        fecha_creacion DATETIME DEFAULT NOW(),
+                        fecha_actualizacion DATETIME DEFAULT NOW() ON UPDATE NOW(),
+                        INDEX idx_activo (activo),
+                        INDEX idx_orden (orden)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """)
+            conn.commit()
+            logging.info("Tabla banners verificada/creada correctamente")
+    except Exception as e:
+        logging.error(f"Error al crear tabla banners: {repr(e)}")
+
+crear_tabla_banners()
+
+
+# LISTAR BANNERS ACTIVOS (PÚBLICO - SIN AUTENTICACIÓN)
+@app.route('/banners_activos_sanchezpharma')
+def banners_activos_sanchezpharma():
+    """
+    Endpoint público para obtener banners activos.
+    """
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT id, titulo, descripcion, imagen_url, enlace, orden, activo,
+                           fecha_inicio, fecha_fin, fecha_creacion, fecha_actualizacion
+                    FROM banners 
+                    WHERE activo = TRUE
+                    AND (fecha_inicio IS NULL OR fecha_inicio <= NOW())
+                    AND (fecha_fin IS NULL OR fecha_fin >= NOW())
+                    ORDER BY orden ASC, fecha_creacion DESC
+                """)
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Banners activos obtenidos correctamente"})
+
+    except Exception as e:
+        logging.error(f"Error al obtener banners activos: {repr(e)}")
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# LISTAR TODOS LOS BANNERS (ADMIN)
+@app.route('/banners_sanchezpharma')
+@jwt_required()
+def banners_sanchezpharma():
+    """
+    Endpoint para administradores para listar todos los banners.
+    """
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT * FROM banners 
+                    ORDER BY orden ASC, fecha_creacion DESC
+                """)
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Banners listados correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# OBTENER BANNER POR ID
+@app.route('/banner_sanchezpharma/<int:banner_id>')
+@jwt_required()
+def banner_sanchezpharma(banner_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM banners WHERE id = %s", (banner_id,))
+                data = cursor.fetchone()
+
+        if data:
+            return jsonify({"code": 1, "data": data, "message": "Banner obtenido correctamente"})
+        else:
+            return jsonify({"code": 0, "data": {}, "message": "Banner no encontrado"}), 404
+
+    except Exception as e:
+        return jsonify({"code": 0, "data": {}, "message": repr(e)})
+
+
+# REGISTRAR BANNER
+@app.route('/registrar_banner_sanchezpharma', methods=['POST'])
+@jwt_required()
+def registrar_banner_sanchezpharma():
+    try:
+        data = request.json
+
+        if not data.get("titulo") or not data.get("imagen_url"):
+            return jsonify({"code": 0, "message": "Título e imagen_url son requeridos"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO banners 
+                    (titulo, descripcion, imagen_url, enlace, orden, activo, fecha_inicio, fecha_fin)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    data.get("titulo"),
+                    data.get("descripcion"),
+                    data.get("imagen_url"),
+                    data.get("enlace"),
+                    data.get("orden", 0),
+                    data.get("activo", True),
+                    data.get("fecha_inicio"),
+                    data.get("fecha_fin")
+                ))
+                banner_id = cursor.lastrowid
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Banner registrado correctamente", "banner_id": banner_id})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# EDITAR BANNER
+@app.route('/editar_banner_sanchezpharma', methods=['PUT'])
+@jwt_required()
+def editar_banner_sanchezpharma():
+    try:
+        data = request.json
+
+        if not data.get("id"):
+            return jsonify({"code": 0, "message": "Falta el ID del banner"})
+
+        if not data.get("titulo") or not data.get("imagen_url"):
+            return jsonify({"code": 0, "message": "Título e imagen_url son requeridos"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE banners 
+                    SET titulo = %s, descripcion = %s, imagen_url = %s, enlace = %s,
+                        orden = %s, activo = %s, fecha_inicio = %s, fecha_fin = %s
+                    WHERE id = %s
+                """, (
+                    data.get("titulo"),
+                    data.get("descripcion"),
+                    data.get("imagen_url"),
+                    data.get("enlace"),
+                    data.get("orden", 0),
+                    data.get("activo", True),
+                    data.get("fecha_inicio"),
+                    data.get("fecha_fin"),
+                    data.get("id")
+                ))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Banner actualizado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ELIMINAR BANNER
+@app.route('/eliminar_banner_sanchezpharma/<int:banner_id>', methods=['DELETE'])
+@jwt_required()
+def eliminar_banner_sanchezpharma(banner_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM banners WHERE id = %s", (banner_id,))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Banner eliminado correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# CAMBIAR ESTADO DE BANNER (ACTIVAR/DESACTIVAR)
+@app.route('/toggle_banner_sanchezpharma/<int:banner_id>', methods=['PUT'])
+@jwt_required()
+def toggle_banner_sanchezpharma(banner_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Obtener estado actual
+                cursor.execute("SELECT activo FROM banners WHERE id = %s", (banner_id,))
+                banner = cursor.fetchone()
+                
+                if not banner:
+                    return jsonify({"code": 0, "message": "Banner no encontrado"}), 404
+                
+                nuevo_estado = not banner["activo"]
+                
+                # Cambiar estado
+                cursor.execute("""
+                    UPDATE banners 
+                    SET activo = %s
+                    WHERE id = %s
+                """, (nuevo_estado, banner_id))
+            conn.commit()
+
+        estado_texto = "activado" if nuevo_estado else "desactivado"
+        return jsonify({"code": 1, "message": f"Banner {estado_texto} correctamente"})
+
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# DIRECCIONES DE CLIENTES
+# ---------------------------------------------------
+
+# CREAR TABLA DE DIRECCIONES
+def crear_tabla_direcciones():
+    """
+    Crea la tabla de direcciones de clientes si no existe.
+    """
+    conn = obtenerconexion_sanchezpharma()
+    try:
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS direcciones_clientes (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        cliente_id INT NOT NULL,
+                        titulo VARCHAR(100) NOT NULL,
+                        direccion TEXT NOT NULL,
+                        referencia TEXT,
+                        latitud DECIMAL(10, 8) NOT NULL,
+                        longitud DECIMAL(11, 8) NOT NULL,
+                        es_principal BOOLEAN DEFAULT FALSE,
+                        fecha_creacion DATETIME DEFAULT NOW(),
+                        fecha_actualizacion DATETIME DEFAULT NOW() ON UPDATE NOW(),
+                        INDEX idx_cliente (cliente_id),
+                        INDEX idx_principal (cliente_id, es_principal)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """)
+            conn.commit()
+            logging.info("Tabla direcciones_clientes verificada/creada correctamente")
+    except Exception as e:
+        logging.error(f"Error al crear tabla direcciones_clientes: {repr(e)}")
+
+crear_tabla_direcciones()
+
+
+# LISTAR DIRECCIONES DE UN CLIENTE
+@app.route('/direcciones_cliente_sanchezpharma/<int:cliente_id>')
+@jwt_required()
+def direcciones_cliente_sanchezpharma(cliente_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT * FROM direcciones_clientes 
+                    WHERE cliente_id = %s 
+                    ORDER BY es_principal DESC, fecha_creacion DESC
+                """, (cliente_id,))
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Direcciones obtenidas correctamente"})
+
+    except Exception as e:
+        logging.error(f"Error al obtener direcciones: {repr(e)}")
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# REGISTRAR DIRECCIÓN
+@app.route('/registrar_direccion_sanchezpharma', methods=['POST'])
+@jwt_required()
+def registrar_direccion_sanchezpharma():
+    try:
+        data = request.json
+
+        campos = ["cliente_id", "titulo", "direccion", "latitud", "longitud"]
+        if not all(data.get(c) for c in campos):
+            return jsonify({"code": 0, "message": "Faltan campos requeridos"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Si es principal, desmarcar las demás
+                if data.get("es_principal", False):
+                    cursor.execute("""
+                        UPDATE direcciones_clientes 
+                        SET es_principal = FALSE 
+                        WHERE cliente_id = %s
+                    """, (data.get("cliente_id"),))
+
+                cursor.execute("""
+                    INSERT INTO direcciones_clientes 
+                    (cliente_id, titulo, direccion, referencia, latitud, longitud, es_principal)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    data.get("cliente_id"),
+                    data.get("titulo"),
+                    data.get("direccion"),
+                    data.get("referencia"),
+                    data.get("latitud"),
+                    data.get("longitud"),
+                    data.get("es_principal", False)
+                ))
+                direccion_id = cursor.lastrowid
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Dirección registrada correctamente", "direccion_id": direccion_id})
+
+    except Exception as e:
+        logging.error(f"Error al registrar dirección: {repr(e)}")
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# EDITAR DIRECCIÓN
+@app.route('/editar_direccion_sanchezpharma', methods=['PUT'])
+@jwt_required()
+def editar_direccion_sanchezpharma():
+    try:
+        data = request.json
+
+        if not data.get("id"):
+            return jsonify({"code": 0, "message": "Falta el ID de la dirección"})
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Si es principal, desmarcar las demás
+                if data.get("es_principal", False):
+                    cursor.execute("""
+                        SELECT cliente_id FROM direcciones_clientes WHERE id = %s
+                    """, (data.get("id"),))
+                    result = cursor.fetchone()
+                    if result:
+                        cursor.execute("""
+                            UPDATE direcciones_clientes 
+                            SET es_principal = FALSE 
+                            WHERE cliente_id = %s AND id != %s
+                        """, (result["cliente_id"], data.get("id")))
+
+                cursor.execute("""
+                    UPDATE direcciones_clientes 
+                    SET titulo = %s, direccion = %s, referencia = %s,
+                        latitud = %s, longitud = %s, es_principal = %s
+                    WHERE id = %s
+                """, (
+                    data.get("titulo"),
+                    data.get("direccion"),
+                    data.get("referencia"),
+                    data.get("latitud"),
+                    data.get("longitud"),
+                    data.get("es_principal", False),
+                    data.get("id")
+                ))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Dirección actualizada correctamente"})
+
+    except Exception as e:
+        logging.error(f"Error al editar dirección: {repr(e)}")
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ELIMINAR DIRECCIÓN
+@app.route('/eliminar_direccion_sanchezpharma/<int:direccion_id>', methods=['DELETE'])
+@jwt_required()
+def eliminar_direccion_sanchezpharma(direccion_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM direcciones_clientes WHERE id = %s", (direccion_id,))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Dirección eliminada correctamente"})
+
+    except Exception as e:
+        logging.error(f"Error al eliminar dirección: {repr(e)}")
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# MARCAR DIRECCIÓN COMO PRINCIPAL
+@app.route('/marcar_direccion_principal_sanchezpharma/<int:direccion_id>', methods=['PUT'])
+@jwt_required()
+def marcar_direccion_principal_sanchezpharma(direccion_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Obtener cliente_id de la dirección
+                cursor.execute("SELECT cliente_id FROM direcciones_clientes WHERE id = %s", (direccion_id,))
+                result = cursor.fetchone()
+                
+                if not result:
+                    return jsonify({"code": 0, "message": "Dirección no encontrada"}), 404
+                
+                cliente_id = result["cliente_id"]
+                
+                # Desmarcar todas las direcciones del cliente
+                cursor.execute("""
+                    UPDATE direcciones_clientes 
+                    SET es_principal = FALSE 
+                    WHERE cliente_id = %s
+                """, (cliente_id,))
+                
+                # Marcar la dirección seleccionada como principal
+                cursor.execute("""
+                    UPDATE direcciones_clientes 
+                    SET es_principal = TRUE 
+                    WHERE id = %s
+                """, (direccion_id,))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Dirección marcada como principal"})
+
+    except Exception as e:
+        logging.error(f"Error al marcar dirección como principal: {repr(e)}")
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
 # FIN
 # ---------------------------------------------------
 if __name__ == "__main__":
