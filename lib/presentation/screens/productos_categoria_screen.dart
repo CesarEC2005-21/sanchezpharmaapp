@@ -4,7 +4,9 @@ import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../data/models/producto_model.dart';
 import '../../data/models/categoria_model.dart';
+import '../widgets/cliente_bottom_nav.dart';
 import 'carrito_screen.dart';
+import 'product_detail_screen.dart';
 
 class ProductosCategoriaScreen extends StatefulWidget {
   final int categoriaId;
@@ -385,6 +387,7 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      bottomNavigationBar: ClienteBottomNav(currentIndex: 1),
       body: SafeArea(
         child: Column(
           children: [
@@ -598,23 +601,32 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
 
   Widget _buildProductoCard(ProductoModel producto) {
     final stockBajo = producto.stockActual <= producto.stockMinimo;
-    
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProductDetailScreen(producto: producto),
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           // Banner de stock bajo
           if (stockBajo && producto.stockActual > 0)
             Container(
@@ -781,7 +793,8 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
               ],
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }

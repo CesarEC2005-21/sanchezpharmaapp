@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/cliente_bottom_nav.dart';
 import 'preguntas_frecuentes_screen.dart';
 import 'enviar_consulta_screen.dart';
 
@@ -13,6 +14,7 @@ class AtencionClienteScreen extends StatelessWidget {
         backgroundColor: Colors.green.shade700,
         foregroundColor: Colors.white,
       ),
+      bottomNavigationBar: const ClienteBottomNav(currentIndex: 2),
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(

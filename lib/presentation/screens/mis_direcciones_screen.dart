@@ -4,6 +4,7 @@ import 'dart:convert';
 import '../../data/models/direccion_model.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
+import '../widgets/cliente_bottom_nav.dart';
 import 'agregar_direccion_screen.dart';
 
 class MisDireccionesScreen extends StatefulWidget {
@@ -267,6 +268,7 @@ class _MisDireccionesScreenState extends State<MisDireccionesScreen> {
         backgroundColor: Colors.green.shade700,
         foregroundColor: Colors.white,
       ),
+      bottomNavigationBar: const ClienteBottomNav(currentIndex: 2),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _direcciones.isEmpty

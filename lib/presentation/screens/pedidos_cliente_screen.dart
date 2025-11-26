@@ -5,6 +5,7 @@ import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/utils/date_parser.dart';
 import '../../data/models/envio_model.dart';
 import '../../data/models/venta_model.dart';
+import '../widgets/cliente_bottom_nav.dart';
 import 'seguimiento_envio_screen.dart';
 import 'mapa_recojo_screen.dart';
 import 'login_screen.dart';
@@ -229,8 +230,12 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
         title: const Text('Mis Pedidos'),
         backgroundColor: Colors.green.shade700,
         foregroundColor: Colors.white,
-        automaticallyImplyLeading: false,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
+      bottomNavigationBar: const ClienteBottomNav(currentIndex: 2),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null

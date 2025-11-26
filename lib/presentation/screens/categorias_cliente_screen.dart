@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../data/models/categoria_model.dart';
+import '../../core/notifiers/cart_notifier.dart';
 import 'carrito_screen.dart';
 import 'productos_categoria_screen.dart';
 
@@ -68,6 +69,7 @@ class _CategoriasClienteScreenState extends State<CategoriasClienteScreen> {
           _itemsEnCarrito = carrito.length;
         });
       }
+      CartNotifier.instance.updateCount(carrito.length);
     } catch (e) {
       print('Error al actualizar contador de carrito: $e');
     }
@@ -130,46 +132,50 @@ class _CategoriasClienteScreenState extends State<CategoriasClienteScreen> {
                       color: Colors.black87,
                     ),
                   ),
-                  // Icono de carrito
-                  Stack(
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.shopping_cart, color: Colors.green.shade700),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const CarritoScreen(),
-                            ),
-                          ).then((_) => _actualizarContadorCarrito());
-                        },
-                      ),
-                      if (_itemsEnCarrito > 0)
-                        Positioned(
-                          right: 8,
-                          top: 8,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 16,
-                              minHeight: 16,
-                            ),
-                            child: Text(
-                              '$_itemsEnCarrito',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
+                  ValueListenableBuilder<int>(
+                    valueListenable: CartNotifier.instance,
+                    builder: (context, cartCount, _) {
+                      return Stack(
+                        children: [
+                          IconButton(
+                            icon: Icon(Icons.shopping_cart, color: Colors.green.shade700),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const CarritoScreen(),
+                                ),
+                              ).then((_) => _actualizarContadorCarrito());
+                            },
                           ),
-                        ),
-                    ],
+                          if (cartCount > 0)
+                            Positioned(
+                              right: 8,
+                              top: 8,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: Colors.red,
+                                  shape: BoxShape.circle,
+                                ),
+                                constraints: const BoxConstraints(
+                                  minWidth: 16,
+                                  minHeight: 16,
+                                ),
+                                child: Text(
+                                  cartCount > 9 ? '9+' : '$cartCount',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),

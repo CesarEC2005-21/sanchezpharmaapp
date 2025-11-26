@@ -5,6 +5,7 @@ import '../../data/api/dio_client.dart';
 import '../../data/models/notificacion_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/services/notificacion_service.dart';
+import '../widgets/cliente_bottom_nav.dart';
 import 'package:intl/intl.dart';
 
 class NotificacionesScreen extends StatefulWidget {
@@ -166,6 +167,7 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
             ),
         ],
       ),
+      bottomNavigationBar: const ClienteBottomNav(currentIndex: 2),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _notificaciones.isEmpty

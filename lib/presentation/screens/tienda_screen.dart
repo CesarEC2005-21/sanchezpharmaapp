@@ -7,10 +7,12 @@ import '../../data/models/producto_model.dart';
 import '../../data/models/categoria_model.dart';
 import '../../data/models/banner_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/notifiers/cart_notifier.dart';
 import 'carrito_screen.dart';
 import 'login_screen.dart';
 import 'productos_categoria_screen.dart';
 import 'mis_direcciones_screen.dart';
+import 'product_detail_screen.dart';
 import 'dart:async';
 
 class TiendaScreen extends StatefulWidget {
@@ -290,12 +292,14 @@ class _TiendaScreenState extends State<TiendaScreen> {
             _itemsEnCarrito = totalItems;
           });
         }
+        CartNotifier.instance.updateCount(totalItems);
       } else {
         if (mounted) {
           setState(() {
             _itemsEnCarrito = 0;
           });
         }
+        CartNotifier.instance.updateCount(0);
       }
     } catch (e) {
       print('Error al actualizar contador de carrito: $e');
@@ -367,6 +371,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
     setState(() {
       _itemsEnCarrito = carrito.fold(0, (sum, item) => sum + (item['cantidad'] as int));
     });
+    CartNotifier.instance.updateCount(_itemsEnCarrito);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -855,51 +860,56 @@ class _TiendaScreenState extends State<TiendaScreen> {
                   ),
                   const SizedBox(width: 8),
                   // Carrito
-                  Stack(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: IconButton(
-                          icon: Icon(Icons.shopping_cart, color: Colors.blue.shade700),
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const CarritoScreen(),
-                              ),
-                            ).then((_) => _actualizarContadorCarrito());
-                          },
-                        ),
-                      ),
-                      if (_itemsEnCarrito > 0)
-                        Positioned(
-                          right: 0,
-                          top: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: const BoxDecoration(
-                              color: Colors.blue,
-                              shape: BoxShape.circle,
+                  ValueListenableBuilder<int>(
+                    valueListenable: CartNotifier.instance,
+                    builder: (context, cartCount, _) {
+                      return Stack(
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                            constraints: const BoxConstraints(
-                              minWidth: 20,
-                              minHeight: 20,
-                            ),
-                            child: Text(
-                              '$_itemsEnCarrito',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              textAlign: TextAlign.center,
+                            child: IconButton(
+                              icon: Icon(Icons.shopping_cart, color: Colors.blue.shade700),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const CarritoScreen(),
+                                  ),
+                                ).then((_) => _actualizarContadorCarrito());
+                              },
                             ),
                           ),
-                        ),
-                    ],
+                          if (cartCount > 0)
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  color: Colors.blue,
+                                  shape: BoxShape.circle,
+                                ),
+                                constraints: const BoxConstraints(
+                                  minWidth: 20,
+                                  minHeight: 20,
+                                ),
+                                child: Text(
+                                  cartCount > 99 ? '99+' : '$cartCount',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
@@ -1167,23 +1177,32 @@ class _TiendaScreenState extends State<TiendaScreen> {
 
   Widget _buildProductoCard(ProductoModel producto) {
     final stockBajo = producto.stockActual <= producto.stockMinimo;
-    
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProductDetailScreen(producto: producto),
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           // Banner de stock bajo
           if (stockBajo && producto.stockActual > 0)
             Container(
@@ -1354,7 +1373,8 @@ class _TiendaScreenState extends State<TiendaScreen> {
               ],
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }

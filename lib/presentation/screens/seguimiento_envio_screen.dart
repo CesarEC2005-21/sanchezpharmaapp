@@ -8,6 +8,7 @@ import '../../data/models/envio_model.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../widgets/cliente_bottom_nav.dart';
 
 class SeguimientoEnvioScreen extends StatefulWidget {
   final EnvioModel envio;
@@ -452,7 +453,12 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
         title: Text('Seguimiento: ${widget.envio.numeroSeguimiento ?? "N/A"}'),
         backgroundColor: Colors.green.shade700,
         foregroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
+      bottomNavigationBar: const ClienteBottomNav(currentIndex: 2),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null

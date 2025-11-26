@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../widgets/cliente_bottom_nav.dart';
 import 'home_cliente_screen.dart';
 import 'seleccionar_ubicacion_screen.dart';
 
@@ -225,6 +226,7 @@ class _PagoScreenState extends State<PagoScreen> {
         backgroundColor: Colors.green.shade700,
         foregroundColor: Colors.white,
       ),
+      bottomNavigationBar: const ClienteBottomNav(currentIndex: 0),
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(

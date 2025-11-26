@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../widgets/cliente_bottom_nav.dart';
 import 'pago_screen.dart';
 
 class CarritoScreen extends StatefulWidget {
@@ -110,6 +111,7 @@ class _CarritoScreenState extends State<CarritoScreen> {
         backgroundColor: Colors.green.shade700,
         foregroundColor: Colors.white,
       ),
+      bottomNavigationBar: const ClienteBottomNav(currentIndex: 0),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _carrito.isEmpty

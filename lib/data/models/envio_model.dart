@@ -13,13 +13,13 @@ class EnvioModel {
   final String? numeroSeguimiento;
   @JsonKey(name: 'direccion_entrega')
   final String direccionEntrega;
-  @JsonKey(name: 'latitud_destino', fromJson: _precioFromJson)
+  @JsonKey(name: 'latitud_destino', fromJson: _coordenadaFromJson)
   final double? latitudDestino;
-  @JsonKey(name: 'longitud_destino', fromJson: _precioFromJson)
+  @JsonKey(name: 'longitud_destino', fromJson: _coordenadaFromJson)
   final double? longitudDestino;
-  @JsonKey(name: 'latitud_repartidor', fromJson: _precioFromJson)
+  @JsonKey(name: 'latitud_repartidor', fromJson: _coordenadaFromJson)
   final double? latitudRepartidor;
-  @JsonKey(name: 'longitud_repartidor', fromJson: _precioFromJson)
+  @JsonKey(name: 'longitud_repartidor', fromJson: _coordenadaFromJson)
   final double? longitudRepartidor;
   @JsonKey(name: 'telefono_contacto')
   final String telefonoContacto;
@@ -89,6 +89,16 @@ class EnvioModel {
     if (json is num) return json.toDouble();
     if (json is String) return double.tryParse(json) ?? 0.0;
     return 0.0;
+  }
+
+  static double? _coordenadaFromJson(dynamic json) {
+    if (json == null) return null;
+    if (json is num) return json.toDouble();
+    if (json is String) {
+      final value = double.tryParse(json);
+      return value;
+    }
+    return null;
   }
 
   String get estadoTexto {

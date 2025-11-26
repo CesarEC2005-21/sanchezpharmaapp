@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/cliente_bottom_nav.dart';
 
 class DocumentoLegalScreen extends StatelessWidget {
   final String titulo;
@@ -23,6 +24,7 @@ class DocumentoLegalScreen extends StatelessWidget {
         backgroundColor: Colors.green.shade700,
         foregroundColor: Colors.white,
       ),
+      bottomNavigationBar: const ClienteBottomNav(currentIndex: 2),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(

@@ -4,6 +4,7 @@ import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/constants/api_constants.dart';
+import '../widgets/cliente_bottom_nav.dart';
 import 'login_screen.dart';
 
 class ConfiguracionClienteScreen extends StatefulWidget {
@@ -179,8 +180,12 @@ class _ConfiguracionClienteScreenState extends State<ConfiguracionClienteScreen>
         title: const Text('Configuración'),
         backgroundColor: Colors.green.shade700,
         foregroundColor: Colors.white,
-        automaticallyImplyLeading: false,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
+      bottomNavigationBar: const ClienteBottomNav(currentIndex: 2),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
