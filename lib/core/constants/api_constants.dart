@@ -100,5 +100,11 @@ class ApiConstants {
   static const String editarBanner = '/editar_banner_sanchezpharma';
   static const String eliminarBanner = '/eliminar_banner_sanchezpharma';
   static const String toggleBanner = '/toggle_banner_sanchezpharma';
+  
+  // Endpoints - Notificaciones
+  static const String notificacionesCliente = '/notificaciones_cliente_sanchezpharma';
+  static const String marcarNotificacionLeida = '/marcar_notificacion_leida_sanchezpharma';
+  static const String marcarTodasNotificacionesLeidas = '/marcar_todas_notificaciones_leidas_sanchezpharma';
+  static const String contarNotificacionesNoLeidas = '/contar_notificaciones_no_leidas_sanchezpharma';
 }
 

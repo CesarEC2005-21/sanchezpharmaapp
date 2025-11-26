@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'tienda_screen.dart';
 import 'categorias_cliente_screen.dart';
 import 'cuenta_cliente_screen.dart';
+import '../../core/services/notificacion_service.dart';
 
 class HomeClienteScreen extends StatefulWidget {
   final int initialIndex;
@@ -22,6 +23,14 @@ class _HomeClienteScreenState extends State<HomeClienteScreen> {
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
+    // Iniciar verificación periódica de notificaciones
+    NotificacionService().iniciarVerificacionPeriodica();
+  }
+
+  @override
+  void dispose() {
+    NotificacionService().detenerVerificacion();
+    super.dispose();
   }
 
   void _onItemTapped(int index) {

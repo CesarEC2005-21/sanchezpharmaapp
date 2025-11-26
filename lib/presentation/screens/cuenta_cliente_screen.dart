@@ -3,6 +3,7 @@ import '../../core/utils/shared_prefs_helper.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/constants/documentos_legales.dart';
+import '../../core/services/notificacion_service.dart';
 import 'pedidos_cliente_screen.dart';
 import 'configuracion_cliente_screen.dart';
 import 'editar_perfil_screen.dart';
@@ -11,6 +12,8 @@ import 'favoritos_cliente_screen.dart';
 import 'mis_direcciones_screen.dart';
 import 'documento_legal_screen.dart';
 import 'atencion_cliente_screen.dart';
+import 'notificaciones_screen.dart';
+import 'dart:async';
 
 class CuentaClienteScreen extends StatefulWidget {
   const CuentaClienteScreen({super.key});
@@ -22,11 +25,36 @@ class CuentaClienteScreen extends StatefulWidget {
 class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
   String _username = '';
   String _email = '';
+  int _notificacionesNoLeidas = 0;
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _cargarContadorNotificaciones();
+    // Actualizar contador cada 30 segundos
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _cargarContadorNotificaciones();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _cargarContadorNotificaciones() async {
+    final clienteId = await SharedPrefsHelper.getClienteId();
+    if (clienteId != null) {
+      final count = await NotificacionService().contarNoLeidas(clienteId);
+      if (mounted) {
+        setState(() {
+          _notificacionesNoLeidas = count;
+        });
+      }
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -249,6 +277,21 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                         );
                       },
                     ),
+                    const Divider(height: 1),
+                    _buildMenuItem(
+                      icon: Icons.notifications_outlined,
+                      title: 'Notificaciones',
+                      badge: _notificacionesNoLeidas > 0 ? _notificacionesNoLeidas : null,
+                      onTap: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const NotificacionesScreen(),
+                          ),
+                        );
+                        _cargarContadorNotificaciones();
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -438,6 +481,7 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
     required IconData icon,
     required String title,
     required VoidCallback onTap,
+    int? badge,
   }) {
     return ListTile(
       leading: Icon(
@@ -453,9 +497,31 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
           fontWeight: FontWeight.w500,
         ),
       ),
-      trailing: Icon(
-        Icons.chevron_right,
-        color: Colors.grey.shade400,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (badge != null && badge > 0)
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                badge > 99 ? '99+' : badge.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          Icon(
+            Icons.chevron_right,
+            color: Colors.grey.shade400,
+          ),
+        ],
       ),
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

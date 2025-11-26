@@ -2250,14 +2250,23 @@ def actualizar_estado_envio_sanchezpharma(envio_id):
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                # Obtener estado anterior
-                cursor.execute("SELECT estado FROM envios WHERE id = %s", (envio_id,))
+                # Obtener estado anterior y datos del cliente
+                cursor.execute("""
+                    SELECT e.estado, v.cliente_id, c.nombre as cliente_nombre, e.numero_seguimiento
+                    FROM envios e
+                    LEFT JOIN ventas v ON e.venta_id = v.id
+                    LEFT JOIN clientes c ON v.cliente_id = c.id
+                    WHERE e.id = %s
+                """, (envio_id,))
                 envio = cursor.fetchone()
 
                 if not envio:
                     return jsonify({"code": 0, "message": "Envío no encontrado"}), 404
 
                 estado_anterior = envio["estado"]
+                cliente_id = envio.get("cliente_id")
+                cliente_nombre = envio.get("cliente_nombre", "Cliente")
+                numero_seguimiento = envio.get("numero_seguimiento", "")
 
                 # Actualizar estado
                 update_query = "UPDATE envios SET estado = %s, fecha_actualizacion = NOW()"
@@ -2285,11 +2294,30 @@ def actualizar_estado_envio_sanchezpharma(envio_id):
                     data.get("observaciones")
                 ))
 
+                # Crear notificación para el cliente
+                if cliente_id:
+                    mensajes_estado = {
+                        'preparando': 'Tu pedido está siendo preparado',
+                        'en_camino': 'Tu pedido está en camino',
+                        'entregado': '¡Tu pedido ha sido entregado!',
+                        'cancelado': 'Tu pedido ha sido cancelado'
+                    }
+                    
+                    titulo = mensajes_estado.get(nuevo_estado, f'Estado actualizado: {nuevo_estado}')
+                    cuerpo = f'Tu pedido {numero_seguimiento} ahora está: {nuevo_estado.replace("_", " ").title()}'
+                    
+                    cursor.execute("""
+                        INSERT INTO notificaciones_clientes 
+                        (cliente_id, titulo, cuerpo, tipo, relacion_id, leida, fecha_creacion)
+                        VALUES (%s, %s, %s, 'estado_pedido', %s, FALSE, NOW())
+                    """, (cliente_id, titulo, cuerpo, envio_id))
+
             conn.commit()
 
         return jsonify({"code": 1, "message": "Estado de envío actualizado correctamente"})
 
     except Exception as e:
+        logging.error(f"Error al actualizar estado de envío: {repr(e)}")
         return jsonify({"code": 0, "message": repr(e)})
 
 
@@ -3211,6 +3239,7 @@ def registrar_banner_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
+                activo = data.get("activo", True)
                 cursor.execute("""
                     INSERT INTO banners 
                     (titulo, descripcion, imagen_url, enlace, orden, activo, fecha_inicio, fecha_fin)
@@ -3221,16 +3250,37 @@ def registrar_banner_sanchezpharma():
                     data.get("imagen_url"),
                     data.get("enlace"),
                     data.get("orden", 0),
-                    data.get("activo", True),
+                    activo,
                     data.get("fecha_inicio"),
                     data.get("fecha_fin")
                 ))
                 banner_id = cursor.lastrowid
+                
+                # Si el banner está activo, crear notificación para todos los clientes activos
+                if activo:
+                    cursor.execute("""
+                        SELECT id FROM clientes WHERE estado = 'activo'
+                    """)
+                    clientes = cursor.fetchall()
+                    
+                    titulo = '¡Nueva promoción disponible!'
+                    cuerpo = data.get("titulo", "Nueva promoción")
+                    if data.get("descripcion"):
+                        cuerpo += f': {data.get("descripcion")[:100]}'
+                    
+                    for cliente in clientes:
+                        cursor.execute("""
+                            INSERT INTO notificaciones_clientes 
+                            (cliente_id, titulo, cuerpo, tipo, relacion_id, leida, fecha_creacion)
+                            VALUES (%s, %s, %s, 'promocion', %s, FALSE, NOW())
+                        """, (cliente["id"], titulo, cuerpo, banner_id))
+                
             conn.commit()
 
         return jsonify({"code": 1, "message": "Banner registrado correctamente", "banner_id": banner_id})
 
     except Exception as e:
+        logging.error(f"Error al registrar banner: {repr(e)}")
         return jsonify({"code": 0, "message": repr(e)})
 
 
@@ -3358,6 +3408,43 @@ def crear_tabla_direcciones():
         logging.error(f"Error al crear tabla direcciones_clientes: {repr(e)}")
 
 crear_tabla_direcciones()
+
+
+# ---------------------------------------------------
+# NOTIFICACIONES DE CLIENTES
+# ---------------------------------------------------
+
+# CREAR TABLA DE NOTIFICACIONES
+def crear_tabla_notificaciones():
+    """
+    Crea la tabla de notificaciones de clientes si no existe.
+    """
+    conn = obtenerconexion_sanchezpharma()
+    try:
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS notificaciones_clientes (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        cliente_id INT NOT NULL,
+                        titulo VARCHAR(255) NOT NULL,
+                        cuerpo TEXT NOT NULL,
+                        tipo VARCHAR(50) DEFAULT 'general',
+                        relacion_id INT NULL,
+                        leida BOOLEAN DEFAULT FALSE,
+                        fecha_creacion DATETIME DEFAULT NOW(),
+                        fecha_leida DATETIME NULL,
+                        INDEX idx_cliente (cliente_id),
+                        INDEX idx_leida (cliente_id, leida),
+                        INDEX idx_fecha (fecha_creacion)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """)
+            conn.commit()
+            logging.info("Tabla notificaciones_clientes verificada/creada correctamente")
+    except Exception as e:
+        logging.error(f"Error al crear tabla notificaciones_clientes: {repr(e)}")
+
+crear_tabla_notificaciones()
 
 
 # LISTAR DIRECCIONES DE UN CLIENTE
@@ -3531,6 +3618,108 @@ def marcar_direccion_principal_sanchezpharma(direccion_id):
     except Exception as e:
         logging.error(f"Error al marcar dirección como principal: {repr(e)}")
         return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# NOTIFICACIONES DE CLIENTES
+# ---------------------------------------------------
+
+# LISTAR NOTIFICACIONES DE UN CLIENTE
+@app.route('/notificaciones_cliente_sanchezpharma/<int:cliente_id>')
+@jwt_required()
+def notificaciones_cliente_sanchezpharma(cliente_id):
+    try:
+        leida = request.args.get('leida')  # Opcional: 'true' o 'false'
+        
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                query = """
+                    SELECT * FROM notificaciones_clientes 
+                    WHERE cliente_id = %s
+                """
+                params = [cliente_id]
+                
+                if leida is not None:
+                    query += " AND leida = %s"
+                    params.append(leida == 'true')
+                
+                query += " ORDER BY fecha_creacion DESC LIMIT 50"
+                
+                cursor.execute(query, params)
+                data = cursor.fetchall()
+
+        return jsonify({"code": 1, "data": data, "message": "Notificaciones obtenidas correctamente"})
+
+    except Exception as e:
+        logging.error(f"Error al obtener notificaciones: {repr(e)}")
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# MARCAR NOTIFICACIÓN COMO LEÍDA
+@app.route('/marcar_notificacion_leida_sanchezpharma/<int:notificacion_id>', methods=['PUT'])
+@jwt_required()
+def marcar_notificacion_leida_sanchezpharma(notificacion_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE notificaciones_clientes 
+                    SET leida = TRUE, fecha_leida = NOW()
+                    WHERE id = %s
+                """, (notificacion_id,))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Notificación marcada como leída"})
+
+    except Exception as e:
+        logging.error(f"Error al marcar notificación como leída: {repr(e)}")
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# MARCAR TODAS LAS NOTIFICACIONES COMO LEÍDAS
+@app.route('/marcar_todas_notificaciones_leidas_sanchezpharma/<int:cliente_id>', methods=['PUT'])
+@jwt_required()
+def marcar_todas_notificaciones_leidas_sanchezpharma(cliente_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE notificaciones_clientes 
+                    SET leida = TRUE, fecha_leida = NOW()
+                    WHERE cliente_id = %s AND leida = FALSE
+                """, (cliente_id,))
+            conn.commit()
+
+        return jsonify({"code": 1, "message": "Todas las notificaciones marcadas como leídas"})
+
+    except Exception as e:
+        logging.error(f"Error al marcar todas las notificaciones como leídas: {repr(e)}")
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# CONTAR NOTIFICACIONES NO LEÍDAS
+@app.route('/contar_notificaciones_no_leidas_sanchezpharma/<int:cliente_id>')
+@jwt_required()
+def contar_notificaciones_no_leidas_sanchezpharma(cliente_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT COUNT(*) as total 
+                    FROM notificaciones_clientes 
+                    WHERE cliente_id = %s AND leida = FALSE
+                """, (cliente_id,))
+                result = cursor.fetchone()
+
+        return jsonify({"code": 1, "data": {"total": result["total"]}, "message": "Conteo obtenido correctamente"})
+
+    except Exception as e:
+        logging.error(f"Error al contar notificaciones: {repr(e)}")
+        return jsonify({"code": 0, "data": {"total": 0}, "message": repr(e)})
 
 
 # ---------------------------------------------------

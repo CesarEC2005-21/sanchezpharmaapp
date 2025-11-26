@@ -1126,7 +1126,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                         border: Border.all(color: Colors.green.shade200),
                                       ),
                                       child: Column(
-                                        children: [
+                                      children: [
                                           Icon(
                                             Icons.search,
                                             size: 48,
@@ -1135,9 +1135,9 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                           const SizedBox(height: 12),
                                           Text(
                                             '¡Encuentra lo que necesitas!',
-                                            style: TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.bold,
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
                                               color: Colors.green.shade900,
                                             ),
                                             textAlign: TextAlign.center,
@@ -1150,7 +1150,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                               color: Colors.grey.shade700,
                                             ),
                                             textAlign: TextAlign.center,
-                                          ),
+                                        ),
                                         ],
                                       ),
                                     ),

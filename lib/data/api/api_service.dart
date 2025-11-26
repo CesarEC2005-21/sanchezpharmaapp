@@ -257,5 +257,21 @@ abstract class ApiService {
 
   @PUT('/marcar_direccion_principal_sanchezpharma/{id}')
   Future<HttpResponse<dynamic>> marcarDireccionPrincipal(@Path('id') int id);
+
+  // ========== NOTIFICACIONES DE CLIENTES ==========
+  @GET('${ApiConstants.notificacionesCliente}/{clienteId}')
+  Future<HttpResponse<dynamic>> getNotificacionesCliente(
+    @Path('clienteId') int clienteId,
+    @Query('leida') String? leida,
+  );
+
+  @PUT('${ApiConstants.marcarNotificacionLeida}/{id}')
+  Future<HttpResponse<dynamic>> marcarNotificacionLeida(@Path('id') int id);
+
+  @PUT('${ApiConstants.marcarTodasNotificacionesLeidas}/{clienteId}')
+  Future<HttpResponse<dynamic>> marcarTodasNotificacionesLeidas(@Path('clienteId') int clienteId);
+
+  @GET('${ApiConstants.contarNotificacionesNoLeidas}/{clienteId}')
+  Future<HttpResponse<dynamic>> contarNotificacionesNoLeidas(@Path('clienteId') int clienteId);
 }
 

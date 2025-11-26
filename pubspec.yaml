@@ -59,6 +59,10 @@ dependencies:
   
   # Google Sign In
   google_sign_in: ^6.2.1
+  
+  # Local Notifications
+  flutter_local_notifications: ^17.2.2
+  timezone: ^0.9.4
 
 dev_dependencies:
   flutter_test:
@@ -93,6 +97,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/images/ddspLogo.jpg
+    - assets/images/icon.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
@@ -124,7 +129,8 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/ddspLogo.jpg"
+  image_path: "assets/images/icon.png"
   min_sdk_android: 21
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/images/ddspLogo.jpg"
+  adaptive_icon_foreground: "assets/images/icon.png"
+  adaptive_icon_foreground_scale: 0.9
