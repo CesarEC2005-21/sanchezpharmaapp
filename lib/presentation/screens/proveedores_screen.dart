@@ -6,6 +6,7 @@ import '../../data/models/proveedor_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/constants/app_colors.dart';
 import '../widgets/custom_modal_dialog.dart';
+import 'formulario_proveedor_screen.dart';
 
 class ProveedoresScreen extends StatefulWidget {
   const ProveedoresScreen({super.key});
@@ -97,6 +98,22 @@ class _ProveedoresScreenState extends State<ProveedoresScreen> {
   }
 
   Future<void> _mostrarFormularioProveedor({ProveedorModel? proveedor}) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FormularioProveedorScreen(
+          proveedor: proveedor,
+        ),
+      ),
+    );
+
+    if (result == true) {
+      _cargarProveedores();
+    }
+  }
+
+  // Método antiguo mantenido para referencia pero no usado
+  Future<void> _mostrarFormularioProveedorAntiguo({ProveedorModel? proveedor}) async {
     final formKey = GlobalKey<FormState>();
 
     final nombreController = TextEditingController(text: proveedor?.nombre ?? '');
@@ -109,274 +126,152 @@ class _ProveedoresScreenState extends State<ProveedoresScreen> {
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) {
-        final mediaQuery = MediaQuery.of(context);
-        final keyboardHeight = mediaQuery.viewInsets.bottom;
-        final screenHeight = mediaQuery.size.height;
-        
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Container(
-            width: mediaQuery.size.width * 0.9,
-            constraints: BoxConstraints(
-              maxHeight: (screenHeight * 0.75) - keyboardHeight,
-            ),
+      builder: (context) => CustomModalDialog(
+        title: proveedor == null ? 'Registrar Proveedor' : 'Editar Proveedor',
+        icon: proveedor == null ? Icons.add_business : Icons.edit,
+        content: StatefulBuilder(
+          builder: (context, setState) => Form(
+            key: formKey,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-              // Header
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.orange.shade600, Colors.orange.shade800],
-                  ),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
-                  ),
+                ModalSectionBuilder.buildSectionTitle('Información del Proveedor', Icons.business),
+                ModalSectionBuilder.buildTextField(
+                  controller: nombreController,
+                  label: 'Nombre del Proveedor',
+                  icon: Icons.business_center,
+                  required: true,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'El nombre es requerido';
+                    }
+                    return null;
+                  },
                 ),
-                child: Row(
-                  children: [
-                    Icon(
-                      proveedor == null ? Icons.add_business : Icons.edit,
-                      color: Colors.white,
-                      size: 28,
+                ModalSectionBuilder.buildTextField(
+                  controller: contactoController,
+                  label: 'Persona de Contacto',
+                  icon: Icons.person,
+                  hint: 'Nombre del representante',
+                ),
+                
+                ModalSectionBuilder.buildSectionTitle('Información de Contacto', Icons.contact_phone),
+                ModalSectionBuilder.buildTextField(
+                  controller: telefonoController,
+                  label: 'Teléfono',
+                  icon: Icons.phone,
+                  hint: '999 999 999',
+                  keyboardType: TextInputType.phone,
+                ),
+                ModalSectionBuilder.buildTextField(
+                  controller: emailController,
+                  label: 'Email',
+                  icon: Icons.email,
+                  hint: 'proveedor@email.com',
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value != null && value.isNotEmpty && !value.contains('@')) {
+                      return 'Email inválido';
+                    }
+                    return null;
+                  },
+                ),
+                ModalSectionBuilder.buildTextField(
+                  controller: direccionController,
+                  label: 'Dirección',
+                  icon: Icons.location_on,
+                  hint: 'Dirección completa del proveedor',
+                  maxLines: 3,
+                ),
+                
+                ModalSectionBuilder.buildSectionTitle('Estado', Icons.settings),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: DropdownButtonFormField<String>(
+                    value: estadoValue,
+                    decoration: InputDecoration(
+                      labelText: 'Estado del Proveedor',
+                      prefixIcon: Icon(
+                        estadoValue == 'activo' ? Icons.check_circle : Icons.cancel,
+                        color: estadoValue == 'activo' ? Colors.green : Colors.grey,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                      ),
+                      filled: true,
+                      fillColor: estadoValue == 'activo' 
+                          ? Colors.green.shade50 
+                          : Colors.grey.shade100,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        proveedor == null ? 'Registrar Proveedor' : 'Editar Proveedor',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'activo',
+                        child: Row(
+                          children: [
+                            Icon(Icons.check_circle, color: Colors.green, size: 20),
+                            SizedBox(width: 8),
+                            Text('Activo'),
+                          ],
                         ),
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
-              ),
-              // Body
-              Expanded(
-                child: StatefulBuilder(
-                  builder: (context, setState) => SingleChildScrollView(
-                    padding: const EdgeInsets.all(20),
-                    child: Form(
-                      key: formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Sección: Información del Proveedor
-                          _buildSectionTitle('🏢 Información del Proveedor', Icons.business),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: nombreController,
-                            decoration: InputDecoration(
-                              labelText: 'Nombre del Proveedor *',
-                              prefixIcon: const Icon(Icons.business_center),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              filled: true,
-                              fillColor: Colors.grey.shade50,
-                            ),
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'El nombre es requerido';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: contactoController,
-                            decoration: InputDecoration(
-                              labelText: 'Persona de Contacto',
-                              prefixIcon: const Icon(Icons.person),
-                              hintText: 'Nombre del representante',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              filled: true,
-                              fillColor: Colors.grey.shade50,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          
-                          // Sección: Información de Contacto
-                          _buildSectionTitle('📞 Información de Contacto', Icons.contact_phone),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: telefonoController,
-                            decoration: InputDecoration(
-                              labelText: 'Teléfono',
-                              prefixIcon: const Icon(Icons.phone),
-                              hintText: '999 999 999',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              filled: true,
-                              fillColor: Colors.grey.shade50,
-                            ),
-                            keyboardType: TextInputType.phone,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: emailController,
-                            decoration: InputDecoration(
-                              labelText: 'Email',
-                              prefixIcon: const Icon(Icons.email),
-                              hintText: 'proveedor@email.com',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              filled: true,
-                              fillColor: Colors.grey.shade50,
-                            ),
-                            keyboardType: TextInputType.emailAddress,
-                            validator: (value) {
-                              if (value != null && value.isNotEmpty && !value.contains('@')) {
-                                return 'Email inválido';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: direccionController,
-                            decoration: InputDecoration(
-                              labelText: 'Dirección',
-                              prefixIcon: const Icon(Icons.location_on),
-                              hintText: 'Dirección completa del proveedor',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              filled: true,
-                              fillColor: Colors.grey.shade50,
-                            ),
-                            maxLines: 3,
-                          ),
-                          const SizedBox(height: 24),
-                          
-                          // Sección: Estado
-                          _buildSectionTitle('⚙️ Estado', Icons.settings),
-                          const SizedBox(height: 16),
-                          DropdownButtonFormField<String>(
-                            value: estadoValue,
-                            decoration: InputDecoration(
-                              labelText: 'Estado del Proveedor',
-                              prefixIcon: Icon(
-                                estadoValue == 'activo' ? Icons.check_circle : Icons.cancel,
-                                color: estadoValue == 'activo' ? Colors.green : Colors.grey,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              filled: true,
-                              fillColor: estadoValue == 'activo' 
-                                  ? Colors.green.shade50 
-                                  : Colors.grey.shade100,
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'activo',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.check_circle, color: Colors.green, size: 20),
-                                    SizedBox(width: 8),
-                                    Text('Activo'),
-                                  ],
-                                ),
-                              ),
-                              DropdownMenuItem(
-                                value: 'inactivo',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.cancel, color: Colors.grey, size: 20),
-                                    SizedBox(width: 8),
-                                    Text('Inactivo'),
-                                  ],
-                                ),
-                              ),
-                            ],
-                            onChanged: (value) {
-                              setState(() {
-                                estadoValue = value ?? 'activo';
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              // Footer con botones
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(20),
-                    bottomRight: Radius.circular(20),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton.icon(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close),
-                      label: const Text('Cancelar'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.grey.shade700,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        if (formKey.currentState!.validate()) {
-                          await _guardarProveedor(
-                            proveedor: proveedor,
-                            nombre: nombreController.text,
-                            contacto: contactoController.text.isEmpty ? null : contactoController.text,
-                            telefono: telefonoController.text.isEmpty ? null : telefonoController.text,
-                            email: emailController.text.isEmpty ? null : emailController.text,
-                            direccion: direccionController.text.isEmpty ? null : direccionController.text,
-                            estado: estadoValue,
-                          );
-                          if (mounted) {
-                            Navigator.of(context).pop();
-                          }
-                        }
-                      },
-                      icon: const Icon(Icons.save),
-                      label: const Text('Guardar'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange.shade600,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                      DropdownMenuItem(
+                        value: 'inactivo',
+                        child: Row(
+                          children: [
+                            Icon(Icons.cancel, color: Colors.grey, size: 20),
+                            SizedBox(width: 8),
+                            Text('Inactivo'),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        estadoValue = value ?? 'activo';
+                      });
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      );
-      },
+        actions: [
+          ModalSectionBuilder.buildButton(
+            label: 'Cancelar',
+            onPressed: () => Navigator.of(context).pop(),
+            icon: Icons.close,
+            isOutlined: true,
+          ),
+          const SizedBox(width: 12),
+          ModalSectionBuilder.buildButton(
+            label: 'Guardar',
+            icon: Icons.save,
+            onPressed: () async {
+              if (formKey.currentState!.validate()) {
+                await _guardarProveedor(
+                  proveedor: proveedor,
+                  nombre: nombreController.text,
+                  contacto: contactoController.text.isEmpty ? null : contactoController.text,
+                  telefono: telefonoController.text.isEmpty ? null : telefonoController.text,
+                  email: emailController.text.isEmpty ? null : emailController.text,
+                  direccion: direccionController.text.isEmpty ? null : direccionController.text,
+                  estado: estadoValue,
+                );
+                if (mounted) {
+                  Navigator.of(context).pop();
+                }
+              }
+            },
+          ),
+        ],
+      ),
     );
   }
 

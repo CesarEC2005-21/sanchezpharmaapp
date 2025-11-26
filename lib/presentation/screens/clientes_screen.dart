@@ -4,6 +4,9 @@ import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../data/models/cliente_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/constants/app_colors.dart';
+import '../widgets/custom_modal_dialog.dart';
+import 'formulario_cliente_screen.dart';
 
 class ClientesScreen extends StatefulWidget {
   const ClientesScreen({super.key});
@@ -86,6 +89,22 @@ class _ClientesScreenState extends State<ClientesScreen> {
   }
 
   Future<void> _mostrarFormularioCliente({ClienteModel? cliente}) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FormularioClienteScreen(
+          cliente: cliente,
+        ),
+      ),
+    );
+
+    if (result == true) {
+      _cargarClientes();
+    }
+  }
+
+  // Método antiguo mantenido para referencia pero no usado
+  Future<void> _mostrarFormularioClienteAntiguo({ClienteModel? cliente}) async {
     final formKey = GlobalKey<FormState>();
 
     final nombreController = TextEditingController(text: cliente?.nombre ?? '');
@@ -100,245 +119,198 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
     await showDialog(
       context: context,
-      builder: (context) {
-        final mediaQuery = MediaQuery.of(context);
-        final keyboardHeight = mediaQuery.viewInsets.bottom;
-        final screenHeight = mediaQuery.size.height;
-        
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Container(
-            width: mediaQuery.size.width * 0.9,
-            constraints: BoxConstraints(
-              maxHeight: (screenHeight * 0.8) - keyboardHeight,
-            ),
+      barrierDismissible: false,
+      builder: (context) => CustomModalDialog(
+        title: cliente == null ? 'Registrar Cliente' : 'Editar Cliente',
+        icon: cliente == null ? Icons.person_add : Icons.edit,
+        content: StatefulBuilder(
+          builder: (context, setState) => Form(
+            key: formKey,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.purple.shade600, Colors.purple.shade800],
-                    ),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(20),
-                      topRight: Radius.circular(20),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        cliente == null ? Icons.person_add : Icons.edit,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          cliente == null ? 'Registrar Cliente' : 'Editar Cliente',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                ModalSectionBuilder.buildSectionTitle('Información Personal', Icons.person),
+                ModalSectionBuilder.buildTextField(
+                  controller: nombreController,
+                  label: 'Nombre',
+                  icon: Icons.person_outline,
+                  required: true,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'El nombre es requerido';
+                    }
+                    return null;
+                  },
+                ),
+                ModalSectionBuilder.buildTextField(
+                  controller: apellidoController,
+                  label: 'Apellido',
+                  icon: Icons.person_outline,
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: DropdownButtonFormField<String>(
+                          value: tipoDocumentoValue,
+                          decoration: InputDecoration(
+                            labelText: 'Tipo Doc.',
+                            prefixIcon: const Icon(Icons.badge, color: AppColors.primary),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Colors.grey.shade300),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                            ),
+                            filled: true,
+                            fillColor: Colors.grey.shade50,
                           ),
+                          items: const [
+                            DropdownMenuItem(value: 'DNI', child: Text('DNI')),
+                            DropdownMenuItem(value: 'RUC', child: Text('RUC')),
+                            DropdownMenuItem(value: 'PASAPORTE', child: Text('Pasaporte')),
+                            DropdownMenuItem(value: 'OTRO', child: Text('Otro')),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              tipoDocumentoValue = value ?? 'DNI';
+                            });
+                          },
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white),
-                        onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 3,
+                      child: ModalSectionBuilder.buildTextField(
+                        controller: documentoController,
+                        label: 'Número de Documento',
+                        icon: Icons.numbers,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                // Body
-                Expanded(
-                  child: StatefulBuilder(
-                    builder: (context, setState) => SingleChildScrollView(
-                      padding: const EdgeInsets.all(20),
-                      child: Form(
-                        key: formKey,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
+                
+                ModalSectionBuilder.buildSectionTitle('Información de Contacto', Icons.contact_phone),
+                ModalSectionBuilder.buildTextField(
+                  controller: telefonoController,
+                  label: 'Teléfono',
+                  icon: Icons.phone,
+                  keyboardType: TextInputType.phone,
+                ),
+                ModalSectionBuilder.buildTextField(
+                  controller: emailController,
+                  label: 'Email',
+                  icon: Icons.email,
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value != null && value.isNotEmpty && !value.contains('@')) {
+                      return 'Email inválido';
+                    }
+                    return null;
+                  },
+                ),
+                ModalSectionBuilder.buildTextField(
+                  controller: direccionController,
+                  label: 'Dirección',
+                  icon: Icons.location_on,
+                  maxLines: 2,
+                ),
+                
+                ModalSectionBuilder.buildSectionTitle('Estado', Icons.settings),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: DropdownButtonFormField<String>(
+                    value: estadoValue,
+                    decoration: InputDecoration(
+                      labelText: 'Estado',
+                      prefixIcon: Icon(
+                        estadoValue == 'activo' ? Icons.check_circle : Icons.cancel,
+                        color: estadoValue == 'activo' ? Colors.green : Colors.grey,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                      ),
+                      filled: true,
+                      fillColor: estadoValue == 'activo' 
+                          ? Colors.green.shade50 
+                          : Colors.grey.shade100,
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'activo',
+                        child: Row(
                           children: [
-                            TextFormField(
-                              controller: nombreController,
-                              decoration: const InputDecoration(
-                                labelText: 'Nombre *',
-                                border: OutlineInputBorder(),
-                              ),
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'El nombre es requerido';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: apellidoController,
-                              decoration: const InputDecoration(
-                                labelText: 'Apellido',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: DropdownButtonFormField<String>(
-                                    value: tipoDocumentoValue,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Tipo Doc.',
-                                      border: OutlineInputBorder(),
-                                    ),
-                                    items: const [
-                                      DropdownMenuItem(value: 'DNI', child: Text('DNI')),
-                                      DropdownMenuItem(value: 'RUC', child: Text('RUC')),
-                                      DropdownMenuItem(value: 'PASAPORTE', child: Text('Pasaporte')),
-                                      DropdownMenuItem(value: 'OTRO', child: Text('Otro')),
-                                    ],
-                                    onChanged: (value) {
-                                      setState(() {
-                                        tipoDocumentoValue = value ?? 'DNI';
-                                      });
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  flex: 3,
-                                  child: TextFormField(
-                                    controller: documentoController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Número de Documento',
-                                      border: OutlineInputBorder(),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: telefonoController,
-                              decoration: const InputDecoration(
-                                labelText: 'Teléfono',
-                                border: OutlineInputBorder(),
-                              ),
-                              keyboardType: TextInputType.phone,
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: emailController,
-                              decoration: const InputDecoration(
-                                labelText: 'Email',
-                                border: OutlineInputBorder(),
-                              ),
-                              keyboardType: TextInputType.emailAddress,
-                              validator: (value) {
-                                if (value != null && value.isNotEmpty && !value.contains('@')) {
-                                  return 'Email inválido';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: direccionController,
-                              decoration: const InputDecoration(
-                                labelText: 'Dirección',
-                                border: OutlineInputBorder(),
-                              ),
-                              maxLines: 2,
-                            ),
-                            const SizedBox(height: 12),
-                            DropdownButtonFormField<String>(
-                              value: estadoValue,
-                              decoration: const InputDecoration(
-                                labelText: 'Estado',
-                                border: OutlineInputBorder(),
-                              ),
-                              items: const [
-                                DropdownMenuItem(value: 'activo', child: Text('Activo')),
-                                DropdownMenuItem(value: 'inactivo', child: Text('Inactivo')),
-                              ],
-                              onChanged: (value) {
-                                setState(() {
-                                  estadoValue = value ?? 'activo';
-                                });
-                              },
-                            ),
+                            Icon(Icons.check_circle, color: Colors.green, size: 20),
+                            SizedBox(width: 8),
+                            Text('Activo'),
                           ],
                         ),
                       ),
-                    ),
-                  ),
-                ),
-                // Footer con botones
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: const BorderRadius.only(
-                      bottomLeft: Radius.circular(20),
-                      bottomRight: Radius.circular(20),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton.icon(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close),
-                        label: const Text('Cancelar'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.grey.shade700,
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      ElevatedButton.icon(
-                        onPressed: () async {
-                          if (formKey.currentState!.validate()) {
-                            await _guardarCliente(
-                              cliente: cliente,
-                              nombre: nombreController.text,
-                              apellido: apellidoController.text.isEmpty ? null : apellidoController.text,
-                              documento: documentoController.text.isEmpty ? null : documentoController.text,
-                              tipoDocumento: tipoDocumentoValue,
-                              telefono: telefonoController.text.isEmpty ? null : telefonoController.text,
-                              email: emailController.text.isEmpty ? null : emailController.text,
-                              direccion: direccionController.text.isEmpty ? null : direccionController.text,
-                              estado: estadoValue,
-                            );
-                            if (mounted) {
-                              Navigator.of(context).pop();
-                            }
-                          }
-                        },
-                        icon: const Icon(Icons.save),
-                        label: const Text('Guardar'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.purple.shade600,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
+                      DropdownMenuItem(
+                        value: 'inactivo',
+                        child: Row(
+                          children: [
+                            Icon(Icons.cancel, color: Colors.grey, size: 20),
+                            SizedBox(width: 8),
+                            Text('Inactivo'),
+                          ],
                         ),
                       ),
                     ],
+                    onChanged: (value) {
+                      setState(() {
+                        estadoValue = value ?? 'activo';
+                      });
+                    },
                   ),
                 ),
               ],
             ),
           ),
-        );
-      },
+        ),
+        actions: [
+          ModalSectionBuilder.buildButton(
+            label: 'Cancelar',
+            onPressed: () => Navigator.of(context).pop(),
+            icon: Icons.close,
+            isOutlined: true,
+          ),
+          const SizedBox(width: 12),
+          ModalSectionBuilder.buildButton(
+            label: 'Guardar',
+            icon: Icons.save,
+            onPressed: () async {
+              if (formKey.currentState!.validate()) {
+                await _guardarCliente(
+                  cliente: cliente,
+                  nombre: nombreController.text,
+                  apellido: apellidoController.text.isEmpty ? null : apellidoController.text,
+                  documento: documentoController.text.isEmpty ? null : documentoController.text,
+                  tipoDocumento: tipoDocumentoValue,
+                  telefono: telefonoController.text.isEmpty ? null : telefonoController.text,
+                  email: emailController.text.isEmpty ? null : emailController.text,
+                  direccion: direccionController.text.isEmpty ? null : direccionController.text,
+                  estado: estadoValue,
+                );
+                if (mounted) {
+                  Navigator.of(context).pop();
+                }
+              }
+            },
+          ),
+        ],
+      ),
     );
   }
 

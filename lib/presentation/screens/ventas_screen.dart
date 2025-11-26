@@ -744,6 +744,9 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
               ],
             ),
       bottomNavigationBar: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.6,
+        ),
         padding: EdgeInsets.only(
           left: 16,
           right: 16,
@@ -765,15 +768,16 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             // Configuración de venta
-            ExpansionTile(
-              title: const Text('Configurar Venta'),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
+            Flexible(
+              child: ExpansionTile(
+                title: const Text('Configurar Venta'),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
                         DropdownButtonFormField<int?>(
                   value: _clienteIdSeleccionado,
                   decoration: const InputDecoration(
@@ -941,11 +945,12 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                     });
                   },
                 ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             const SizedBox(height: 8),
             SizedBox(

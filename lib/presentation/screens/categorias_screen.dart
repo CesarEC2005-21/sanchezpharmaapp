@@ -6,6 +6,7 @@ import '../../data/models/categoria_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/constants/app_colors.dart';
 import '../widgets/custom_modal_dialog.dart';
+import 'formulario_categoria_screen.dart';
 
 class CategoriasScreen extends StatefulWidget {
   const CategoriasScreen({super.key});
@@ -97,6 +98,22 @@ class _CategoriasScreenState extends State<CategoriasScreen> {
   }
 
   Future<void> _mostrarFormularioCategoria({CategoriaModel? categoria}) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FormularioCategoriaScreen(
+          categoria: categoria,
+        ),
+      ),
+    );
+
+    if (result == true) {
+      _cargarCategorias();
+    }
+  }
+
+  // Método antiguo mantenido para referencia pero no usado
+  Future<void> _mostrarFormularioCategoriaAntiguo({CategoriaModel? categoria}) async {
     final formKey = GlobalKey<FormState>();
 
     final nombreController = TextEditingController(text: categoria?.nombre ?? '');
@@ -106,218 +123,122 @@ class _CategoriasScreenState extends State<CategoriasScreen> {
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) {
-        final mediaQuery = MediaQuery.of(context);
-        final keyboardHeight = mediaQuery.viewInsets.bottom;
-        final screenHeight = mediaQuery.size.height;
-        
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Container(
-            width: mediaQuery.size.width * 0.9,
-            constraints: BoxConstraints(
-              maxHeight: (screenHeight * 0.6) - keyboardHeight,
-            ),
+      builder: (context) => CustomModalDialog(
+        title: categoria == null ? 'Registrar Categoría' : 'Editar Categoría',
+        icon: categoria == null ? Icons.add_box : Icons.edit,
+        content: StatefulBuilder(
+          builder: (context, setState) => Form(
+            key: formKey,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-              // Header
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.purple.shade600, Colors.purple.shade800],
-                  ),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
-                  ),
+                ModalSectionBuilder.buildSectionTitle('Información de la Categoría', Icons.label),
+                ModalSectionBuilder.buildTextField(
+                  controller: nombreController,
+                  label: 'Nombre de la Categoría',
+                  icon: Icons.category,
+                  hint: 'Ej: Medicamentos, Suplementos, etc.',
+                  required: true,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'El nombre es requerido';
+                    }
+                    return null;
+                  },
                 ),
-                child: Row(
-                  children: [
-                    Icon(
-                      categoria == null ? Icons.add_box : Icons.edit,
-                      color: Colors.white,
-                      size: 28,
+                ModalSectionBuilder.buildTextField(
+                  controller: descripcionController,
+                  label: 'Descripción',
+                  icon: Icons.description,
+                  hint: 'Describe esta categoría de productos',
+                  maxLines: 4,
+                ),
+                
+                ModalSectionBuilder.buildSectionTitle('Estado', Icons.settings),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: DropdownButtonFormField<String>(
+                    value: estadoValue,
+                    decoration: InputDecoration(
+                      labelText: 'Estado de la Categoría',
+                      prefixIcon: Icon(
+                        estadoValue == 'activo' ? Icons.check_circle : Icons.cancel,
+                        color: estadoValue == 'activo' ? Colors.green : Colors.grey,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                      ),
+                      filled: true,
+                      fillColor: estadoValue == 'activo' 
+                          ? Colors.green.shade50 
+                          : Colors.grey.shade100,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        categoria == null ? 'Registrar Categoría' : 'Editar Categoría',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'activo',
+                        child: Row(
+                          children: [
+                            Icon(Icons.check_circle, color: Colors.green, size: 20),
+                            SizedBox(width: 8),
+                            Text('Activo'),
+                          ],
                         ),
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
-              ),
-              // Body
-              Expanded(
-                child: StatefulBuilder(
-                  builder: (context, setState) => SingleChildScrollView(
-                    padding: const EdgeInsets.all(20),
-                    child: Form(
-                      key: formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Sección: Información de la Categoría
-                          _buildSectionTitle('🏷️ Información de la Categoría', Icons.label),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: nombreController,
-                            decoration: InputDecoration(
-                              labelText: 'Nombre de la Categoría *',
-                              prefixIcon: const Icon(Icons.category),
-                              hintText: 'Ej: Medicamentos, Suplementos, etc.',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              filled: true,
-                              fillColor: Colors.grey.shade50,
-                            ),
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'El nombre es requerido';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: descripcionController,
-                            decoration: InputDecoration(
-                              labelText: 'Descripción',
-                              prefixIcon: const Icon(Icons.description),
-                              hintText: 'Describe esta categoría de productos',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              filled: true,
-                              fillColor: Colors.grey.shade50,
-                            ),
-                            maxLines: 4,
-                          ),
-                          const SizedBox(height: 24),
-                          
-                          // Sección: Estado
-                          _buildSectionTitle('⚙️ Estado', Icons.settings),
-                          const SizedBox(height: 16),
-                          DropdownButtonFormField<String>(
-                            value: estadoValue,
-                            decoration: InputDecoration(
-                              labelText: 'Estado de la Categoría',
-                              prefixIcon: Icon(
-                                estadoValue == 'activo' ? Icons.check_circle : Icons.cancel,
-                                color: estadoValue == 'activo' ? Colors.green : Colors.grey,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              filled: true,
-                              fillColor: estadoValue == 'activo' 
-                                  ? Colors.green.shade50 
-                                  : Colors.grey.shade100,
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'activo',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.check_circle, color: Colors.green, size: 20),
-                                    SizedBox(width: 8),
-                                    Text('Activo'),
-                                  ],
-                                ),
-                              ),
-                              DropdownMenuItem(
-                                value: 'inactivo',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.cancel, color: Colors.grey, size: 20),
-                                    SizedBox(width: 8),
-                                    Text('Inactivo'),
-                                  ],
-                                ),
-                              ),
-                            ],
-                            onChanged: (value) {
-                              setState(() {
-                                estadoValue = value ?? 'activo';
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              // Footer con botones
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(20),
-                    bottomRight: Radius.circular(20),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton.icon(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close),
-                      label: const Text('Cancelar'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.grey.shade700,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        if (formKey.currentState!.validate()) {
-                          await _guardarCategoria(
-                            categoria: categoria,
-                            nombre: nombreController.text,
-                            descripcion: descripcionController.text.isEmpty ? null : descripcionController.text,
-                            estado: estadoValue,
-                          );
-                          if (mounted) {
-                            Navigator.of(context).pop();
-                          }
-                        }
-                      },
-                      icon: const Icon(Icons.save),
-                      label: const Text('Guardar'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.purple.shade600,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                      DropdownMenuItem(
+                        value: 'inactivo',
+                        child: Row(
+                          children: [
+                            Icon(Icons.cancel, color: Colors.grey, size: 20),
+                            SizedBox(width: 8),
+                            Text('Inactivo'),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        estadoValue = value ?? 'activo';
+                      });
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      );
-      },
+        actions: [
+          ModalSectionBuilder.buildButton(
+            label: 'Cancelar',
+            onPressed: () => Navigator.of(context).pop(),
+            icon: Icons.close,
+            isOutlined: true,
+          ),
+          const SizedBox(width: 12),
+          ModalSectionBuilder.buildButton(
+            label: 'Guardar',
+            icon: Icons.save,
+            onPressed: () async {
+              if (formKey.currentState!.validate()) {
+                await _guardarCategoria(
+                  categoria: categoria,
+                  nombre: nombreController.text,
+                  descripcion: descripcionController.text.isEmpty ? null : descripcionController.text,
+                  estado: estadoValue,
+                );
+                if (mounted) {
+                  Navigator.of(context).pop();
+                }
+              }
+            },
+          ),
+        ],
+      ),
     );
   }
 

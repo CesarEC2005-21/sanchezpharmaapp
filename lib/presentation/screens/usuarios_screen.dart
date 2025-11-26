@@ -7,6 +7,7 @@ import '../../data/models/rol_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/constants/app_colors.dart';
 import '../widgets/custom_modal_dialog.dart';
+import 'formulario_usuario_screen.dart';
 
 class UsuariosScreen extends StatefulWidget {
   const UsuariosScreen({super.key});
@@ -132,6 +133,23 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   }
 
   Future<void> _mostrarFormularioUsuario({UsuarioModel? usuario}) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FormularioUsuarioScreen(
+          usuario: usuario,
+          roles: _roles,
+        ),
+      ),
+    );
+
+    if (result == true) {
+      _cargarUsuarios();
+    }
+  }
+
+  // Método antiguo mantenido para referencia pero no usado
+  Future<void> _mostrarFormularioUsuarioAntiguo({UsuarioModel? usuario}) async {
     final formKey = GlobalKey<FormState>();
     
     final usernameController = TextEditingController(text: usuario?.username ?? '');
@@ -296,8 +314,8 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                             fillColor: Colors.grey.shade50,
                           ),
                           items: const [
-                            DropdownMenuItem(value: 'M', child: Text('Masculino')),
-                            DropdownMenuItem(value: 'F', child: Text('Femenino')),
+                            DropdownMenuItem(value: 'M', child: Text('M')),
+                            DropdownMenuItem(value: 'F', child: Text('F')),
                           ],
                           onChanged: (value) {
                             setState(() {
