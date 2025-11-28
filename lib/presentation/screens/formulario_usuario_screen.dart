@@ -4,6 +4,8 @@ import '../../data/api/api_service.dart';
 import '../../data/models/usuario_model.dart';
 import '../../data/models/rol_model.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/role_constants.dart';
+import '../../core/utils/shared_prefs_helper.dart';
 import '../widgets/custom_modal_dialog.dart';
 
 class FormularioUsuarioScreen extends StatefulWidget {
@@ -34,10 +36,12 @@ class _FormularioUsuarioScreenState extends State<FormularioUsuarioScreen> {
   
   String _sexoValue = 'M';
   int? _rolIdSeleccionado;
+  int? _rolIdUsuarioActual;
 
   @override
   void initState() {
     super.initState();
+    _cargarRolUsuarioActual();
     _usernameController = TextEditingController(text: widget.usuario?.username ?? '');
     _emailController = TextEditingController(text: widget.usuario?.email ?? '');
     _passwordController = TextEditingController();
@@ -46,6 +50,35 @@ class _FormularioUsuarioScreenState extends State<FormularioUsuarioScreen> {
     _edadController = TextEditingController(text: widget.usuario?.edad.toString() ?? '');
     _sexoValue = widget.usuario?.sexo ?? 'M';
     _rolIdSeleccionado = widget.usuario?.rolId ?? (widget.roles.isNotEmpty ? widget.roles.first.id : 1);
+  }
+
+  Future<void> _cargarRolUsuarioActual() async {
+    final rolId = await SharedPrefsHelper.getRolId();
+    setState(() {
+      _rolIdUsuarioActual = rolId;
+      // Si el usuario actual no es Ingeniero y el rol seleccionado es Ingeniero,
+      // cambiar a un rol válido
+      if (rolId != RoleConstants.ROL_INGENIERO && 
+          _rolIdSeleccionado == RoleConstants.ROL_INGENIERO) {
+        // Filtrar roles excluyendo Ingeniero
+        final rolesDisponibles = widget.roles
+            .where((rol) => rol.id != RoleConstants.ROL_INGENIERO)
+            .toList();
+        if (rolesDisponibles.isNotEmpty) {
+          _rolIdSeleccionado = rolesDisponibles.first.id;
+        }
+      }
+    });
+  }
+
+  // Obtener roles disponibles (excluyendo Ingeniero si el usuario actual no es Ingeniero)
+  List<RolModel> _getRolesDisponibles() {
+    // Si el usuario actual es Ingeniero, puede ver todos los roles
+    if (_rolIdUsuarioActual == RoleConstants.ROL_INGENIERO) {
+      return widget.roles;
+    }
+    // Si no es Ingeniero, excluir el rol Ingeniero
+    return widget.roles.where((rol) => rol.id != RoleConstants.ROL_INGENIERO).toList();
   }
 
   @override
@@ -66,6 +99,18 @@ class _FormularioUsuarioScreenState extends State<FormularioUsuarioScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Por favor seleccione un rol'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    // Validar que no se pueda crear/editar un usuario con rol Ingeniero si el usuario actual no es Ingeniero
+    if (_rolIdSeleccionado == RoleConstants.ROL_INGENIERO && 
+        _rolIdUsuarioActual != RoleConstants.ROL_INGENIERO) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No tiene permisos para crear o asignar el rol de Ingeniero'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -353,13 +398,24 @@ class _FormularioUsuarioScreenState extends State<FormularioUsuarioScreen> {
                     filled: true,
                     fillColor: Colors.grey.shade50,
                   ),
-                  items: widget.roles.map((rol) {
+                  items: _getRolesDisponibles().map((rol) {
                     return DropdownMenuItem<int>(
                       value: rol.id,
                       child: Text(rol.nombre),
                     );
                   }).toList(),
                   onChanged: (value) {
+                    // Si el usuario actual no es Ingeniero, no permitir seleccionar rol Ingeniero
+                    if (value == RoleConstants.ROL_INGENIERO && 
+                        _rolIdUsuarioActual != RoleConstants.ROL_INGENIERO) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('No tiene permisos para asignar el rol de Ingeniero'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                      return;
+                    }
                     setState(() {
                       _rolIdSeleccionado = value;
                     });

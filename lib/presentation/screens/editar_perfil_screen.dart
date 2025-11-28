@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../../data/api/dio_client.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/validators.dart';
 import 'package:intl/intl.dart';
 
 class EditarPerfilScreen extends StatefulWidget {
@@ -509,24 +510,18 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
                     TextFormField(
                       controller: _telefonoController,
                       keyboardType: TextInputType.phone,
+                      maxLength: 9,
                       decoration: InputDecoration(
                         labelText: 'Número de celular',
                         prefixIcon: const Icon(Icons.phone),
+                        helperText: 'Debe tener 9 dígitos y empezar con 9',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
                         filled: true,
                         fillColor: Colors.grey[100],
                       ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Ingresa tu número de celular';
-                        }
-                        if (value.length < 9) {
-                          return 'Ingresa un número válido';
-                        }
-                        return null;
-                      },
+                      validator: Validators.validateTelefonoRequerido,
                     ),
                     
                     const SizedBox(height: 32),

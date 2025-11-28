@@ -7,6 +7,7 @@ import '../screens/ventas_screen.dart';
 import '../screens/clientes_screen.dart';
 import '../screens/envios_screen.dart';
 import '../screens/reportes_screen.dart';
+import '../screens/backups_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../../core/constants/role_constants.dart';
 
@@ -278,7 +279,7 @@ class CustomDrawer extends StatelessWidget {
                     ),
                   ],
                   
-                  // === REPORTES (Admin) ===
+                  // === REPORTES (Admin e Ingeniero) ===
                   if (RoleConstants.tieneAccesoAReportes(efectiveRolId)) ...[
                     _buildDrawerItem(
                       icon: Icons.assessment,
@@ -289,6 +290,23 @@ class CustomDrawer extends StatelessWidget {
                           context,
                           MaterialPageRoute(
                             builder: (context) => const ReportesScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                  
+                  // === BACKUPS (Solo Ingeniero) ===
+                  if (RoleConstants.tieneAccesoABackups(efectiveRolId)) ...[
+                    _buildDrawerItem(
+                      icon: Icons.backup,
+                      title: 'Backups',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const BackupsScreen(),
                           ),
                         );
                       },

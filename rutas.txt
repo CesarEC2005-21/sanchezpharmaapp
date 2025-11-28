@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, g
+from flask import Flask, jsonify, request, g, send_file
 import pymysql.cursors
 from flask_jwt import JWT, jwt_required
 from flask_cors import CORS
@@ -7,6 +7,12 @@ from decimal import Decimal
 import random
 import string
 from datetime import datetime, timedelta
+import os
+import shutil
+import subprocess
+import zipfile
+import tempfile
+import jwt as pyjwt
 
 # Importar Flask-Mail de forma opcional
 try:
@@ -15,6 +21,14 @@ try:
 except ImportError:
     MAIL_AVAILABLE = False
     logging.warning("Flask-Mail no está instalado. Las funciones de email no estarán disponibles.")
+
+# Importar requests para llamadas HTTP a la API de RENIEC
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+    logging.warning("Requests no está instalado. La verificación de DNI no estará disponible.")
 
 # ---------------------------------------------------
 # CONFIGURACIÓN LOGS
@@ -77,10 +91,14 @@ def authenticate(username, password):
 
 
 def identity(payload):
-    user_id = payload['identity']
-    logging.info(f"Validando token para user_id: {user_id}")
-
     try:
+        user_id = payload.get('identity')
+        if not user_id:
+            logging.error(f"identity: No se encontró 'identity' en payload: {payload}")
+            return None
+        
+        logging.info(f"identity: Validando token para user_id: {user_id}, payload completo: {payload}")
+
         # PASO 1: Intentar buscar como usuario interno
         conn = obtenerconexion_sanchezpharma()
         with conn:
@@ -90,8 +108,10 @@ def identity(payload):
                 result = cursor.fetchone()
 
         if result:
-            logging.info(f"Usuario interno encontrado: {result['username']}")
-            return UserSanchezPharma(result["id"], result["username"], result["password"])
+            logging.info(f"identity: Usuario interno encontrado: {result['username']} (ID: {result['id']})")
+            user_obj = UserSanchezPharma(result["id"], result["username"], result["password"])
+            logging.info(f"identity: Objeto UserSanchezPharma creado: {user_obj}")
+            return user_obj
         
         # PASO 2: Si no es usuario interno, intentar buscar como cliente
         conn = obtenerconexion_sanchezpharma()
@@ -115,10 +135,15 @@ def identity(payload):
             logging.info(f"Cliente encontrado: {username} (ID: {cliente['id']})")
             return UserSanchezPharma(cliente["id"], username, password)
         
-        logging.warning(f"No se encontró usuario ni cliente con ID: {user_id}")
+        logging.warning(f"identity: No se encontró usuario ni cliente con ID: {user_id}")
+        return None
+    except KeyError as e:
+        logging.error(f"identity: Error de clave en payload: {repr(e)}, payload recibido: {payload}")
         return None
     except Exception as e:
-        logging.error(f"Error en identity para user_id {user_id}: {repr(e)}")
+        logging.error(f"identity: Error en identity para payload {payload}: {repr(e)}")
+        import traceback
+        logging.error(f"identity: Traceback: {traceback.format_exc()}")
         return None
 
 
@@ -174,6 +199,84 @@ CORS(app, resources={
 })
 
 jwt = JWT(app, authenticate, identity)
+
+# Handler personalizado para errores de JWT
+@jwt.jwt_error_handler
+def jwt_error_handler(error):
+    logging.error(f"JWT Error Handler: {type(error).__name__}: {str(error)}")
+    logging.error(f"JWT Error Handler: Request path: {request.path}")
+    logging.error(f"JWT Error Handler: Authorization header: {request.headers.get('Authorization', 'None')[:50]}...")
+    
+    if hasattr(error, 'status_code'):
+        if error.status_code == 401:
+            return jsonify({"code": 0, "message": "Token inválido o expirado. Por favor, inicia sesión nuevamente."}), 401
+        return jsonify({"code": 0, "message": f"Error de autenticación: {str(error)}"}), error.status_code
+    
+    return jsonify({"code": 0, "message": f"Error de autenticación: {str(error)}"}), 401
+
+
+# Middleware personalizado para procesar tokens manualmente si Flask-JWT falla
+@app.before_request
+def procesar_token_manual():
+    """
+    Procesa el token JWT manualmente si Flask-JWT no lo ha procesado.
+    Esto es un fallback para asegurar que g.current_identity se establezca correctamente.
+    """
+    # Solo procesar si no es un endpoint público y Flask-JWT no ha establecido current_identity
+    endpoints_libres = ("api_login", "hello", "probar_conexion_sanchezpharma", "registrar_cliente_publico_sanchezpharma", 
+                        "login_google_sanchezpharma", "registrar_cliente_google_sanchezpharma",
+                        "verificar_documento_sanchezpharma",
+                        "enviar_codigo_recuperacion_sanchezpharma", "verificar_codigo_recuperacion_sanchezpharma",
+                        "cambiar_password_recuperacion_sanchezpharma")
+    
+    if request.method == "OPTIONS" or request.endpoint in endpoints_libres:
+        return
+    
+    # Si Flask-JWT ya procesó el token, no hacer nada
+    if hasattr(g, 'current_identity') and g.current_identity is not None:
+        return
+    
+    # Intentar procesar el token manualmente
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return
+    
+    try:
+        # Extraer el token
+        token = None
+        if auth_header.startswith("Bearer "):
+            token = auth_header.replace("Bearer ", "").strip()
+        elif auth_header.startswith("JWT "):
+            token = auth_header.replace("JWT ", "").strip()
+        
+        if not token:
+            return
+        
+        # Decodificar el token usando PyJWT directamente
+        try:
+            # Flask-JWT usa la SECRET_KEY para decodificar
+            payload = pyjwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            logging.info(f"procesar_token_manual: Token decodificado correctamente, payload: {payload}")
+            
+            # Llamar a la función identity para obtener el usuario
+            user = identity(payload)
+            if user:
+                g.current_identity = user
+                logging.info(f"procesar_token_manual: Usuario establecido manualmente: {user.id}")
+            else:
+                logging.warning(f"procesar_token_manual: identity() retornó None para payload: {payload}")
+        except pyjwt.ExpiredSignatureError:
+            logging.error(f"procesar_token_manual: Token expirado")
+            # No hacer nada, dejar que Flask-JWT maneje el error
+        except pyjwt.InvalidTokenError as decode_error:
+            logging.error(f"procesar_token_manual: Token inválido: {repr(decode_error)}")
+            # No hacer nada, dejar que Flask-JWT maneje el error
+        except Exception as decode_error:
+            logging.error(f"procesar_token_manual: Error al decodificar token: {repr(decode_error)}")
+            # No hacer nada, dejar que Flask-JWT maneje el error
+    except Exception as e:
+        logging.error(f"procesar_token_manual: Error general: {repr(e)}")
+        # No hacer nada, dejar que Flask-JWT maneje el error
 
 
 # ---------------------------------------------------
@@ -322,6 +425,276 @@ def verificar_columnas_seguimiento_envios():
 verificar_columnas_seguimiento_envios()
 
 
+# ---------------------------------------------------
+# VERIFICACIÓN DE DNI CON API RENIEC (DECOLECTA)
+# ---------------------------------------------------
+# Token de la API de RENIEC
+RENIEC_API_TOKEN = 'sk_11948.1JSj647lps9gpCKSlVpe38nIaby3Lnm4'
+RENIEC_API_URL = 'https://api.decolecta.com/'
+
+# Importar requests para llamadas HTTP a la API de RENIEC
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+    logging.warning("Requests no está instalado. La verificación de DNI no estará disponible.")
+
+def verificar_dni_reniec(dni):
+    """
+    Verifica si un DNI existe y es válido usando la API de RENIEC.
+    
+    Args:
+        dni (str): Número de DNI a verificar
+        
+    Returns:
+        dict: {
+            'valido': bool,
+            'datos': dict con información del DNI si es válido,
+            'mensaje': str
+        }
+    """
+    if not REQUESTS_AVAILABLE:
+        logging.warning("Requests no está disponible. No se puede verificar DNI.")
+        return {
+            'valido': False,
+            'datos': None,
+            'mensaje': 'Servicio de verificación de DNI no disponible'
+        }
+    
+    if not dni or not dni.strip():
+        return {
+            'valido': False,
+            'datos': None,
+            'mensaje': 'DNI no proporcionado'
+        }
+    
+    # Limpiar el DNI (solo números)
+    dni_limpio = ''.join(filter(str.isdigit, str(dni)))
+    
+    if len(dni_limpio) != 8:
+        return {
+            'valido': False,
+            'datos': None,
+            'mensaje': 'El DNI debe tener 8 dígitos'
+        }
+    
+    try:
+        # Hacer la petición a la API de RENIEC
+        headers = {
+            'Authorization': f'Bearer {RENIEC_API_TOKEN}',
+            'Content-Type': 'application/json'
+        }
+        
+        # Usar el endpoint correcto según la documentación oficial
+        # GET https://api.decolecta.com/v1/reniec/dni?numero=46027897
+        endpoint = f'{RENIEC_API_URL}v1/reniec/dni?numero={dni_limpio}'
+        
+        respuesta_exitosa = None
+        ultimo_error = None
+        
+        # Configurar requests para NO usar proxy (PythonAnywhere puede tener problemas con proxy)
+        # Deshabilitar completamente el uso de proxy
+        import os
+        # Guardar variables de entorno de proxy originales
+        original_proxies = {
+            'http_proxy': os.environ.get('http_proxy'),
+            'https_proxy': os.environ.get('https_proxy'),
+            'HTTP_PROXY': os.environ.get('HTTP_PROXY'),
+            'HTTPS_PROXY': os.environ.get('HTTPS_PROXY')
+        }
+        
+        # Eliminar variables de entorno de proxy temporalmente
+        for proxy_var in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
+            if proxy_var in os.environ:
+                del os.environ[proxy_var]
+        
+        proxies = {
+            'http': None,
+            'https': None
+        }
+        
+        try:
+            response = requests.get(endpoint, headers=headers, timeout=10, proxies=proxies, verify=True, allow_redirects=True)
+            logging.info(f"GET {endpoint} - Status: {response.status_code}")
+            logging.info(f"GET Response Headers: {dict(response.headers)}")
+            logging.info(f"GET Response Text: {response.text[:500]}")
+            
+            # Si el status es 200, la respuesta es exitosa
+            if response.status_code == 200:
+                try:
+                    respuesta_exitosa = response.json()
+                    logging.info(f"Respuesta JSON exitosa: {respuesta_exitosa}")
+                except Exception as json_error:
+                    logging.warning(f"No se pudo parsear JSON: {json_error}, respuesta: {response.text[:200]}")
+                    respuesta_exitosa = {'raw': response.text, 'status_code': response.status_code}
+            elif response.status_code == 400:
+                # Error 400 significa que el DNI no es válido o no existe
+                try:
+                    error_data = response.json()
+                    logging.warning(f"Error 400 de la API: {error_data}")
+                    return {
+                        'valido': False,
+                        'datos': error_data,
+                        'mensaje': error_data.get('message', error_data.get('error', 'DNI no encontrado o inválido'))
+                    }
+                except:
+                    return {
+                        'valido': False,
+                        'datos': {'status_code': 400, 'text': response.text[:200]},
+                        'mensaje': f'DNI no encontrado. Status: {response.status_code}'
+                    }
+            elif response.status_code == 401:
+                # Error 401: No autorizado (token inválido)
+                logging.error(f"Error 401: Token inválido o no autorizado")
+                return {
+                    'valido': False,
+                    'datos': {'status_code': 401, 'text': response.text[:200]},
+                    'mensaje': 'Error de autenticación con la API de RENIEC. Verifique el token.'
+                }
+            elif response.status_code == 403:
+                # Error 403: Prohibido
+                logging.error(f"Error 403: Acceso prohibido")
+                return {
+                    'valido': False,
+                    'datos': {'status_code': 403, 'text': response.text[:200]},
+                    'mensaje': 'Acceso prohibido a la API de RENIEC.'
+                }
+            elif response.status_code == 404:
+                # Error 404: Endpoint no encontrado
+                logging.error(f"Error 404: Endpoint no encontrado")
+                return {
+                    'valido': False,
+                    'datos': {'status_code': 404, 'text': response.text[:200]},
+                    'mensaje': 'Endpoint de la API no encontrado. Verifique la URL.'
+                }
+            elif response.status_code >= 500:
+                # Error del servidor
+                logging.error(f"Error del servidor: {response.status_code}")
+                return {
+                    'valido': False,
+                    'datos': {'status_code': response.status_code, 'text': response.text[:200]},
+                    'mensaje': f'Error del servidor de la API. Status: {response.status_code}'
+                }
+            else:
+                # Otros códigos de error
+                logging.warning(f"Status code no exitoso: {response.status_code}, respuesta: {response.text[:200]}")
+                ultimo_error = f"Status code: {response.status_code}, Response: {response.text[:200]}"
+                respuesta_exitosa = {'status_code': response.status_code, 'text': response.text[:500], 'headers': dict(response.headers)}
+        except requests.exceptions.Timeout:
+            ultimo_error = "Timeout: La petición tardó más de 10 segundos"
+            logging.error(f"Timeout al hacer petición GET a {endpoint}")
+            raise  # Re-lanzar para que se maneje en el bloque except externo
+        except requests.exceptions.ConnectionError as e:
+            ultimo_error = f"Error de conexión: {str(e)}"
+            logging.error(f"Error de conexión al hacer petición GET a {endpoint}: {e}")
+            raise  # Re-lanzar para que se maneje en el bloque except externo
+        except Exception as e:
+            ultimo_error = f"Error: {str(e)}"
+            logging.error(f"Error al hacer petición GET a {endpoint}: {e}")
+            # No re-lanzar aquí, continuar para devolver información útil
+        finally:
+            # Restaurar variables de entorno de proxy originales
+            for proxy_var, value in original_proxies.items():
+                if value is not None:
+                    os.environ[proxy_var] = value
+        
+        if respuesta_exitosa:
+            # Log completo de la respuesta para debugging
+            logging.info(f"Respuesta completa de la API para DNI {dni_limpio}: {respuesta_exitosa}")
+            
+            # Verificar la estructura de la respuesta según la documentación
+            # La API devuelve: first_name, first_last_name, second_last_name, full_name, document_number
+            if isinstance(respuesta_exitosa, dict):
+                # Verificar si tiene los campos de la respuesta de RENIEC
+                if ('first_name' in respuesta_exitosa or 
+                    'first_last_name' in respuesta_exitosa or 
+                    'second_last_name' in respuesta_exitosa or
+                    'full_name' in respuesta_exitosa or
+                    'document_number' in respuesta_exitosa):
+                    # Si tiene alguno de estos campos, el DNI es válido
+                    return {
+                        'valido': True,
+                        'datos': respuesta_exitosa,
+                        'mensaje': 'DNI verificado correctamente'
+                    }
+                # Verificar si hay error explícito
+                elif respuesta_exitosa.get('error') or respuesta_exitosa.get('mensaje') or respuesta_exitosa.get('message'):
+                    error_msg = respuesta_exitosa.get('mensaje') or respuesta_exitosa.get('message') or respuesta_exitosa.get('error', 'DNI no encontrado')
+                    return {
+                        'valido': False,
+                        'datos': respuesta_exitosa,
+                        'mensaje': error_msg
+                    }
+                # Si tiene 'raw' pero no otros campos, verificar el contenido
+                elif 'raw' in respuesta_exitosa:
+                    raw_text = respuesta_exitosa.get('raw', '').lower()
+                    # Si el texto contiene información del DNI, considerarlo válido
+                    if dni_limpio in raw_text or 'nombre' in raw_text or 'apellido' in raw_text:
+                        return {
+                            'valido': True,
+                            'datos': respuesta_exitosa,
+                            'mensaje': 'DNI verificado correctamente'
+                        }
+        
+        # Si llegamos aquí, la respuesta no fue exitosa o no tiene el formato esperado
+        # Incluir más información en el log y en la respuesta
+        logging.warning(f"Respuesta inesperada de la API RENIEC para DNI {dni_limpio}: {respuesta_exitosa}")
+        logging.warning(f"Último error capturado: {ultimo_error}")
+        
+        # Devolver la respuesta completa para debugging
+        mensaje_error = 'No se pudo verificar el DNI.'
+        if ultimo_error:
+            mensaje_error += f' Error: {ultimo_error}'
+        elif respuesta_exitosa:
+            if isinstance(respuesta_exitosa, dict):
+                status = respuesta_exitosa.get('status_code', 'N/A')
+                texto = respuesta_exitosa.get('text', '')[:100]
+                mensaje_error += f' Status: {status}, Respuesta: {texto}'
+            else:
+                mensaje_error += f' Respuesta: {str(respuesta_exitosa)[:200]}'
+        else:
+            mensaje_error += ' No se recibió respuesta de la API.'
+        
+        return {
+            'valido': False,
+            'datos': respuesta_exitosa if respuesta_exitosa else None,
+            'mensaje': mensaje_error,
+            'debug_info': {
+                'endpoint_usado': endpoint,
+                'ultimo_error': ultimo_error,
+                'respuesta_recibida': bool(respuesta_exitosa)
+            }
+        }
+        
+    except requests.exceptions.Timeout:
+        logging.warning(f"Timeout al verificar DNI {dni_limpio} con API RENIEC - Se permitirá el registro confiando en la verificación del cliente")
+        return {
+            'valido': False,
+            'datos': None,
+            'mensaje': 'Tiempo de espera agotado al verificar el DNI. Por favor, intente nuevamente.',
+            'error_conexion': True  # Indica que fue un error de conexión, no de validación
+        }
+    except requests.exceptions.RequestException as e:
+        error_str = str(e)
+        # Detectar si es un error de conexión (Connection refused, etc.)
+        es_error_conexion = any(term in error_str.lower() for term in ['connection refused', 'connection error', 'failed to establish', 'newconnectionerror'])
+        logging.warning(f"Error de conexión al verificar DNI {dni_limpio}: {repr(e)} - Se permitirá el registro confiando en la verificación del cliente")
+        return {
+            'valido': False,
+            'datos': None,
+            'mensaje': 'Error de conexión con el servicio de verificación. Por favor, intente nuevamente más tarde.',
+            'error_conexion': es_error_conexion  # Indica que fue un error de conexión
+        }
+    except Exception as e:
+        logging.error(f"Error inesperado al verificar DNI {dni_limpio}: {repr(e)}")
+        return {
+            'valido': False,
+            'datos': None,
+            'mensaje': f'Error al verificar el DNI: {str(e)}'
+        }
+
+
 def token_en_lista_negra(token):
     conn = obtenerconexion_sanchezpharma()
     with conn:
@@ -354,6 +727,7 @@ def verificar_token_blacklist():
     
     endpoints_libres = ("api_login", "hello", "probar_conexion_sanchezpharma", "registrar_cliente_publico_sanchezpharma", 
                         "login_google_sanchezpharma", "registrar_cliente_google_sanchezpharma",
+                        "verificar_documento_sanchezpharma",
                         "enviar_codigo_recuperacion_sanchezpharma", "verificar_codigo_recuperacion_sanchezpharma",
                         "cambiar_password_recuperacion_sanchezpharma")
     if request.endpoint in endpoints_libres:
@@ -362,14 +736,24 @@ def verificar_token_blacklist():
     # Aceptar tanto "Bearer" como "JWT" para compatibilidad
     auth_header = request.headers.get("Authorization")
     if auth_header:
+        logging.debug(f"verificar_token_blacklist: Authorization header recibido para {request.endpoint}: {auth_header[:50]}...")
         token = None
         if auth_header.startswith("Bearer "):
             token = auth_header.replace("Bearer ", "")
+            logging.debug(f"verificar_token_blacklist: Token extraído (Bearer): {token[:30]}...")
         elif auth_header.startswith("JWT "):
             token = auth_header.replace("JWT ", "")
+            logging.debug(f"verificar_token_blacklist: Token extraído (JWT): {token[:30]}...")
+        else:
+            logging.warning(f"verificar_token_blacklist: Formato de header no reconocido: {auth_header[:50]}...")
         
         if token and token_en_lista_negra(token):
+            logging.warning(f"verificar_token_blacklist: Token en blacklist detectado")
             return jsonify({"code": 0, "message": "Token inválido (logout realizado)"}), 401
+    else:
+        # Solo loggear si no es un endpoint público (para evitar spam de logs)
+        if request.endpoint not in endpoints_libres:
+            logging.warning(f"verificar_token_blacklist: No se recibió header Authorization para {request.endpoint}")
 
 
 # ---------------------------------------------------
@@ -547,6 +931,139 @@ def probar_conexion_sanchezpharma():
 
 
 # ---------------------------------------------------
+# PROBAR VERIFICACIÓN DE DNI CON RENIEC
+# ---------------------------------------------------
+@app.route('/probar_verificacion_dni_sanchezpharma/<dni>')
+@jwt_required()
+def probar_verificacion_dni_sanchezpharma(dni):
+    """
+    Endpoint de prueba para verificar la conexión con la API de RENIEC.
+    Solo para administradores.
+    """
+    try:
+        verificacion = verificar_dni_reniec(dni)
+        debug_info = {
+            "dni_procesado": ''.join(filter(str.isdigit, str(dni))),
+            "requests_disponible": REQUESTS_AVAILABLE,
+            "api_url": RENIEC_API_URL,
+            "token_configurado": bool(RENIEC_API_TOKEN),
+            "endpoint_completo": f'{RENIEC_API_URL}v1/reniec/dni?numero={"".join(filter(str.isdigit, str(dni)))}'
+        }
+        
+        # Agregar información de debug si está disponible
+        if 'debug_info' in verificacion:
+            debug_info.update(verificacion['debug_info'])
+        
+        return jsonify({
+            "code": 1 if verificacion['valido'] else 0,
+            "valido": verificacion['valido'],
+            "datos": verificacion['datos'],
+            "mensaje": verificacion['mensaje'],
+            "debug": debug_info
+        })
+    except Exception as e:
+        logging.error(f"Error en probar_verificacion_dni: {repr(e)}")
+        return jsonify({
+            "code": 0,
+            "valido": False,
+            "datos": None,
+            "mensaje": f"Error: {str(e)}",
+            "debug": {
+                "requests_disponible": REQUESTS_AVAILABLE,
+                "error_tipo": type(e).__name__,
+                "api_url": RENIEC_API_URL,
+                "token_configurado": bool(RENIEC_API_TOKEN)
+            }
+        })
+
+
+# Endpoint de prueba SIN autenticación para debugging (TEMPORAL - ELIMINAR EN PRODUCCIÓN)
+@app.route('/test_reniec_directo/<dni>')
+def test_reniec_directo(dni):
+    """
+    Endpoint temporal para probar la conexión directa con la API de RENIEC.
+    NO requiere autenticación - SOLO PARA DEBUGGING
+    """
+    if not REQUESTS_AVAILABLE:
+        return jsonify({
+            "error": "Requests no disponible",
+            "instalar": "pip install requests"
+        })
+    
+    dni_limpio = ''.join(filter(str.isdigit, str(dni)))
+    
+    if len(dni_limpio) != 8:
+        return jsonify({
+            "error": "DNI debe tener 8 dígitos",
+            "dni_recibido": dni,
+            "dni_procesado": dni_limpio
+        })
+    
+    try:
+        headers = {
+            'Authorization': f'Bearer {RENIEC_API_TOKEN}',
+            'Content-Type': 'application/json'
+        }
+        
+        # Usar el endpoint correcto según la documentación
+        # GET https://api.decolecta.com/v1/reniec/dni?numero=46027897
+        endpoint = f'{RENIEC_API_URL}v1/reniec/dni?numero={dni_limpio}'
+        
+        resultados = []
+        
+        try:
+            # Configurar requests para NO usar proxy (PythonAnywhere puede tener problemas con proxy)
+            import os
+            # Guardar y eliminar variables de entorno de proxy
+            original_proxies = {
+                'http_proxy': os.environ.get('http_proxy'),
+                'https_proxy': os.environ.get('https_proxy'),
+                'HTTP_PROXY': os.environ.get('HTTP_PROXY'),
+                'HTTPS_PROXY': os.environ.get('HTTPS_PROXY')
+            }
+            for proxy_var in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
+                if proxy_var in os.environ:
+                    del os.environ[proxy_var]
+            
+            proxies = {
+                'http': None,
+                'https': None
+            }
+            response = requests.get(endpoint, headers=headers, timeout=10, proxies=proxies, verify=True, allow_redirects=True)
+            resultados.append({
+                "metodo": "GET",
+                "endpoint": endpoint,
+                "status_code": response.status_code,
+                "headers": dict(response.headers),
+                "texto": response.text[:500],
+                "json": None
+            })
+            try:
+                resultados[-1]["json"] = response.json()
+            except:
+                pass
+        except Exception as e:
+            resultados.append({
+                "metodo": "GET",
+                "endpoint": endpoint,
+                "error": str(e)
+            })
+        
+        return jsonify({
+            "dni": dni_limpio,
+            "token": RENIEC_API_TOKEN[:20] + "..." if RENIEC_API_TOKEN else "No configurado",
+            "api_url": RENIEC_API_URL,
+            "resultados": resultados
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "tipo": type(e).__name__
+        })
+
+
+# ---------------------------------------------------
 # LISTAR USUARIOS
 # ---------------------------------------------------
 @app.route('/usuarios_sanchezpharma')
@@ -622,6 +1139,21 @@ def registrar_usuario_sanchezpharma():
         campos = ["username", "email", "password", "nombre", "apellido", "edad", "sexo", "rol_id"]
         if not all(data.get(c) for c in campos):
             return jsonify({"code": 0, "message": "Faltan campos"})
+
+        # Verificar DNI con RENIEC si se proporciona documento
+        # Nota: Los usuarios internos pueden no tener documento, pero si lo tienen, intentar verificar (opcional)
+        documento = data.get("documento")
+        if documento:
+            try:
+                verificacion_dni = verificar_dni_reniec(documento)
+                if verificacion_dni['valido']:
+                    logging.info(f"DNI {documento} verificado correctamente con RENIEC para usuario interno")
+                else:
+                    # No bloquear el registro, solo registrar un warning
+                    logging.warning(f"Advertencia: No se pudo verificar DNI {documento} en el servidor: {verificacion_dni['mensaje']}. El registro continúa.")
+            except Exception as e:
+                # Si hay un error de conexión, no bloquear el registro
+                logging.warning(f"Advertencia: No se pudo verificar DNI {documento} en el servidor debido a: {str(e)}. El registro continúa.")
 
         conn = obtenerconexion_sanchezpharma()
         with conn:
@@ -1416,6 +1948,46 @@ def clientes_sanchezpharma():
         return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
+# VERIFICAR SI DOCUMENTO EXISTE EN BD (PÚBLICO - SIN AUTENTICACIÓN)
+@app.route('/verificar_documento_sanchezpharma', methods=['GET'])
+def verificar_documento_sanchezpharma():
+    try:
+        documento = request.args.get('documento')
+        tipo_documento = request.args.get('tipo_documento', 'DNI')
+        
+        if not documento:
+            return jsonify({"code": 0, "existe": False, "message": "Documento no proporcionado"})
+        
+        conn = obtenerconexion_sanchezpharma()
+        existe = False
+        
+        with conn:
+            with conn.cursor() as cursor:
+                # Verificar si el documento existe en clientes
+                cursor.execute("SELECT id, email, google_id, password FROM clientes WHERE documento = %s", (documento,))
+                cliente = cursor.fetchone()
+                
+                if cliente:
+                    existe = True
+                    return jsonify({
+                        "code": 1,
+                        "existe": True,
+                        "message": "El documento ya está registrado",
+                        "tiene_google": bool(cliente.get("google_id")),
+                        "tiene_password": bool(cliente.get("password"))
+                    })
+        
+        return jsonify({
+            "code": 1,
+            "existe": False,
+            "message": "El documento no está registrado"
+        })
+        
+    except Exception as e:
+        logging.error(f"Error al verificar documento: {repr(e)}")
+        return jsonify({"code": 0, "existe": False, "message": f"Error al verificar documento: {str(e)}"})
+
+
 # REGISTRAR CLIENTE (PÚBLICO - SIN AUTENTICACIÓN)
 @app.route('/registrar_cliente_publico_sanchezpharma', methods=['POST'])
 def registrar_cliente_publico_sanchezpharma():
@@ -1426,6 +1998,26 @@ def registrar_cliente_publico_sanchezpharma():
         campos_requeridos = ["nombre", "email", "password", "documento"]
         if not all(data.get(c) for c in campos_requeridos):
             return jsonify({"code": 0, "message": "Faltan campos requeridos: nombre, email, password, documento"})
+
+        # Verificar DNI con RENIEC (la verificación principal se hace desde el cliente, pero validamos aquí también)
+        documento = data.get("documento")
+        tipo_documento = data.get("tipo_documento", "DNI")
+        
+        if documento and tipo_documento == "DNI":
+            try:
+                verificacion_dni = verificar_dni_reniec(documento)
+                if not verificacion_dni['valido']:
+                    # Bloquear el registro si el DNI no es válido
+                    # La verificación principal se hace desde el cliente, pero validamos aquí como medida de seguridad
+                    return jsonify({
+                        "code": 0, 
+                        "message": f"El DNI no pudo ser verificado: {verificacion_dni['mensaje']}. Por favor, verifique que el número sea correcto."
+                    })
+                logging.info(f"DNI {documento} verificado correctamente con RENIEC")
+            except Exception as e:
+                # Si hay un error de conexión (ej: PythonAnywhere bloquea conexiones salientes),
+                # permitir el registro ya que la verificación principal se hace desde el cliente
+                logging.warning(f"Advertencia: No se pudo verificar DNI {documento} en el servidor debido a: {str(e)}. El registro continúa porque la verificación se realiza desde el cliente.")
 
         conn = obtenerconexion_sanchezpharma()
         with conn:
@@ -1438,11 +2030,20 @@ def registrar_cliente_publico_sanchezpharma():
                     return jsonify({"code": 0, "message": "El correo electrónico ya está en uso. Por favor, use otro correo."})
                 
                 # Verificar si el documento ya existe en clientes
-                cursor.execute("SELECT id FROM clientes WHERE documento = %s", (data.get("documento"),))
+                # Permitir múltiples correos con el mismo documento solo si el documento ya existe con un correo de Google
+                cursor.execute("SELECT id, google_id, password FROM clientes WHERE documento = %s", (data.get("documento"),))
                 cliente_con_documento = cursor.fetchone()
                 
                 if cliente_con_documento:
-                    return jsonify({"code": 0, "message": "El número de documento ya está registrado. Por favor, verifique su documento."})
+                    # Si el documento existe con un registro de Google (tiene google_id)
+                    # y el nuevo registro es normal (tiene password), permitir el registro
+                    # Esto permite que una persona tenga una cuenta de Google y otra cuenta normal con el mismo documento
+                    if cliente_con_documento.get("google_id"):
+                        # El documento existe con un registro de Google, permitir registro normal con otro correo
+                        pass  # Continuar con el registro
+                    else:
+                        # El documento existe con un registro normal (tiene password), no permitir duplicados
+                        return jsonify({"code": 0, "message": "El número de documento ya está registrado. Por favor, verifique su documento."})
                 
                 # Verificar si el email existe en usuarios (no debe haber duplicados entre clientes y usuarios)
                 cursor.execute("SELECT id FROM usuarios WHERE email = %s", (data.get("email"),))
@@ -1598,6 +2199,26 @@ def registrar_cliente_google_sanchezpharma():
         if not all(data.get(c) for c in campos_requeridos):
             return jsonify({"code": 0, "message": "Faltan campos requeridos: email, google_id, nombre, documento"})
         
+        # Verificar DNI con RENIEC (la verificación principal se hace desde el cliente, pero validamos aquí también)
+        documento = data.get("documento")
+        tipo_documento = data.get("tipo_documento", "DNI")
+        
+        if documento and tipo_documento == "DNI":
+            try:
+                verificacion_dni = verificar_dni_reniec(documento)
+                if not verificacion_dni['valido']:
+                    # Bloquear el registro si el DNI no es válido
+                    # La verificación principal se hace desde el cliente, pero validamos aquí como medida de seguridad
+                    return jsonify({
+                        "code": 0, 
+                        "message": f"El DNI no pudo ser verificado: {verificacion_dni['mensaje']}. Por favor, verifique que el número sea correcto."
+                    })
+                logging.info(f"DNI {documento} verificado correctamente con RENIEC")
+            except Exception as e:
+                # Si hay un error de conexión (ej: PythonAnywhere bloquea conexiones salientes),
+                # permitir el registro ya que la verificación principal se hace desde el cliente
+                logging.warning(f"Advertencia: No se pudo verificar DNI {documento} en el servidor debido a: {str(e)}. El registro continúa porque la verificación se realiza desde el cliente.")
+        
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
@@ -1617,11 +2238,20 @@ def registrar_cliente_google_sanchezpharma():
                     logging.warning(f"Error al verificar/crear columnas de Google: {e}")
                 
                 # Verificar si el documento ya existe
-                cursor.execute("SELECT id FROM clientes WHERE documento = %s", (data.get("documento"),))
+                # Permitir múltiples correos con el mismo documento solo si el documento ya existe con un registro normal
+                cursor.execute("SELECT id, google_id, password FROM clientes WHERE documento = %s", (data.get("documento"),))
                 cliente_con_documento = cursor.fetchone()
                 
                 if cliente_con_documento:
-                    return jsonify({"code": 0, "message": "El número de documento ya está registrado. Por favor, verifique su documento."})
+                    # Si el documento existe con un registro normal (tiene password y no tiene google_id)
+                    # y el nuevo registro es de Google, permitir el registro
+                    # Esto permite que una persona tenga una cuenta normal y otra cuenta de Google con el mismo documento
+                    if cliente_con_documento.get("password") and not cliente_con_documento.get("google_id"):
+                        # El documento existe con un registro normal, permitir registro de Google con otro correo
+                        pass  # Continuar con el registro
+                    else:
+                        # El documento existe con un registro de Google, no permitir duplicados
+                        return jsonify({"code": 0, "message": "El número de documento ya está registrado. Por favor, verifique su documento."})
                 
                 # Verificar si el google_id ya está en uso por otro cliente
                 cursor.execute("SELECT id, email FROM clientes WHERE google_id = %s", (data.get("google_id"),))
@@ -4364,6 +4994,614 @@ def contar_notificaciones_no_leidas_sanchezpharma(cliente_id):
     except Exception as e:
         logging.error(f"Error al contar notificaciones: {repr(e)}")
         return jsonify({"code": 0, "data": {"total": 0}, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# BACKUPS (SOLO INGENIERO - ROL 6)
+# ---------------------------------------------------
+
+# OBTENER HISTORIAL DE BACKUPS
+@app.route('/backups_historial_sanchezpharma')
+@jwt_required()
+def backups_historial_sanchezpharma():
+    try:
+        # Logging detallado para debugging
+        auth_header = request.headers.get("Authorization")
+        logging.info(f"backups_historial_sanchezpharma: Authorization header recibido: {auth_header[:50] if auth_header else 'None'}...")
+        
+        # Obtener usuario del token
+        current_user = getattr(g, 'current_identity', None)
+        logging.info(f"backups_historial_sanchezpharma: current_identity: {current_user}")
+        
+        if not current_user:
+            # Intentar obtener información adicional del token
+            try:
+                token_data = getattr(g, 'jwt_payload', None)
+                logging.error(f"backups_historial_sanchezpharma: Token payload: {token_data}")
+                logging.error(f"backups_historial_sanchezpharma: g attributes: {[attr for attr in dir(g) if not attr.startswith('_')]}")
+            except Exception as e:
+                logging.error(f"backups_historial_sanchezpharma: Error al obtener info adicional: {repr(e)}")
+            
+            logging.error("backups_historial_sanchezpharma: current_identity es None - Token no procesado correctamente")
+            return jsonify({"code": 0, "message": "Usuario no autenticado"}), 401
+        
+        logging.info(f"backups_historial_sanchezpharma: Usuario autenticado ID: {current_user.id}")
+        
+        # Obtener rol_id del usuario desde la base de datos
+        # Solo usuarios internos pueden acceder (clientes no tienen rol_id)
+        conn = obtenerconexion_sanchezpharma()
+        rol_id = None
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT rol_id FROM usuarios WHERE id = %s", (current_user.id,))
+                usuario_data = cursor.fetchone()
+                
+                if usuario_data:
+                    rol_id = usuario_data.get('rol_id')
+                    logging.info(f"backups_historial_sanchezpharma: Usuario encontrado con rol_id: {rol_id}")
+                else:
+                    # Si no está en usuarios, es un cliente - no tiene acceso
+                    logging.warning(f"backups_historial_sanchezpharma: Usuario {current_user.id} no encontrado en tabla usuarios (probablemente es cliente)")
+                    return jsonify({"code": 0, "message": "Acceso denegado. Solo usuarios internos pueden acceder a esta sección."}), 403
+                
+                # Verificar que el usuario sea Ingeniero (rol_id = 6)
+                if rol_id != 6:
+                    logging.warning(f"backups_historial_sanchezpharma: Usuario {current_user.id} con rol_id {rol_id} intentó acceder (requiere rol_id 6)")
+                    return jsonify({"code": 0, "message": "Acceso denegado. Solo el rol Ingeniero puede acceder a esta sección."}), 403
+
+        # Verificar si la tabla backups_historial existe, si no, crearla
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Verificar si la tabla existe
+                cursor.execute("""
+                    SELECT COUNT(*) as count 
+                    FROM information_schema.tables 
+                    WHERE table_schema = DATABASE() 
+                    AND table_name = 'backups_historial'
+                """)
+                tabla_existe = cursor.fetchone()
+                
+                if tabla_existe and tabla_existe.get('count', 0) == 0:
+                    # Crear la tabla si no existe
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS backups_historial (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            tipo VARCHAR(50) NOT NULL COMMENT 'Tipo de backup: bd, archivos, completo',
+                            nombre_archivo VARCHAR(255) NOT NULL,
+                            ruta_archivo VARCHAR(500) NOT NULL,
+                            tamano_bytes BIGINT,
+                            usuario_id INT,
+                            fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            estado VARCHAR(20) DEFAULT 'completado' COMMENT 'completado, error, en_proceso',
+                            observaciones TEXT,
+                            FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL,
+                            INDEX idx_fecha_creacion (fecha_creacion),
+                            INDEX idx_tipo (tipo)
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    """)
+                    conn.commit()
+                    logging.info("Tabla backups_historial creada")
+                
+                cursor.execute("""
+                    SELECT b.*, u.username as usuario_nombre
+                    FROM backups_historial b
+                    LEFT JOIN usuarios u ON b.usuario_id = u.id
+                    ORDER BY b.fecha_creacion DESC
+                    LIMIT 100
+                """)
+                data = cursor.fetchall()
+                
+                # Convertir datetime a string para JSON
+                for item in data:
+                    if item.get('fecha_creacion'):
+                        item['fecha_creacion'] = item['fecha_creacion'].strftime('%Y-%m-%d %H:%M:%S')
+
+        return jsonify({"code": 1, "data": data, "message": "Historial de backups obtenido correctamente"})
+
+    except Exception as e:
+        logging.error(f"Error al obtener historial de backups: {repr(e)}")
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
+
+
+# GENERAR BACKUP DE BASE DE DATOS
+@app.route('/generar_backup_bd_sanchezpharma', methods=['POST'])
+@jwt_required()
+def generar_backup_bd_sanchezpharma():
+    try:
+        # Logging detallado para debugging
+        auth_header = request.headers.get("Authorization")
+        logging.info(f"generar_backup_bd_sanchezpharma: Authorization header recibido: {auth_header[:50] if auth_header else 'None'}...")
+        
+        # Obtener usuario del token
+        current_user = getattr(g, 'current_identity', None)
+        logging.info(f"generar_backup_bd_sanchezpharma: current_identity: {current_user}")
+        logging.info(f"generar_backup_bd_sanchezpharma: g.current_identity type: {type(current_user)}")
+        
+        if not current_user:
+            # Intentar obtener información adicional del token
+            try:
+                # Flask-JWT almacena el token decodificado en g
+                token_data = getattr(g, 'jwt_payload', None)
+                logging.error(f"generar_backup_bd_sanchezpharma: Token payload: {token_data}")
+                logging.error(f"generar_backup_bd_sanchezpharma: g attributes: {dir(g)}")
+            except Exception as e:
+                logging.error(f"generar_backup_bd_sanchezpharma: Error al obtener info adicional: {repr(e)}")
+            
+            logging.error("generar_backup_bd_sanchezpharma: current_identity es None - Token no procesado correctamente")
+            return jsonify({"code": 0, "message": "Usuario no autenticado"}), 401
+        
+        # Obtener rol_id del usuario desde la base de datos
+        # Solo usuarios internos pueden acceder (clientes no tienen rol_id)
+        conn = obtenerconexion_sanchezpharma()
+        rol_id = None
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT rol_id FROM usuarios WHERE id = %s", (current_user.id,))
+                usuario_data = cursor.fetchone()
+                
+                if usuario_data:
+                    rol_id = usuario_data.get('rol_id')
+                else:
+                    # Si no está en usuarios, es un cliente - no tiene acceso
+                    return jsonify({"code": 0, "message": "Acceso denegado. Solo usuarios internos pueden generar backups."}), 403
+                
+                # Verificar que el usuario sea Ingeniero (rol_id = 6)
+                if rol_id != 6:
+                    return jsonify({"code": 0, "message": "Acceso denegado. Solo el rol Ingeniero puede generar backups."}), 403
+
+        # Crear directorio de backups si no existe
+        backup_dir = '/tmp/backups_sanchezpharma'
+        os.makedirs(backup_dir, exist_ok=True)
+
+        # Generar nombre de archivo con timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_filename = f"backup_bd_{timestamp}.sql"
+        backup_path = os.path.join(backup_dir, backup_filename)
+
+        # Configuración de la base de datos
+        db_config = {
+            'host': 'nxlsxx.mysql.pythonanywhere-services.com',
+            'user': 'nxlsxx',
+            'password': '77910396gG',
+            'database': 'nxlsxx$PAF'
+        }
+
+        # Generar backup usando mysqldump
+        try:
+            # En PythonAnywhere, mysqldump está disponible
+            cmd = [
+                'mysqldump',
+                f"--host={db_config['host']}",
+                f"--user={db_config['user']}",
+                f"--password={db_config['password']}",
+                '--single-transaction',
+                '--routines',
+                '--triggers',
+                db_config['database']
+            ]
+            
+            with open(backup_path, 'w', encoding='utf-8') as f:
+                result = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, text=True)
+                
+            if result.returncode != 0:
+                raise Exception(f"Error al generar backup: {result.stderr}")
+
+            # Obtener tamaño del archivo
+            file_size = os.path.getsize(backup_path)
+
+            # Registrar en historial
+            conn = obtenerconexion_sanchezpharma()
+            with conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO backups_historial 
+                        (tipo, nombre_archivo, ruta_archivo, tamano_bytes, usuario_id, estado, observaciones)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        'bd',
+                        backup_filename,
+                        backup_path,
+                        file_size,
+                        current_user.id,
+                        'completado',
+                        f'Backup de base de datos generado exitosamente'
+                    ))
+                    backup_id = cursor.lastrowid
+                conn.commit()
+
+            logging.info(f"Backup de BD generado: {backup_path} por usuario {current_user.id}")
+
+            return jsonify({
+                "code": 1,
+                "message": "Backup de base de datos generado correctamente",
+                "data": {
+                    "backup_id": backup_id,
+                    "nombre_archivo": backup_filename,
+                    "tamano_bytes": file_size,
+                    "fecha": timestamp
+                }
+            })
+
+        except Exception as e:
+            logging.error(f"Error al generar backup de BD: {repr(e)}")
+            return jsonify({"code": 0, "message": f"Error al generar backup: {str(e)}"})
+
+    except Exception as e:
+        logging.error(f"Error en generar_backup_bd_sanchezpharma: {repr(e)}")
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# GENERAR BACKUP DE ARCHIVOS
+@app.route('/generar_backup_archivos_sanchezpharma', methods=['POST'])
+@jwt_required()
+def generar_backup_archivos_sanchezpharma():
+    try:
+        # Obtener usuario del token
+        current_user = getattr(g, 'current_identity', None)
+        if not current_user:
+            return jsonify({"code": 0, "message": "Usuario no autenticado"}), 401
+        
+        # Obtener rol_id del usuario desde la base de datos
+        # Solo usuarios internos pueden acceder (clientes no tienen rol_id)
+        conn = obtenerconexion_sanchezpharma()
+        rol_id = None
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT rol_id FROM usuarios WHERE id = %s", (current_user.id,))
+                usuario_data = cursor.fetchone()
+                
+                if usuario_data:
+                    rol_id = usuario_data.get('rol_id')
+                else:
+                    # Si no está en usuarios, es un cliente - no tiene acceso
+                    return jsonify({"code": 0, "message": "Acceso denegado. Solo usuarios internos pueden generar backups."}), 403
+                
+                # Verificar que el usuario sea Ingeniero (rol_id = 6)
+                if rol_id != 6:
+                    return jsonify({"code": 0, "message": "Acceso denegado. Solo el rol Ingeniero puede generar backups."}), 403
+
+        # Crear directorio de backups si no existe
+        backup_dir = '/tmp/backups_sanchezpharma'
+        os.makedirs(backup_dir, exist_ok=True)
+
+        # Generar nombre de archivo con timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_filename = f"backup_archivos_{timestamp}.zip"
+        backup_path = os.path.join(backup_dir, backup_filename)
+
+        # Directorios a respaldar (ajustar según tu estructura)
+        directorios_a_respaldar = [
+            '/home/nxlsxx/sanchezpharmaapp',  # Ajustar según tu estructura
+        ]
+
+        # Crear archivo ZIP con los archivos
+        try:
+            with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for directorio in directorios_a_respaldar:
+                    if os.path.exists(directorio):
+                        for root, dirs, files in os.walk(directorio):
+                            # Excluir directorios comunes que no necesitan backup
+                            dirs[:] = [d for d in dirs if d not in ['.git', '__pycache__', 'node_modules', '.venv', 'venv']]
+                            
+                            for file in files:
+                                file_path = os.path.join(root, file)
+                                arcname = os.path.relpath(file_path, directorio)
+                                try:
+                                    zipf.write(file_path, arcname)
+                                except Exception as e:
+                                    logging.warning(f"No se pudo agregar {file_path} al backup: {e}")
+
+            # Obtener tamaño del archivo
+            file_size = os.path.getsize(backup_path)
+
+            # Registrar en historial
+            conn = obtenerconexion_sanchezpharma()
+            with conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO backups_historial 
+                        (tipo, nombre_archivo, ruta_archivo, tamano_bytes, usuario_id, estado, observaciones)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        'archivos',
+                        backup_filename,
+                        backup_path,
+                        file_size,
+                        current_user.id,
+                        'completado',
+                        f'Backup de archivos generado exitosamente'
+                    ))
+                    backup_id = cursor.lastrowid
+                conn.commit()
+
+            logging.info(f"Backup de archivos generado: {backup_path} por usuario {current_user.id}")
+
+            return jsonify({
+                "code": 1,
+                "message": "Backup de archivos generado correctamente",
+                "data": {
+                    "backup_id": backup_id,
+                    "nombre_archivo": backup_filename,
+                    "tamano_bytes": file_size,
+                    "fecha": timestamp
+                }
+            })
+
+        except Exception as e:
+            logging.error(f"Error al generar backup de archivos: {repr(e)}")
+            return jsonify({"code": 0, "message": f"Error al generar backup: {str(e)}"})
+
+    except Exception as e:
+        logging.error(f"Error en generar_backup_archivos_sanchezpharma: {repr(e)}")
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# GENERAR BACKUP COMPLETO (BD + ARCHIVOS)
+@app.route('/generar_backup_completo_sanchezpharma', methods=['POST'])
+@jwt_required()
+def generar_backup_completo_sanchezpharma():
+    try:
+        # Obtener usuario del token
+        current_user = getattr(g, 'current_identity', None)
+        if not current_user:
+            return jsonify({"code": 0, "message": "Usuario no autenticado"}), 401
+        
+        # Obtener rol_id del usuario desde la base de datos
+        # Solo usuarios internos pueden acceder (clientes no tienen rol_id)
+        conn = obtenerconexion_sanchezpharma()
+        rol_id = None
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT rol_id FROM usuarios WHERE id = %s", (current_user.id,))
+                usuario_data = cursor.fetchone()
+                
+                if usuario_data:
+                    rol_id = usuario_data.get('rol_id')
+                else:
+                    # Si no está en usuarios, es un cliente - no tiene acceso
+                    return jsonify({"code": 0, "message": "Acceso denegado. Solo usuarios internos pueden generar backups."}), 403
+                
+                # Verificar que el usuario sea Ingeniero (rol_id = 6)
+                if rol_id != 6:
+                    return jsonify({"code": 0, "message": "Acceso denegado. Solo el rol Ingeniero puede generar backups."}), 403
+
+        # Generar ambos backups
+        # Primero BD - extraer la lógica en lugar de llamar la función directamente
+        backup_bd_data = None
+        backup_bd_error = None
+        try:
+            # Crear directorio de backups si no existe
+            backup_dir = '/tmp/backups_sanchezpharma'
+            os.makedirs(backup_dir, exist_ok=True)
+
+            # Generar nombre de archivo con timestamp para BD
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_bd_filename = f"backup_bd_{timestamp}.sql"
+            backup_bd_path = os.path.join(backup_dir, backup_bd_filename)
+
+            # Configuración de la base de datos
+            db_config = {
+                'host': 'nxlsxx.mysql.pythonanywhere-services.com',
+                'user': 'nxlsxx',
+                'password': '77910396gG',
+                'database': 'nxlsxx$PAF'
+            }
+
+            # Generar backup de BD usando mysqldump
+            cmd = [
+                'mysqldump',
+                f"--host={db_config['host']}",
+                f"--user={db_config['user']}",
+                f"--password={db_config['password']}",
+                '--single-transaction',
+                '--routines',
+                '--triggers',
+                db_config['database']
+            ]
+            
+            with open(backup_bd_path, 'w', encoding='utf-8') as f:
+                result = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, text=True)
+                
+            if result.returncode != 0:
+                backup_bd_error = f"Error al generar backup de BD: {result.stderr}"
+            else:
+                # Obtener tamaño del archivo
+                file_size_bd = os.path.getsize(backup_bd_path)
+
+                # Registrar en historial
+                conn = obtenerconexion_sanchezpharma()
+                with conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute("""
+                            INSERT INTO backups_historial 
+                            (tipo, nombre_archivo, ruta_archivo, tamano_bytes, usuario_id, estado, observaciones)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """, (
+                            'bd',
+                            backup_bd_filename,
+                            backup_bd_path,
+                            file_size_bd,
+                            current_user.id,
+                            'completado',
+                            f'Backup de base de datos generado exitosamente'
+                        ))
+                        backup_bd_id = cursor.lastrowid
+                    conn.commit()
+
+                backup_bd_data = {
+                    "backup_id": backup_bd_id,
+                    "nombre_archivo": backup_bd_filename,
+                    "tamano_bytes": file_size_bd,
+                    "fecha": timestamp
+                }
+                logging.info(f"Backup de BD generado: {backup_bd_path} por usuario {current_user.id}")
+        except Exception as e:
+            backup_bd_error = f"Error al generar backup de BD: {str(e)}"
+            logging.error(f"Error al generar backup de BD: {repr(e)}")
+
+        # Luego archivos - extraer la lógica en lugar de llamar la función directamente
+        backup_archivos_data = None
+        backup_archivos_error = None
+        try:
+            # Crear directorio de backups si no existe
+            backup_dir = '/tmp/backups_sanchezpharma'
+            os.makedirs(backup_dir, exist_ok=True)
+
+            # Generar nombre de archivo con timestamp para archivos
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_archivos_filename = f"backup_archivos_{timestamp}.zip"
+            backup_archivos_path = os.path.join(backup_dir, backup_archivos_filename)
+
+            # Directorios a respaldar (ajustar según tu estructura)
+            directorios_a_respaldar = [
+                '/home/nxlsxx/sanchezpharmaapp',  # Ajustar según tu estructura
+            ]
+
+            # Crear archivo ZIP con los archivos
+            with zipfile.ZipFile(backup_archivos_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for directorio in directorios_a_respaldar:
+                    if os.path.exists(directorio):
+                        for root, dirs, files in os.walk(directorio):
+                            # Excluir directorios comunes que no necesitan backup
+                            dirs[:] = [d for d in dirs if d not in ['.git', '__pycache__', 'node_modules', '.venv', 'venv']]
+                            
+                            for file in files:
+                                file_path = os.path.join(root, file)
+                                arcname = os.path.relpath(file_path, directorio)
+                                try:
+                                    zipf.write(file_path, arcname)
+                                except Exception as e:
+                                    logging.warning(f"No se pudo agregar {file_path} al backup: {e}")
+
+            # Obtener tamaño del archivo
+            file_size_archivos = os.path.getsize(backup_archivos_path)
+
+            # Registrar en historial
+            conn = obtenerconexion_sanchezpharma()
+            with conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO backups_historial 
+                        (tipo, nombre_archivo, ruta_archivo, tamano_bytes, usuario_id, estado, observaciones)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        'archivos',
+                        backup_archivos_filename,
+                        backup_archivos_path,
+                        file_size_archivos,
+                        current_user.id,
+                        'completado',
+                        f'Backup de archivos generado exitosamente'
+                    ))
+                    backup_archivos_id = cursor.lastrowid
+                conn.commit()
+
+            backup_archivos_data = {
+                "backup_id": backup_archivos_id,
+                "nombre_archivo": backup_archivos_filename,
+                "tamano_bytes": file_size_archivos,
+                "fecha": timestamp
+            }
+            logging.info(f"Backup de archivos generado: {backup_archivos_path} por usuario {current_user.id}")
+        except Exception as e:
+            backup_archivos_error = f"Error al generar backup de archivos: {str(e)}"
+            logging.error(f"Error al generar backup de archivos: {repr(e)}")
+
+        # Verificar resultados
+        if backup_bd_data and backup_archivos_data:
+            # Ambos backups fueron exitosos
+            return jsonify({
+                "code": 1,
+                "message": "Backup completo generado correctamente",
+                "data": {
+                    "backup_bd": backup_bd_data,
+                    "backup_archivos": backup_archivos_data
+                }
+            })
+        elif backup_bd_data:
+            # Solo BD fue exitoso
+            return jsonify({
+                "code": 0,
+                "message": f"Backup de BD generado, pero error en archivos: {backup_archivos_error}",
+                "data": {
+                    "backup_bd": backup_bd_data
+                }
+            })
+        elif backup_archivos_data:
+            # Solo archivos fue exitoso
+            return jsonify({
+                "code": 0,
+                "message": f"Backup de archivos generado, pero error en BD: {backup_bd_error}",
+                "data": {
+                    "backup_archivos": backup_archivos_data
+                }
+            })
+        else:
+            # Ambos fallaron
+            return jsonify({
+                "code": 0,
+                "message": f"Error al generar backup completo. BD: {backup_bd_error}, Archivos: {backup_archivos_error}"
+            })
+
+    except Exception as e:
+        logging.error(f"Error en generar_backup_completo_sanchezpharma: {repr(e)}")
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# DESCARGAR BACKUP
+@app.route('/descargar_backup_sanchezpharma/<int:backup_id>')
+@jwt_required()
+def descargar_backup_sanchezpharma(backup_id):
+    try:
+        # Obtener usuario del token
+        current_user = getattr(g, 'current_identity', None)
+        if not current_user:
+            return jsonify({"code": 0, "message": "Usuario no autenticado"}), 401
+        
+        # Obtener rol_id del usuario desde la base de datos
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT rol_id FROM usuarios WHERE id = %s", (current_user.id,))
+                usuario_data = cursor.fetchone()
+                
+                if not usuario_data:
+                    return jsonify({"code": 0, "message": "Usuario no encontrado"}), 404
+                
+                rol_id = usuario_data.get('rol_id')
+                
+                # Verificar que el usuario sea Ingeniero (rol_id = 6)
+                if rol_id != 6:
+                    return jsonify({"code": 0, "message": "Acceso denegado. Solo el rol Ingeniero puede descargar backups."}), 403
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT * FROM backups_historial WHERE id = %s
+                """, (backup_id,))
+                backup = cursor.fetchone()
+
+                if not backup:
+                    return jsonify({"code": 0, "message": "Backup no encontrado"}), 404
+
+                ruta_archivo = backup['ruta_archivo']
+                
+                if not os.path.exists(ruta_archivo):
+                    return jsonify({"code": 0, "message": "El archivo de backup no existe en el servidor"}), 404
+
+                # Enviar archivo para descarga
+                return send_file(
+                    ruta_archivo,
+                    as_attachment=True,
+                    download_name=backup['nombre_archivo'],
+                    mimetype='application/octet-stream'
+                )
+
+    except Exception as e:
+        logging.error(f"Error al descargar backup: {repr(e)}")
+        return jsonify({"code": 0, "message": repr(e)}), 500
 
 
 # ---------------------------------------------------

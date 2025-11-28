@@ -4,6 +4,7 @@ import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../data/models/cliente_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/validators.dart';
 import '../../core/constants/app_colors.dart';
 import '../widgets/custom_modal_dialog.dart';
 import 'formulario_cliente_screen.dart';
@@ -202,6 +203,8 @@ class _ClientesScreenState extends State<ClientesScreen> {
                   label: 'Teléfono',
                   icon: Icons.phone,
                   keyboardType: TextInputType.phone,
+                  maxLength: 9,
+                  validator: Validators.validateTelefonoOpcional,
                 ),
                 ModalSectionBuilder.buildTextField(
                   controller: emailController,

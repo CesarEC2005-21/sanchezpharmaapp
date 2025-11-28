@@ -6,6 +6,7 @@ import '../../data/models/usuario_model.dart';
 import '../../data/models/rol_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/role_constants.dart';
 import '../widgets/custom_modal_dialog.dart';
 import 'formulario_usuario_screen.dart';
 
@@ -24,12 +25,25 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   int? _rolFiltroSeleccionado;
+  int? _rolIdUsuarioActual;
 
   @override
   void initState() {
     super.initState();
+    _cargarRolUsuarioActual();
     _cargarUsuarios();
     _cargarRoles();
+  }
+
+  Future<void> _cargarRolUsuarioActual() async {
+    final rolId = await SharedPrefsHelper.getRolId();
+    setState(() {
+      _rolIdUsuarioActual = rolId;
+      // Reaplicar el filtro cuando se carga el rol del usuario
+      if (_usuarios.isNotEmpty) {
+        _aplicarFiltro();
+      }
+    });
   }
 
   Future<void> _cargarRoles() async {
@@ -72,10 +86,19 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   }
 
   void _aplicarFiltro() {
+    // Primero filtrar usuarios con rol Ingeniero si el usuario actual no es Ingeniero
+    List<UsuarioModel> usuariosVisibles = _usuarios;
+    if (_rolIdUsuarioActual != RoleConstants.ROL_INGENIERO) {
+      usuariosVisibles = _usuarios
+          .where((usuario) => usuario.rolId != RoleConstants.ROL_INGENIERO)
+          .toList();
+    }
+
+    // Luego aplicar el filtro de rol seleccionado
     if (_rolFiltroSeleccionado == null) {
-      _usuariosFiltrados = List.from(_usuarios);
+      _usuariosFiltrados = List.from(usuariosVisibles);
     } else {
-      _usuariosFiltrados = _usuarios
+      _usuariosFiltrados = usuariosVisibles
           .where((usuario) => usuario.rolId == _rolFiltroSeleccionado)
           .toList();
     }
@@ -595,10 +618,15 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                         value: null,
                         child: Text('Todos los roles'),
                       ),
-                      ..._roles.map((rol) => DropdownMenuItem<int?>(
-                        value: rol.id,
-                        child: Text(rol.nombre),
-                      )),
+                      ..._roles
+                          .where((rol) => 
+                              // Si el usuario actual no es Ingeniero, excluir el rol Ingeniero del filtro
+                              _rolIdUsuarioActual == RoleConstants.ROL_INGENIERO || 
+                              rol.id != RoleConstants.ROL_INGENIERO)
+                          .map((rol) => DropdownMenuItem<int?>(
+                            value: rol.id,
+                            child: Text(rol.nombre),
+                          )),
                     ],
                     onChanged: (value) {
                       setState(() {

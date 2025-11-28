@@ -29,6 +29,7 @@ class DioClient {
             '/registrar_cliente_publico_sanchezpharma',
             '/login_google_sanchezpharma',
             '/registrar_cliente_google_sanchezpharma',
+            '/verificar_documento_sanchezpharma',
             '/enviar_codigo_recuperacion_sanchezpharma',
             '/verificar_codigo_recuperacion_sanchezpharma',
             '/cambiar_password_recuperacion_sanchezpharma',
@@ -155,6 +156,38 @@ class DioClient {
                   errorMsg.contains('Signature has expired')) {
                 print('🔒 Token confirmado como inválido o expirado, limpiando datos');
                 print('   El token ha expirado. Por favor, inicia sesión nuevamente.');
+                await SharedPrefsHelper.clearAuthData();
+                
+                // Redirigir al login si estamos en una pantalla autenticada
+                if (navigatorKey.currentContext != null) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    final context = navigatorKey.currentContext;
+                    if (context != null) {
+                      // Mostrar mensaje al usuario
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Tu sesión ha expirado. Por favor, inicia sesión nuevamente.'),
+                          backgroundColor: Colors.orange,
+                          duration: Duration(seconds: 3),
+                        ),
+                      );
+                      
+                      // Redirigir al login
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(
+                          builder: (context) => const LoginScreen(),
+                        ),
+                        (route) => false,
+                      );
+                    }
+                  });
+                }
+              } else if (message.contains('no autenticado') || 
+                         message.contains('Usuario no autenticado') ||
+                         message.contains('No autenticado')) {
+                // El servidor confirma que el usuario no está autenticado
+                print('🔒 Usuario no autenticado confirmado por el servidor, limpiando datos');
+                print('   El token no es válido o ha expirado. Por favor, inicia sesión nuevamente.');
                 await SharedPrefsHelper.clearAuthData();
                 
                 // Redirigir al login si estamos en una pantalla autenticada

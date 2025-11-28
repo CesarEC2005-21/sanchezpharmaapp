@@ -4,6 +4,7 @@ import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../data/models/proveedor_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/validators.dart';
 import '../../core/constants/app_colors.dart';
 import '../widgets/custom_modal_dialog.dart';
 import 'formulario_proveedor_screen.dart';
@@ -161,8 +162,10 @@ class _ProveedoresScreenState extends State<ProveedoresScreen> {
                   controller: telefonoController,
                   label: 'Teléfono',
                   icon: Icons.phone,
-                  hint: '999 999 999',
+                  hint: '987654321',
                   keyboardType: TextInputType.phone,
+                  maxLength: 9,
+                  validator: Validators.validateTelefonoOpcional,
                 ),
                 ModalSectionBuilder.buildTextField(
                   controller: emailController,

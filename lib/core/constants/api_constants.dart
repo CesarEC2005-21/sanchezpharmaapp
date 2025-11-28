@@ -45,6 +45,7 @@ class ApiConstants {
   static const String clientes = '/clientes_sanchezpharma';
   static const String registrarCliente = '/registrar_cliente_sanchezpharma';
   static const String registrarClientePublico = '/registrar_cliente_publico_sanchezpharma';
+  static const String verificarDocumento = '/verificar_documento_sanchezpharma';
   static const String loginGoogle = '/login_google_sanchezpharma';
   static const String registrarClienteGoogle = '/registrar_cliente_google_sanchezpharma';
   static const String editarCliente = '/editar_cliente_sanchezpharma';
@@ -106,5 +107,12 @@ class ApiConstants {
   static const String marcarNotificacionLeida = '/marcar_notificacion_leida_sanchezpharma';
   static const String marcarTodasNotificacionesLeidas = '/marcar_todas_notificaciones_leidas_sanchezpharma';
   static const String contarNotificacionesNoLeidas = '/contar_notificaciones_no_leidas_sanchezpharma';
+  
+  // Endpoints - Backups (Solo Ingeniero)
+  static const String backupsHistorial = '/backups_historial_sanchezpharma';
+  static const String generarBackupBd = '/generar_backup_bd_sanchezpharma';
+  static const String generarBackupArchivos = '/generar_backup_archivos_sanchezpharma';
+  static const String generarBackupCompleto = '/generar_backup_completo_sanchezpharma';
+  static const String descargarBackup = '/descargar_backup_sanchezpharma';
 }
 

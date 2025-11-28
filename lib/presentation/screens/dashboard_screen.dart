@@ -10,6 +10,7 @@ import 'productos_screen.dart';
 import 'ventas_screen.dart';
 import 'envios_screen.dart';
 import 'reportes_screen.dart';
+import 'backups_screen.dart';
 import 'clientes_screen.dart';
 import 'categorias_screen.dart';
 import 'proveedores_screen.dart';
@@ -399,7 +400,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ));
     }
 
-    // === REPORTES (Admin) ===
+    // === REPORTES (Admin e Ingeniero) ===
     if (RoleConstants.tieneAccesoAReportes(efectiveRolId)) {
       cards.add(_buildDashboardCard(
         icon: Icons.assessment,
@@ -410,6 +411,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
             context,
             MaterialPageRoute(
               builder: (context) => const ReportesScreen(),
+            ),
+          );
+        },
+      ));
+    }
+
+    // === BACKUPS (Solo Ingeniero) ===
+    if (RoleConstants.tieneAccesoABackups(efectiveRolId)) {
+      cards.add(_buildDashboardCard(
+        icon: Icons.backup,
+        title: 'Backups',
+        color: Colors.teal,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const BackupsScreen(),
             ),
           );
         },

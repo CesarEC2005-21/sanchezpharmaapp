@@ -7,6 +7,7 @@ import '../../data/models/producto_model.dart';
 import '../../data/models/cliente_model.dart';
 import '../../data/models/metodo_pago_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/validators.dart';
 import 'clientes_screen.dart';
 
 class VentasScreen extends StatefulWidget {
@@ -872,15 +873,20 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Teléfono de Contacto *',
                       hintText: '987654321',
+                      helperText: 'Debe tener 9 dígitos y empezar con 9',
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.phone),
                     ),
                     keyboardType: TextInputType.phone,
+                    maxLength: 9,
                     validator: (value) {
-                      if (_tipoVenta == 'envio_domicilio' && (value == null || value.isEmpty)) {
-                        return 'El teléfono de contacto es requerido';
+                      if (_tipoVenta == 'envio_domicilio') {
+                        if (value == null || value.isEmpty) {
+                          return 'El teléfono de contacto es requerido';
+                        }
+                        return Validators.validateTelefonoRequerido(value);
                       }
-                      return null;
+                      return Validators.validateTelefonoOpcional(value);
                     },
                   ),
                   const SizedBox(height: 8),

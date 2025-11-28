@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
+import '../../data/services/reniec_service.dart';
+import '../../core/utils/validators.dart';
 import 'login_screen.dart';
 
 class RegistroClienteScreen extends StatefulWidget {
@@ -25,6 +27,10 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   String _tipoDocumento = 'DNI';
+  bool _verificandoDNI = false;
+  String? _mensajeVerificacionDNI;
+  bool? _dniValido;
+  final ReniecService _reniecService = ReniecService();
 
   @override
   void dispose() {
@@ -39,9 +45,115 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
     super.dispose();
   }
 
+  Future<void> _verificarDNI({bool mostrarDialogo = false}) async {
+    final dni = _documentoController.text.trim();
+    
+    if (dni.isEmpty) {
+      setState(() {
+        _dniValido = null;
+        _mensajeVerificacionDNI = null;
+        _verificandoDNI = false;
+      });
+      return;
+    }
+
+    if (_tipoDocumento != 'DNI') {
+      setState(() {
+        _dniValido = null;
+        _mensajeVerificacionDNI = null;
+        _verificandoDNI = false;
+      });
+      return;
+    }
+
+    // Validar formato básico
+    final dniLimpio = dni.replaceAll(RegExp(r'[^0-9]'), '');
+    if (dniLimpio.length < 8) {
+      setState(() {
+        _dniValido = null;
+        _mensajeVerificacionDNI = null;
+        _verificandoDNI = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _verificandoDNI = true;
+      _mensajeVerificacionDNI = null;
+      _dniValido = null;
+    });
+
+    try {
+      final resultado = await _reniecService.verificarDNI(dni, tipoDocumento: _tipoDocumento);
+
+      setState(() {
+        _dniValido = resultado['valido'] as bool;
+        _mensajeVerificacionDNI = resultado['mensaje'] as String;
+      });
+
+      if (resultado['valido'] == true && resultado['datos'] != null) {
+        final datos = resultado['datos'] as Map<String, dynamic>;
+        
+        // Prellenar nombre y apellido si están disponibles
+        if (datos['nombre'] != null && _nombreController.text.isEmpty) {
+          _nombreController.text = datos['nombre'].toString();
+        }
+        if (datos['apellido_paterno'] != null && _apellidoController.text.isEmpty) {
+          _apellidoController.text = datos['apellido_paterno'].toString();
+        }
+      } else if (mostrarDialogo && mounted) {
+        // Solo mostrar diálogo si se solicita explícitamente
+        _showErrorDialog(
+          '❌ ${resultado['mensaje']}',
+          icon: Icons.error_outline,
+          iconColor: Colors.red,
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _dniValido = false;
+        _mensajeVerificacionDNI = 'Error al verificar el DNI';
+      });
+      if (mostrarDialogo && mounted) {
+        _showErrorDialog(
+          '❌ Error al verificar el DNI\n\n${e.toString()}',
+          icon: Icons.error_outline,
+          iconColor: Colors.red,
+        );
+      }
+    } finally {
+      setState(() {
+        _verificandoDNI = false;
+      });
+    }
+  }
+
   Future<void> _handleRegistro() async {
     if (!_formKey.currentState!.validate()) {
       return;
+    }
+
+    // Si es DNI, verificar que esté validado antes de continuar
+    if (_tipoDocumento == 'DNI') {
+      final dni = _documentoController.text.trim();
+      final dniLimpio = dni.replaceAll(RegExp(r'[^0-9]'), '');
+      
+      // Si no se ha verificado o está verificando, hacerlo ahora
+      if (_dniValido == null || _verificandoDNI) {
+        await _verificarDNI(mostrarDialogo: true);
+      }
+      
+      // Si el DNI no es válido, bloquear el registro
+      if (_dniValido != true) {
+        if (mounted) {
+          _showErrorDialog(
+            '❌ No se puede completar el registro\n\n${_mensajeVerificacionDNI ?? "El DNI debe ser verificado antes de continuar. Por favor, verifique que el número sea correcto."}',
+            icon: Icons.error_outline,
+            iconColor: Colors.red,
+          );
+        }
+        return;
+      }
     }
 
     setState(() {
@@ -309,6 +421,8 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                           onChanged: (value) {
                             setState(() {
                               _tipoDocumento = value ?? 'DNI';
+                              _dniValido = null;
+                              _mensajeVerificacionDNI = null;
                             });
                           },
                         ),
@@ -318,15 +432,61 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                         flex: 3,
                         child: TextFormField(
                           controller: _documentoController,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Número de Documento *',
-                            border: OutlineInputBorder(),
-                            helperText: 'El documento debe ser único',
+                            border: const OutlineInputBorder(),
+                            helperText: _tipoDocumento == 'DNI' 
+                                ? 'El documento debe ser único'
+                                : 'El documento debe ser único',
+                            suffixIcon: _tipoDocumento == 'DNI'
+                                ? _verificandoDNI
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(12.0),
+                                        child: SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        ),
+                                      )
+                                    : Icon(
+                                        _dniValido == true
+                                            ? Icons.check_circle
+                                            : _dniValido == false
+                                                ? Icons.error
+                                                : Icons.verified_user,
+                                        color: _dniValido == true
+                                            ? Colors.green
+                                            : _dniValido == false
+                                                ? Colors.red
+                                                : Colors.grey,
+                                      )
+                                : null,
                           ),
                           keyboardType: TextInputType.number,
+                          onChanged: (value) {
+                            setState(() {
+                              _dniValido = null;
+                              _mensajeVerificacionDNI = null;
+                            });
+                            
+                            // Verificar automáticamente después de un breve delay
+                            if (_tipoDocumento == 'DNI' && value.trim().length >= 8) {
+                              Future.delayed(const Duration(milliseconds: 800), () {
+                                if (mounted && _documentoController.text.trim() == value.trim()) {
+                                  _verificarDNI();
+                                }
+                              });
+                            }
+                          },
                           validator: (value) {
                             if (value == null || value.isEmpty) {
                               return 'El documento es requerido';
+                            }
+                            // Si es DNI, verificar que esté validado
+                            if (_tipoDocumento == 'DNI' && _dniValido != true) {
+                              return 'El DNI debe ser verificado';
                             }
                             return null;
                           },
@@ -334,6 +494,59 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                       ),
                     ],
                   ),
+                  // Mensaje de verificación de DNI
+                  if (_tipoDocumento == 'DNI' && _mensajeVerificacionDNI != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _dniValido == true
+                                ? Icons.check_circle
+                                : Icons.error,
+                            color: _dniValido == true
+                                ? Colors.green
+                                : Colors.red,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _mensajeVerificacionDNI!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _dniValido == true
+                                    ? Colors.green.shade700
+                                    : Colors.red.shade700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (_tipoDocumento == 'DNI' && _mensajeVerificacionDNI == null && !_verificandoDNI)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            size: 16,
+                            color: Colors.grey.shade600,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'El DNI se verificará automáticamente al ingresar 8 dígitos',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   const SizedBox(height: 16),
                   
                   // Teléfono
@@ -343,8 +556,11 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                       labelText: 'Teléfono',
                       prefixIcon: Icon(Icons.phone),
                       border: OutlineInputBorder(),
+                      helperText: 'Debe tener 9 dígitos y empezar con 9',
                     ),
                     keyboardType: TextInputType.phone,
+                    maxLength: 9,
+                    validator: Validators.validateTelefonoOpcional,
                   ),
                   const SizedBox(height: 16),
                   

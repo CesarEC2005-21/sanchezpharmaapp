@@ -110,6 +110,9 @@ abstract class ApiService {
   @POST(ApiConstants.registrarClientePublico)
   Future<HttpResponse<dynamic>> registrarClientePublico(@Body() Map<String, dynamic> cliente);
 
+  @GET(ApiConstants.verificarDocumento)
+  Future<HttpResponse<dynamic>> verificarDocumento(@Query('documento') String documento, @Query('tipo_documento') String? tipoDocumento);
+
   @POST(ApiConstants.loginGoogle)
   Future<HttpResponse<dynamic>> loginGoogle(@Body() Map<String, dynamic> datos);
 
@@ -273,5 +276,21 @@ abstract class ApiService {
 
   @GET('${ApiConstants.contarNotificacionesNoLeidas}/{clienteId}')
   Future<HttpResponse<dynamic>> contarNotificacionesNoLeidas(@Path('clienteId') int clienteId);
+
+  // ========== BACKUPS (SOLO INGENIERO) ==========
+  @GET(ApiConstants.backupsHistorial)
+  Future<HttpResponse<dynamic>> getBackupsHistorial();
+
+  @POST(ApiConstants.generarBackupBd)
+  Future<HttpResponse<dynamic>> generarBackupBd();
+
+  @POST(ApiConstants.generarBackupArchivos)
+  Future<HttpResponse<dynamic>> generarBackupArchivos();
+
+  @POST(ApiConstants.generarBackupCompleto)
+  Future<HttpResponse<dynamic>> generarBackupCompleto();
+
+  @GET('${ApiConstants.descargarBackup}/{backupId}')
+  Future<HttpResponse<dynamic>> descargarBackup(@Path('backupId') int backupId);
 }
 

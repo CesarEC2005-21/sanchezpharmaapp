@@ -30,6 +30,8 @@ class _LoginScreenState extends State<LoginScreen> {
   // Para Web: Configura el Client ID en web/index.html
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
+    // Forzar que siempre muestre el selector de cuentas
+    forceCodeForRefreshToken: true,
   );
 
   @override
@@ -202,7 +204,26 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      // Iniciar sesión con Google
+      // Verificar si hay una sesión activa y cerrarla para forzar selección de cuenta
+      try {
+        final currentUser = await _googleSignIn.signInSilently();
+        if (currentUser != null) {
+          // Hay una sesión activa, cerrarla para mostrar el selector
+          await _googleSignIn.signOut();
+          // Esperar un momento para asegurar que la sesión se cerró completamente
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      } catch (e) {
+        // No hay sesión activa o hubo un error, continuar
+        print('No hay sesión activa de Google: $e');
+      }
+      
+      // Cerrar sesión explícitamente para asegurar que no hay sesión activa
+      await _googleSignIn.signOut();
+      await Future.delayed(const Duration(milliseconds: 300));
+      
+      // Iniciar sesión con Google - esto mostrará el selector de cuentas
+      // Si hay múltiples cuentas en el dispositivo, el usuario podrá elegir
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       
       if (googleUser == null) {
@@ -301,6 +322,10 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       if (mounted) {
+        // Log del error completo para debugging
+        print('❌ Error en Google Sign-In: $e');
+        print('Tipo de error: ${e.runtimeType}');
+        
         String errorMsg = _getGoogleErrorMessage(e.toString());
         _showErrorDialog(
           errorMsg,
@@ -319,13 +344,27 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // Método para obtener mensajes de error específicos de Google Sign-In
   String _getGoogleErrorMessage(String error) {
-    if (error.contains('PlatformException') && error.contains('sign_in_failed')) {
+    String lowerError = error.toLowerCase();
+    
+    // Error ApiException: 7 - NETWORK_ERROR o SIGN_IN_REQUIRED
+    if (lowerError.contains('apiexception') && lowerError.contains('7')) {
+      return '⚠️ Error de configuración de Google Sign-In\n\n'
+          'El error ApiException: 7 generalmente indica un problema de configuración.\n\n'
+          'Posibles soluciones:\n'
+          '1. Verifica tu conexión a Internet\n'
+          '2. Asegúrate de que Google Play Services esté actualizado\n'
+          '3. Verifica que el SHA-1 esté configurado en Google Cloud Console\n'
+          '4. Confirma que el package name coincida con el configurado\n\n'
+          'Si el problema persiste, contacta con soporte técnico.';
+    } else if (lowerError.contains('platformexception') && lowerError.contains('sign_in_failed')) {
       return '🔐 Error de autenticación con Google\n\nNo se pudo completar el inicio de sesión. Asegúrate de tener Google Sign-In configurado correctamente.';
-    } else if (error.contains('ApiException: 10')) {
+    } else if (lowerError.contains('apiexception: 10')) {
       return '⚙️ Error de configuración\n\nHay un problema con la configuración de Google Sign-In. Por favor, contacta con soporte.';
+    } else if (lowerError.contains('network_error') || lowerError.contains('networkerror')) {
+      return '🌐 Error de red\n\nNo se pudo conectar con los servicios de Google. Verifica tu conexión a Internet e intenta nuevamente.';
     } else if (error.contains('No se pudo obtener el token')) {
       return '🔑 Error al obtener token\n\nNo se pudo obtener el token de autenticación de Google. Por favor, intenta nuevamente.';
-    } else if (error.contains('SocketException')) {
+    } else if (lowerError.contains('socketexception')) {
       return '🌐 Sin conexión a Internet\n\nNo se pudo conectar. Verifica tu conexión a Internet e intenta nuevamente.';
     } else {
       return '❌ Error con Google Sign-In\n\nOcurrió un error al iniciar sesión con Google.\n\nDetalle: $error';

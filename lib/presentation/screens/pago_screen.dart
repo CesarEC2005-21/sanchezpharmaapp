@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/validators.dart';
 import '../widgets/cliente_bottom_nav.dart';
 import 'home_cliente_screen.dart';
 import 'seleccionar_ubicacion_screen.dart';
@@ -421,14 +422,19 @@ class _PagoScreenState extends State<PagoScreen> {
                   controller: _telefonoController,
                   decoration: const InputDecoration(
                     labelText: 'Teléfono de Contacto',
+                    helperText: 'Debe tener 9 dígitos y empezar con 9',
                     border: OutlineInputBorder(),
                   ),
                   keyboardType: TextInputType.phone,
+                  maxLength: 9,
                   validator: (value) {
-                    if (_tipoEntrega == 'envio_domicilio' && (value == null || value.isEmpty)) {
-                      return 'Por favor ingrese el teléfono';
+                    if (_tipoEntrega == 'envio_domicilio') {
+                      if (value == null || value.isEmpty) {
+                        return 'Por favor ingrese el teléfono';
+                      }
+                      return Validators.validateTelefonoRequerido(value);
                     }
-                    return null;
+                    return Validators.validateTelefonoOpcional(value);
                   },
                 ),
                 const SizedBox(height: 8),
