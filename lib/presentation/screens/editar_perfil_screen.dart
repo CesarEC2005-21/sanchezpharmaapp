@@ -511,10 +511,11 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
                       controller: _telefonoController,
                       keyboardType: TextInputType.phone,
                       maxLength: 9,
+                      inputFormatters: [Validators.telefonoFormatter],
                       decoration: InputDecoration(
                         labelText: 'Número de celular',
                         prefixIcon: const Icon(Icons.phone),
-                        helperText: 'Debe tener 9 dígitos y empezar con 9',
+                        helperText: 'Máximo 9 dígitos, solo números',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),

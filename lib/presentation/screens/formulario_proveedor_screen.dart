@@ -178,6 +178,7 @@ class _FormularioProveedorScreenState extends State<FormularioProveedorScreen> {
                 hint: '987654321',
                 keyboardType: TextInputType.phone,
                 maxLength: 9,
+                inputFormatters: [Validators.telefonoFormatter],
                 validator: Validators.validateTelefonoOpcional,
               ),
               ModalSectionBuilder.buildTextField(

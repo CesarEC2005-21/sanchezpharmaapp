@@ -931,12 +931,13 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Teléfono de Contacto *',
                       hintText: '987654321',
-                      helperText: 'Debe tener 9 dígitos y empezar con 9',
+                      helperText: 'Máximo 9 dígitos, solo números',
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.phone),
                     ),
                     keyboardType: TextInputType.phone,
                     maxLength: 9,
+                    inputFormatters: [Validators.telefonoFormatter],
                     validator: (value) {
                       if (_tipoVenta == 'envio_domicilio') {
                         if (value == null || value.isEmpty) {

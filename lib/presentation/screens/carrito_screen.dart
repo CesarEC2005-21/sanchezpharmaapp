@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/notifiers/cart_notifier.dart';
 import '../widgets/cliente_bottom_nav.dart';
 import 'pago_screen.dart';
 
@@ -19,6 +20,7 @@ class _CarritoScreenState extends State<CarritoScreen> {
   void initState() {
     super.initState();
     _cargarCarrito();
+    _actualizarContadorCarrito();
   }
 
   Future<void> _cargarCarrito() async {
@@ -58,6 +60,10 @@ class _CarritoScreenState extends State<CarritoScreen> {
     setState(() {
       _isLoading = false;
     });
+    
+    // Actualizar contador global
+    final totalItems = _carrito.fold(0, (sum, item) => sum + (item['cantidad'] as int));
+    CartNotifier.instance.updateCount(totalItems);
   }
 
   void _actualizarCantidad(int index, int nuevaCantidad) {
@@ -83,11 +89,35 @@ class _CarritoScreenState extends State<CarritoScreen> {
     final prefs = await SharedPreferences.getInstance();
     if (_carrito.isEmpty) {
       await prefs.remove('carrito_cliente');
+      CartNotifier.instance.updateCount(0);
     } else {
       final carritoString = _carrito.map((item) {
         return '${item['id']}:${item['nombre']}:${item['precio']}:${item['cantidad']}:${item['stock']}';
       }).join('|');
       await prefs.setString('carrito_cliente', carritoString);
+      // Actualizar el contador global
+      final totalItems = _carrito.fold(0, (sum, item) => sum + (item['cantidad'] as int));
+      CartNotifier.instance.updateCount(totalItems);
+    }
+  }
+
+  Future<void> _actualizarContadorCarrito() async {
+    final prefs = await SharedPreferences.getInstance();
+    final carritoJson = prefs.getString('carrito_cliente');
+    if (carritoJson != null && carritoJson.isNotEmpty) {
+      final items = carritoJson.split('|');
+      int total = 0;
+      for (final item in items) {
+        if (item.isNotEmpty) {
+          final parts = item.split(':');
+          if (parts.length >= 4) {
+            total += int.tryParse(parts[3]) ?? 0;
+          }
+        }
+      }
+      CartNotifier.instance.updateCount(total);
+    } else {
+      CartNotifier.instance.updateCount(0);
     }
   }
 
@@ -264,7 +294,10 @@ class _CarritoScreenState extends State<CarritoScreen> {
                                         MaterialPageRoute(
                                           builder: (context) => PagoScreen(carrito: _carrito),
                                         ),
-                                      ).then((_) => _cargarCarrito());
+                                      ).then((_) {
+                                        _cargarCarrito();
+                                        _actualizarContadorCarrito();
+                                      });
                                     }
                                   : null,
                               style: ElevatedButton.styleFrom(

@@ -444,11 +444,12 @@ class _PagoScreenState extends State<PagoScreen> {
                   controller: _telefonoController,
                   decoration: const InputDecoration(
                     labelText: 'Teléfono de Contacto',
-                    helperText: 'Debe tener 9 dígitos y empezar con 9',
+                    helperText: 'Máximo 9 dígitos, solo números',
                     border: OutlineInputBorder(),
                   ),
                   keyboardType: TextInputType.phone,
                   maxLength: 9,
+                  inputFormatters: [Validators.telefonoFormatter],
                   validator: (value) {
                     if (_tipoEntrega == 'envio_domicilio') {
                       if (value == null || value.isEmpty) {

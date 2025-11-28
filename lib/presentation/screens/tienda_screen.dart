@@ -46,6 +46,14 @@ class _TiendaScreenState extends State<TiendaScreen> {
   final PageController _bannerPageController = PageController();
   int _currentBannerIndex = 0;
   Timer? _bannerTimer;
+  
+  // Listas para productos destacados
+  List<ProductoModel> _productosEnOferta = [];
+  List<ProductoModel> _productosPopulares = [];
+  List<ProductoModel> _productosUltimasUnidades = [];
+  
+  // Estado del filtro seleccionado
+  String? _filtroSeleccionado; // 'ultimas_unidades', 'ofertas', 'populares', 'sorteo'
 
   @override
   void initState() {
@@ -56,6 +64,19 @@ class _TiendaScreenState extends State<TiendaScreen> {
     _actualizarContadorCarrito();
     _searchController.addListener(_aplicarFiltros);
     _iniciarCarruselAutomatico();
+    
+    // Escuchar cambios en el carrito global
+    CartNotifier.instance.addListener(_onCartChanged);
+  }
+
+
+  void _onCartChanged() {
+    // Actualizar el contador local cuando cambie el carrito global
+    if (mounted) {
+      setState(() {
+        _itemsEnCarrito = CartNotifier.instance.value;
+      });
+    }
   }
 
   Future<void> _cargarDatosIniciales() async {
@@ -66,6 +87,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
     await Future.wait([
       _cargarCategorias(),
       _cargarBanners(),
+      _cargarProductos(), // Cargar productos al inicio para mostrar destacados
     ]);
     
     setState(() {
@@ -97,6 +119,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
 
   @override
   void dispose() {
+    CartNotifier.instance.removeListener(_onCartChanged);
     _searchController.dispose();
     _bannerPageController.dispose();
     _bannerTimer?.cancel();
@@ -208,11 +231,32 @@ class _TiendaScreenState extends State<TiendaScreen> {
 
         if (data['code'] == 1 && data['data'] != null) {
           final List<dynamic> productosJson = data['data'];
+          final productosCargados = productosJson
+              .map((json) => ProductoModel.fromJson(json))
+              .where((p) => p.estado == 'activo' && p.stockActual > 0)
+              .toList();
+          
           setState(() {
-            _productos = productosJson
-                .map((json) => ProductoModel.fromJson(json))
-                .where((p) => p.estado == 'activo' && p.stockActual > 0)
+            _productos = productosCargados;
+            
+            // Productos en oferta (con descuento)
+            _productosEnOferta = productosCargados
+                .where((p) => p.tieneDescuento)
+                .take(10)
                 .toList();
+            
+            // Productos populares (más vendidos o con mejor precio)
+            _productosPopulares = productosCargados
+                .where((p) => !p.tieneDescuento)
+                .take(10)
+                .toList();
+            
+            // Últimas unidades (stock bajo)
+            _productosUltimasUnidades = productosCargados
+                .where((p) => p.stockActual <= p.stockMinimo && p.stockActual > 0)
+                .take(10)
+                .toList();
+            
             _aplicarFiltros();
             _isLoading = false;
           });
@@ -244,7 +288,18 @@ class _TiendaScreenState extends State<TiendaScreen> {
     }
 
     setState(() {
-      List<ProductoModel> productosFiltrados = _productos.where((producto) {
+      // Si hay un filtro seleccionado, aplicar ese filtro primero
+      List<ProductoModel> productosBase = _productos;
+      
+      if (_filtroSeleccionado == 'ultimas_unidades') {
+        productosBase = _productosUltimasUnidades;
+      } else if (_filtroSeleccionado == 'ofertas') {
+        productosBase = _productosEnOferta;
+      } else if (_filtroSeleccionado == 'populares') {
+        productosBase = _productosPopulares;
+      }
+      
+      List<ProductoModel> productosFiltrados = productosBase.where((producto) {
         final coincideBusqueda = _searchController.text.isEmpty ||
             producto.nombre.toLowerCase().contains(_searchController.text.toLowerCase());
         final coincideCategoria = _categoriaSeleccionada == null ||
@@ -506,16 +561,34 @@ class _TiendaScreenState extends State<TiendaScreen> {
   }
 
   Widget _buildFilterChip(String emoji, String label) {
+    String? filtroKey;
+    if (label == 'Últimas unidades') {
+      filtroKey = 'ultimas_unidades';
+    } else if (label == 'Ofertas') {
+      filtroKey = 'ofertas';
+    } else if (label == 'Populares') {
+      filtroKey = 'populares';
+    } else if (label == 'Sorteo Casa Millón') {
+      filtroKey = 'sorteo';
+    }
+    
+    final isSelected = _filtroSeleccionado == filtroKey;
+    
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey.shade300),
+        color: isSelected ? Colors.green.shade600 : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: isSelected ? Colors.green.shade600 : Colors.grey.shade300,
+          width: isSelected ? 2 : 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 2,
-            offset: const Offset(0, 1),
+            color: isSelected 
+                ? Colors.green.shade300.withOpacity(0.3)
+                : Colors.black.withOpacity(0.05),
+            blurRadius: isSelected ? 8 : 2,
+            offset: Offset(0, isSelected ? 3 : 1),
           ),
         ],
       ),
@@ -523,24 +596,67 @@ class _TiendaScreenState extends State<TiendaScreen> {
         color: Colors.transparent,
         child: InkWell(
           onTap: () {
-            // TODO: Implementar filtros específicos
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Filtro: $label')),
-            );
+            setState(() {
+              // Establecer filtro seleccionado
+              if (_filtroSeleccionado == filtroKey) {
+                _filtroSeleccionado = null; // Deseleccionar si ya está seleccionado
+                _productosFiltrados = _productos;
+              } else {
+                _filtroSeleccionado = filtroKey;
+                
+                // Filtrar productos según el chip seleccionado
+                if (label == 'Últimas unidades') {
+                  _productosFiltrados = _productosUltimasUnidades;
+                } else if (label == 'Ofertas') {
+                  _productosFiltrados = _productosEnOferta;
+                } else if (label == 'Populares') {
+                  _productosFiltrados = _productosPopulares;
+                } else if (label == 'Sorteo Casa Millón') {
+                  // Mostrar mensaje del sorteo
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('¡Próximamente! Participa en nuestro sorteo especial'),
+                      backgroundColor: Colors.orange,
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                  return; // No cambiar productos
+                }
+                
+                _categoriaSeleccionada = null;
+              }
+              
+              // Si hay búsqueda activa, mantenerla
+              if (_searchController.text.isNotEmpty) {
+                _aplicarFiltros();
+              }
+            });
+            
+            // Mostrar productos si no hay búsqueda activa
+            if (_searchController.text.isEmpty && _productos.isEmpty) {
+              _cargarProductos();
+            }
           },
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(emoji, style: const TextStyle(fontSize: 16)),
+                Text(
+                  emoji, 
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: isSelected ? Colors.white : null,
+                  ),
+                ),
                 const SizedBox(width: 6),
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
+                    color: isSelected ? Colors.white : Colors.black87,
                   ),
                 ),
               ],
@@ -811,7 +927,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header con dirección y carrito
+            // Header con dirección y carrito (FIJOS)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -915,7 +1031,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
               ),
             ),
 
-            // Barra de búsqueda mejorada
+            // Barra de búsqueda mejorada (FIJOS)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Container(
@@ -946,7 +1062,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
               ),
             ),
 
-            // Chips de filtros rápidos
+            // Chips de filtros rápidos (FIJOS)
             Container(
               height: 50,
               padding: const EdgeInsets.symmetric(vertical: 4),
@@ -965,67 +1081,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
               ),
             ),
 
-            // Carrusel de banners
-            if (_banners.isNotEmpty)
-              Container(
-                height: 200,
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Stack(
-                  children: [
-                    PageView.builder(
-                      controller: _bannerPageController,
-                      onPageChanged: (index) {
-                        setState(() {
-                          _currentBannerIndex = index;
-                        });
-                      },
-                      itemCount: _banners.length,
-                      itemBuilder: (context, index) {
-                        final banner = _banners[index];
-                        return _buildBannerCard(banner);
-                      },
-                    ),
-                    // Indicadores de página
-                    Positioned(
-                      bottom: 8,
-                      left: 0,
-                      right: 0,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(
-                          _banners.length,
-                          (index) => Container(
-                            width: 8,
-                            height: 8,
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: _currentBannerIndex == index
-                                  ? Colors.green.shade700
-                                  : Colors.grey.shade400,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            // Texto de advertencia médica
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Text(
-                'Todos los productos farmacéuticos y dispositivos médicos son distribuidos por Sánchez Pharma (Ley 32033)',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-            ),
-
-            // Sección de Categorías
+            // Contenido scrolleable (incluyendo banners, texto y categorías/productos)
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
@@ -1103,67 +1159,462 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                 ),
                               ],
                             )
-                          // Si NO hay búsqueda, mostrar solo categorías (sin productos)
+                          // Si NO hay búsqueda, mostrar banners, texto y categorías
                           : RefreshIndicator(
                               onRefresh: _cargarDatos,
                               child: SingleChildScrollView(
-                                padding: const EdgeInsets.all(16),
+                                padding: const EdgeInsets.only(top: 0),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
+                                    // Carrusel de banners (AHORA SE MUEVE CON EL SCROLL)
+                                    if (_banners.isNotEmpty)
+                                      Container(
+                                        height: 200,
+                                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                        child: Stack(
+                                          children: [
+                                            PageView.builder(
+                                              controller: _bannerPageController,
+                                              onPageChanged: (index) {
+                                                setState(() {
+                                                  _currentBannerIndex = index;
+                                                });
+                                              },
+                                              itemCount: _banners.length,
+                                              itemBuilder: (context, index) {
+                                                final banner = _banners[index];
+                                                return _buildBannerCard(banner);
+                                              },
+                                            ),
+                                            // Indicadores de página
+                                            Positioned(
+                                              bottom: 8,
+                                              left: 0,
+                                              right: 0,
+                                              child: Row(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: List.generate(
+                                                  _banners.length,
+                                                  (index) => Container(
+                                                    width: 8,
+                                                    height: 8,
+                                                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                                                    decoration: BoxDecoration(
+                                                      shape: BoxShape.circle,
+                                                      color: _currentBannerIndex == index
+                                                          ? Colors.green.shade700
+                                                          : Colors.grey.shade400,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+
+                                    // Texto de advertencia médica
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                      child: Text(
+                                        'Todos los productos farmacéuticos y dispositivos médicos son distribuidos por Sánchez Pharma (Ley 32033)',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ),
+
+                                    // SECCIÓN: Productos en Oferta
+                                    if (_productosEnOferta.isNotEmpty) ...[
+                                      Container(
+                                        margin: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+                                        padding: const EdgeInsets.all(20),
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              Colors.red.shade50,
+                                              Colors.orange.shade50,
+                                            ],
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                          ),
+                                          borderRadius: BorderRadius.circular(20),
+                                          border: Border.all(
+                                            color: Colors.red.shade200,
+                                            width: 2,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.red.shade200.withOpacity(0.3),
+                                              blurRadius: 12,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Container(
+                                                      padding: const EdgeInsets.all(10),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.red.shade700,
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        boxShadow: [
+                                                          BoxShadow(
+                                                            color: Colors.red.shade300,
+                                                            blurRadius: 8,
+                                                            spreadRadius: 1,
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      child: const Icon(
+                                                        Icons.local_offer,
+                                                        color: Colors.white,
+                                                        size: 24,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    const Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      children: [
+                                                        Text(
+                                                          '🔥 OFERTAS ESPECIALES',
+                                                          style: TextStyle(
+                                                            fontSize: 18,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: Colors.black87,
+                                                            letterSpacing: 0.5,
+                                                          ),
+                                                        ),
+                                                        Text(
+                                                          'Descuentos increíbles',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            color: Colors.black54,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                                TextButton.icon(
+                                                  onPressed: () {
+                                                    setState(() {
+                                                      _filtroSeleccionado = 'ofertas';
+                                                      _productosFiltrados = _productosEnOferta;
+                                                      _categoriaSeleccionada = null;
+                                                      _searchController.clear();
+                                                    });
+                                                    if (_productos.isEmpty) _cargarProductos();
+                                                  },
+                                                  icon: const Icon(Icons.arrow_forward, size: 18),
+                                                  label: const Text(
+                                                    'Ver todas',
+                                                    style: TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                  style: TextButton.styleFrom(
+                                                    foregroundColor: Colors.red.shade700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        height: 240,
+                                        child: ListView.builder(
+                                          scrollDirection: Axis.horizontal,
+                                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                                          itemCount: _productosEnOferta.take(10).length,
+                                          itemBuilder: (context, index) {
+                                            return _buildProductoCardHorizontal(_productosEnOferta[index]);
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                    ],
+
+                                    // SECCIÓN: Últimas Unidades
+                                    if (_productosUltimasUnidades.isNotEmpty) ...[
+                                      Container(
+                                        margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                                        padding: const EdgeInsets.all(20),
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              Colors.orange.shade50,
+                                              Colors.amber.shade50,
+                                            ],
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                          ),
+                                          borderRadius: BorderRadius.circular(20),
+                                          border: Border.all(
+                                            color: Colors.orange.shade300,
+                                            width: 2,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.orange.shade200.withOpacity(0.3),
+                                              blurRadius: 12,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Container(
+                                                      padding: const EdgeInsets.all(10),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.orange.shade700,
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        boxShadow: [
+                                                          BoxShadow(
+                                                            color: Colors.orange.shade300,
+                                                            blurRadius: 8,
+                                                            spreadRadius: 1,
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      child: const Icon(
+                                                        Icons.warning_amber_rounded,
+                                                        color: Colors.white,
+                                                        size: 24,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    const Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      children: [
+                                                        Text(
+                                                          '⏰ ÚLTIMAS UNIDADES',
+                                                          style: TextStyle(
+                                                            fontSize: 18,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: Colors.black87,
+                                                            letterSpacing: 0.5,
+                                                          ),
+                                                        ),
+                                                        Text(
+                                                          '¡Apúrate! Stock limitado',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            color: Colors.black54,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                                TextButton.icon(
+                                                  onPressed: () {
+                                                    setState(() {
+                                                      _filtroSeleccionado = 'ultimas_unidades';
+                                                      _productosFiltrados = _productosUltimasUnidades;
+                                                      _categoriaSeleccionada = null;
+                                                      _searchController.clear();
+                                                    });
+                                                    if (_productos.isEmpty) _cargarProductos();
+                                                  },
+                                                  icon: const Icon(Icons.arrow_forward, size: 18),
+                                                  label: const Text(
+                                                    'Ver todas',
+                                                    style: TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                  style: TextButton.styleFrom(
+                                                    foregroundColor: Colors.orange.shade700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        height: 240,
+                                        child: ListView.builder(
+                                          scrollDirection: Axis.horizontal,
+                                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                                          itemCount: _productosUltimasUnidades.take(10).length,
+                                          itemBuilder: (context, index) {
+                                            return _buildProductoCardHorizontal(_productosUltimasUnidades[index]);
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                    ],
+
+                                    // SECCIÓN: Productos Populares
+                                    if (_productosPopulares.isNotEmpty) ...[
+                                      Container(
+                                        margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                                        padding: const EdgeInsets.all(20),
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              Colors.green.shade50,
+                                              Colors.teal.shade50,
+                                            ],
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                          ),
+                                          borderRadius: BorderRadius.circular(20),
+                                          border: Border.all(
+                                            color: Colors.green.shade300,
+                                            width: 2,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.green.shade200.withOpacity(0.3),
+                                              blurRadius: 12,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(10),
+                                              decoration: BoxDecoration(
+                                                color: Colors.green.shade700,
+                                                borderRadius: BorderRadius.circular(12),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: Colors.green.shade300,
+                                                    blurRadius: 8,
+                                                    spreadRadius: 1,
+                                                  ),
+                                                ],
+                                              ),
+                                              child: const Icon(
+                                                Icons.star,
+                                                color: Colors.white,
+                                                size: 24,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            const Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    '⭐ MÁS POPULARES',
+                                                    style: TextStyle(
+                                                      fontSize: 18,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Colors.black87,
+                                                      letterSpacing: 0.5,
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    'Los favoritos de nuestros clientes',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: Colors.black54,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        height: 240,
+                                        child: ListView.builder(
+                                          scrollDirection: Axis.horizontal,
+                                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                                          itemCount: _productosPopulares.take(10).length,
+                                          itemBuilder: (context, index) {
+                                            return _buildProductoCardHorizontal(_productosPopulares[index]);
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                    ],
+
                                     // Título de sección
-                                    const Text(
-                                      '¿Qué estás buscando?',
-                                      style: TextStyle(
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.black87,
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                      child: const Text(
+                                        '¿Qué estás buscando?',
+                                        style: TextStyle(
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black87,
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(height: 16),
                                     
                                     // Grid de categorías
-                                    _buildCategoriasGrid(),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                      child: _buildCategoriasGrid(),
+                                    ),
                                     
                                     const SizedBox(height: 24),
                                     
                                     // Mensaje para buscar productos
-                                    Container(
-                                      padding: const EdgeInsets.all(20),
-                                      decoration: BoxDecoration(
-                                        color: Colors.green.shade50,
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(color: Colors.green.shade200),
-                                      ),
-                                      child: Column(
-                                      children: [
-                                          Icon(
-                                            Icons.search,
-                                            size: 48,
-                                            color: Colors.green.shade700,
-                                          ),
-                                          const SizedBox(height: 12),
-                                          Text(
-                                            '¡Encuentra lo que necesitas!',
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                              color: Colors.green.shade900,
-                                            ),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'Selecciona una categoría o usa el buscador para ver nuestros productos',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.grey.shade700,
-                                            ),
-                                            textAlign: TextAlign.center,
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(20),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.shade50,
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(color: Colors.green.shade200),
                                         ),
-                                        ],
+                                        child: Column(
+                                          children: [
+                                            Icon(
+                                              Icons.search,
+                                              size: 48,
+                                              color: Colors.green.shade700,
+                                            ),
+                                            const SizedBox(height: 12),
+                                            Text(
+                                              '¡Encuentra lo que necesitas!',
+                                              style: TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.green.shade900,
+                                              ),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              'Selecciona una categoría o usa el buscador para ver nuestros productos',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: Colors.grey.shade700,
+                                              ),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
+                                    const SizedBox(height: 16),
                                   ],
                                 ),
                               ),
@@ -1467,6 +1918,233 @@ class _TiendaScreenState extends State<TiendaScreen> {
               ],
             ),
           ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProductoCardHorizontal(ProductoModel producto) {
+    final imagenes = producto.todasLasImagenes;
+    final thumbUrl = imagenes.isNotEmpty
+        ? imagenes[0]
+        : 'https://placehold.co/400x400?text=${Uri.encodeComponent(producto.nombre)}';
+    
+    return Container(
+      width: 170,
+      height: 240,
+      margin: const EdgeInsets.only(right: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+            spreadRadius: 1,
+          ),
+        ],
+        border: Border.all(
+          color: Colors.grey.shade200,
+          width: 1,
+        ),
+      ),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProductDetailScreen(producto: producto),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Imagen del producto
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  child: Container(
+                    height: 120,
+                    width: double.infinity,
+                    color: Colors.grey.shade100,
+                    child: Image.network(
+                      thumbUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Icon(
+                        Icons.local_pharmacy,
+                        color: Colors.green.shade700,
+                        size: 48,
+                      ),
+                    ),
+                  ),
+                ),
+                // Badge de descuento
+                if (producto.tieneDescuento)
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade700,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '-${producto.descuentoPorcentaje.toStringAsFixed(0)}%',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                // Botón de favorito
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => _toggleFavorito(producto),
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.3),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _esFavorito(producto.id) ? Icons.favorite : Icons.favorite_border,
+                          color: _esFavorito(producto.id) ? Colors.red : Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            // Información del producto
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      producto.nombre,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    // Precio
+                    if (producto.tieneDescuento) ...[
+                      Text(
+                        'S/ ${producto.precioConDescuento.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red.shade700,
+                        ),
+                      ),
+                      Text(
+                        'S/ ${producto.precioVenta.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          decoration: TextDecoration.lineThrough,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
+                    ] else ...[
+                      Text(
+                        'S/ ${producto.precioVenta.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green.shade700,
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    // Botones de acción
+                    Row(
+                      children: [
+                        // Botón de favoritos
+                        Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: _esFavorito(producto.id) 
+                                  ? Colors.red.shade300 
+                                  : Colors.grey.shade300,
+                              width: 1.5,
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                            color: _esFavorito(producto.id) 
+                                ? Colors.red.shade50 
+                                : Colors.white,
+                          ),
+                          child: IconButton(
+                            padding: const EdgeInsets.all(6),
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
+                            icon: Icon(
+                              _esFavorito(producto.id) 
+                                  ? Icons.favorite 
+                                  : Icons.favorite_border,
+                              color: _esFavorito(producto.id) 
+                                  ? Colors.red.shade600 
+                                  : Colors.grey.shade600,
+                              size: 16,
+                            ),
+                            onPressed: () => _toggleFavorito(producto),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        // Botón de agregar al carrito
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: producto.stockActual > 0
+                                ? () => _agregarAlCarrito(producto)
+                                : null,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green.shade700,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              elevation: 2,
+                            ),
+                            child: const Text(
+                              'Agregar',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),

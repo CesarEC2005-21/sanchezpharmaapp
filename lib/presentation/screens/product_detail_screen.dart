@@ -28,7 +28,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   late final PageController _pageController;
   late final List<String> _imageUrls;
   int _currentImageIndex = 0;
-  String _metodoEntregaSeleccionado = 'domicilio';
 
   @override
   void initState() {
@@ -38,12 +37,25 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     _cargarSugerencias();
     _verificarFavorito();
     _actualizarContadorCarrito();
+    
+    // Escuchar cambios en el carrito global
+    CartNotifier.instance.addListener(_onCartChanged);
   }
 
   @override
   void dispose() {
+    CartNotifier.instance.removeListener(_onCartChanged);
     _pageController.dispose();
     super.dispose();
+  }
+
+  void _onCartChanged() {
+    // Actualizar el contador local cuando cambie el carrito global
+    if (mounted) {
+      setState(() {
+        _itemsEnCarrito = CartNotifier.instance.value;
+      });
+    }
   }
 
   Future<void> _cargarSugerencias() async {
@@ -243,9 +255,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     children: [
                       _buildImageGallery(),
                       _buildPriceSection(producto, regular),
-                      _buildSellerSection(producto),
                       _buildDetailSection(producto),
-                      _buildDeliverySection(),
                       _buildSugerenciasSection(
                         titulo: 'Compara y decide',
                         productos: _sugerencias,
@@ -297,6 +307,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             ),
           ),
           const SizedBox(width: 8),
+          // Corazón de favoritos
+          IconButton(
+            icon: Icon(
+              _esFavorito ? Icons.favorite : Icons.favorite_border,
+              color: _esFavorito ? Colors.red : Colors.grey.shade600,
+            ),
+            onPressed: _toggleFavorito,
+          ),
+          const SizedBox(width: 4),
           ValueListenableBuilder<int>(
             valueListenable: CartNotifier.instance,
             builder: (context, cartCount, _) {
@@ -574,241 +593,361 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final ahorro = tieneDescuento ? (precioOriginal - precioConDescuento) : 0.0;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         gradient: LinearGradient(
           colors: tieneDescuento 
-              ? [Colors.white, Colors.red.shade50]
-              : [Colors.white, Colors.green.shade50],
+              ? [Colors.red.shade50, Colors.white]
+              : [Colors.green.shade50, Colors.white],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 16,
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 20,
             offset: const Offset(0, 8),
+            spreadRadius: 2,
           ),
         ],
+        border: Border.all(
+          color: tieneDescuento 
+              ? Colors.red.shade200 
+              : Colors.green.shade200,
+          width: 2,
+        ),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      tieneDescuento 
-                          ? 'S/ ${precioConDescuento.toStringAsFixed(2)}'
-                          : 'S/ ${precioOriginal.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        color: tieneDescuento 
-                            ? Colors.red.shade800
-                            : Colors.green.shade800,
-                        fontSize: 34,
-                        fontWeight: FontWeight.bold,
-                        height: 1,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    if (tieneDescuento)
+                    if (tieneDescuento) ...[
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 4,
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: Colors.red.shade700,
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          '-$porcentajeDescuento%',
+                          'OFERTA ESPECIAL',
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 12,
+                            fontSize: 10,
                             fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
                           ),
                         ),
                       ),
+                      const SizedBox(height: 12),
+                    ],
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          'S/',
+                          style: TextStyle(
+                            color: tieneDescuento 
+                                ? Colors.red.shade700
+                                : Colors.green.shade700,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          tieneDescuento 
+                              ? precioConDescuento.toStringAsFixed(2)
+                              : precioOriginal.toStringAsFixed(2),
+                          style: TextStyle(
+                            color: tieneDescuento 
+                                ? Colors.red.shade700
+                                : Colors.green.shade700,
+                            fontSize: 42,
+                            fontWeight: FontWeight.bold,
+                            height: 1,
+                          ),
+                        ),
+                        if (tieneDescuento) ...[
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade700,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.red.shade300,
+                                  blurRadius: 8,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              '-$porcentajeDescuento%',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (tieneDescuento) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Text(
+                            'Precio regular: ',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            'S/ ${precioOriginal.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              decoration: TextDecoration.lineThrough,
+                              color: Colors.grey.shade600,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.green.shade200,
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.savings,
+                              color: Colors.green.shade700,
+                              size: 24,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Ahorras',
+                                    style: TextStyle(
+                                      color: Colors.green.shade900,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  Text(
+                                    'S/ ${ahorro.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      color: Colors.green.shade700,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              color: Colors.green.shade700,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Precio regular',
+                              style: TextStyle(
+                                color: Colors.green.shade700,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
-                if (tieneDescuento) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    'Antes S/ ${precioOriginal.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      decoration: TextDecoration.lineThrough,
-                      color: Colors.grey,
-                      fontSize: 15,
-                    ),
-                  ),
-                ],
-              ],
-            ),
+              ),
+            ],
           ),
-          if (tieneDescuento && ahorro > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.green.shade700,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Ahorra',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                    ),
-                  ),
-                  Text(
-                    'S/ ${ahorro.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
     );
   }
 
-  Widget _buildSellerSection(ProductoModel producto) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          const CircleAvatar(
-            backgroundColor: Color(0xffE3F2FD),
-            child: Icon(Icons.store, color: Colors.blue),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Vendido y despachado por',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 12,
-                  ),
-                ),
-                Text(
-                  producto.proveedorNombre ?? 'Sánchez Pharma',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: Icon(
-              _esFavorito ? Icons.favorite : Icons.favorite_border,
-              color: _esFavorito ? Colors.red : Colors.grey.shade600,
-            ),
-            onPressed: _toggleFavorito,
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildDetailSection(ProductoModel producto) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Detalle del producto',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            producto.descripcion ??
-                'Producto farmacéutico de alta calidad para tu bienestar.',
-            style: TextStyle(
-              color: Colors.grey.shade700,
-              height: 1.4,
-            ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildDeliverySection() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Métodos de entrega',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 12),
           Row(
             children: [
-              _buildMetodoEntregaCard(
-                value: 'domicilio',
-                titulo: 'Despacho a domicilio',
-                descripcion: 'Llega a tu dirección',
-                disponible: true,
-                icono: Icons.local_shipping,
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.info_outline,
+                  color: Colors.blue.shade700,
+                  size: 24,
+                ),
               ),
               const SizedBox(width: 12),
-              _buildMetodoEntregaCard(
-                value: 'botica',
-                titulo: 'Retiro en botica',
-                descripcion: 'Gratis en tienda',
-                disponible: true,
-                icono: Icons.storefront,
+              const Text(
+                'Detalle del producto',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.grey.shade200,
+                width: 1,
+              ),
+            ),
+            child: Text(
+              producto.descripcion ??
+                  'Producto farmacéutico de alta calidad para tu bienestar. Certificado y aprobado por las autoridades sanitarias correspondientes.',
+              style: TextStyle(
+                color: Colors.grey.shade800,
+                height: 1.6,
+                fontSize: 15,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Información adicional del producto
+          Row(
+            children: [
+              Expanded(
+                child: _buildInfoChip(
+                  Icons.inventory_2,
+                  'Stock',
+                  '${producto.stockActual} disponibles',
+                  Colors.blue.shade700,
+                  Colors.blue.shade50,
+                  Colors.blue.shade200,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildInfoChip(
+                  Icons.straighten,
+                  'Unidad',
+                  producto.unidadMedida.toUpperCase(),
+                  Colors.green.shade700,
+                  Colors.green.shade50,
+                  Colors.green.shade200,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoChip(IconData icon, String label, String value, Color color, Color backgroundColor, Color borderColor) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: borderColor,
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                icon,
+                color: color,
+                size: 18,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
           Text(
-            _metodoEntregaSeleccionado == 'domicilio'
-                ? 'Recibirás una notificación cuando tu pedido salga a reparto.'
-                : 'Te avisaremos cuando esté listo para recoger en la botica.',
-            style: TextStyle(
-              color: Colors.grey.shade600,
-              fontSize: 13,
+            value,
+            style: const TextStyle(
+              color: Colors.black87,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
             ),
           ),
         ],
@@ -816,67 +955,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
-  Widget _buildMetodoEntregaCard({
-    required String value,
-    required String titulo,
-    required String descripcion,
-    required bool disponible,
-    required IconData icono,
-  }) {
-    final isSelected = _metodoEntregaSeleccionado == value;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() => _metodoEntregaSeleccionado = value);
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: isSelected ? Colors.green.shade50 : Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isSelected ? Colors.green.shade600 : Colors.grey.shade300,
-              width: isSelected ? 2 : 1,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                icono,
-                color: isSelected ? Colors.green.shade700 : Colors.grey.shade600,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                titulo,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                descripcion,
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                disponible ? 'Disponible' : 'Consultar',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: disponible ? Colors.green : Colors.orange,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _buildSugerenciasSection({
     required String titulo,
@@ -1070,55 +1148,25 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            _metodoEntregaSeleccionado == 'domicilio'
-                ? 'Despacho a domicilio'
-                : 'Retiro en botica',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
+          ElevatedButton(
+            onPressed: producto.stockActual > 0
+                ? () => _agregarAlCarrito(producto)
+                : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade700,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: IconButton(
-                  icon: Icon(
-                    _esFavorito ? Icons.favorite : Icons.favorite_border,
-                    color: _esFavorito ? Colors.red : Colors.grey.shade600,
-                  ),
-                  onPressed: _toggleFavorito,
-                ),
+            child: const Text(
+              'Agregar al carrito',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: producto.stockActual > 0
-                      ? () => _agregarAlCarrito(producto)
-                      : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade700,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    'Agregar al carrito',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ],
       ),

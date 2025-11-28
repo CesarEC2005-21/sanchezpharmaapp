@@ -204,6 +204,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                   icon: Icons.phone,
                   keyboardType: TextInputType.phone,
                   maxLength: 9,
+                  inputFormatters: [Validators.telefonoFormatter],
                   validator: Validators.validateTelefonoOpcional,
                 ),
                 ModalSectionBuilder.buildTextField(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/constants/app_colors.dart';
 
 /// Widget base para modales consistentes en toda la aplicación
@@ -177,6 +178,7 @@ class ModalSectionBuilder {
     TextInputType? keyboardType,
     String? Function(String?)? validator,
     bool required = false,
+    List<TextInputFormatter>? inputFormatters,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -210,6 +212,7 @@ class ModalSectionBuilder {
         maxLength: maxLength,
         keyboardType: keyboardType,
         validator: validator,
+        inputFormatters: inputFormatters,
       ),
     );
   }
