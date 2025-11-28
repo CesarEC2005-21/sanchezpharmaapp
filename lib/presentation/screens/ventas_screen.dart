@@ -9,6 +9,7 @@ import '../../data/models/metodo_pago_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/utils/validators.dart';
 import 'clientes_screen.dart';
+import 'escanner_qr_screen.dart';
 
 class VentasScreen extends StatefulWidget {
   const VentasScreen({super.key});
@@ -121,10 +122,45 @@ class _VentasScreenState extends State<VentasScreen> {
                         child: Text('${detalle.productoNombre ?? "N/A"} x${detalle.cantidad} - \$${detalle.subtotal.toStringAsFixed(2)}'),
                       )),
                       const Divider(),
-                      Text('Subtotal: \$${ventaCompleta.subtotal.toStringAsFixed(2)}'),
+                      Text('Subtotal (sin IGV): \$${ventaCompleta.subtotal.toStringAsFixed(2)}'),
+                      if (ventaCompleta.impuesto > 0)
+                        Text('IGV (18%): \$${ventaCompleta.impuesto.toStringAsFixed(2)}'),
                       if (ventaCompleta.descuento > 0)
                         Text('Descuento: \$${ventaCompleta.descuento.toStringAsFixed(2)}'),
-                      Text('Total: \$${ventaCompleta.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text('Total (IGV incluido): \$${ventaCompleta.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      // Botón para escanear QR si es recojo en tienda y está pendiente
+                      if (ventaCompleta.tipoVenta == 'recojo_tienda' && ventaCompleta.estado == 'pendiente') ...[
+                        const Divider(),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              Navigator.of(context).pop(); // Cerrar diálogo
+                              final resultado = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const EscannerQrScreen(
+                                    titulo: 'Escanear QR de Recojo',
+                                    mensajeAyuda: 'Escanea el código QR del pedido para marcarlo como entregado',
+                                  ),
+                                ),
+                              );
+                              if (resultado == true) {
+                                // Recargar ventas después de escanear exitosamente
+                                _cargarVentas();
+                              }
+                            },
+                            icon: const Icon(Icons.qr_code_scanner),
+                            label: const Text('Escanear QR para Entregar'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orange.shade700,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -418,12 +454,27 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     }
   }
 
-  double get _subtotal {
+  // Subtotal con IGV incluido (lo que el usuario ve en los precios)
+  double get _subtotalConIGV {
     return _carrito.fold(0.0, (sum, item) => sum + (item['precio'] * item['cantidad']));
   }
 
+  // Subtotal sin IGV (para cálculos internos)
+  double get _subtotal {
+    // El subtotal con IGV ya incluye el 18%, así que calculamos el subtotal sin IGV
+    final totalConIGV = _subtotalConIGV;
+    return totalConIGV / 1.18;
+  }
+
+  // IGV (18%)
+  double get _impuesto {
+    final totalConIGV = _subtotalConIGV;
+    return totalConIGV * 0.18 / 1.18;
+  }
+
+  // Total con IGV incluido
   double get _total {
-    return _subtotal - _descuento;
+    return _subtotalConIGV - _descuento;
   }
 
   void _agregarAlCarrito(ProductoModel producto) {
@@ -679,8 +730,15 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Subtotal:', style: TextStyle(fontWeight: FontWeight.bold)),
+                            const Text('Subtotal (sin IGV):', style: TextStyle(fontWeight: FontWeight.bold)),
                             Text('\$${_subtotal.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('IGV (18%):'),
+                            Text('\$${_impuesto.toStringAsFixed(2)}'),
                           ],
                         ),
                         if (_descuento > 0) ...[
@@ -695,7 +753,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('TOTAL:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            const Text('TOTAL (IGV incluido):', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                             Text(
                               '\$${_total.toStringAsFixed(2)}',
                               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green),
@@ -986,4 +1044,5 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     );
   }
 }
+
 

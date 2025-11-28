@@ -7,6 +7,7 @@ import '../../data/models/usuario_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/constants/role_constants.dart';
 import 'seguimiento_envio_screen.dart';
+import 'escanner_qr_screen.dart';
 
 class EnviosScreen extends StatefulWidget {
   const EnviosScreen({super.key});
@@ -812,6 +813,38 @@ class _EnviosScreenState extends State<EnviosScreen> {
                                             return const SizedBox.shrink(); // No mostrar nada si no cumple condiciones
                                           },
                                         ),
+                                        // Botón para escanear QR cuando está en camino
+                                        if (envio.estado == 'en_camino')
+                                          Padding(
+                                            padding: const EdgeInsets.only(bottom: 8),
+                                            child: SizedBox(
+                                              width: double.infinity,
+                                              child: ElevatedButton.icon(
+                                                onPressed: () async {
+                                                  final resultado = await Navigator.push(
+                                                    context,
+                                                    MaterialPageRoute(
+                                                      builder: (context) => const EscannerQrScreen(
+                                                        titulo: 'Escanear QR de Entrega',
+                                                        mensajeAyuda: 'Escanea el código QR del pedido para marcarlo como entregado',
+                                                      ),
+                                                    ),
+                                                  );
+                                                  if (resultado == true) {
+                                                    // Recargar envíos después de escanear exitosamente
+                                                    _cargarEnvios();
+                                                  }
+                                                },
+                                                icon: const Icon(Icons.qr_code_scanner),
+                                                label: const Text('Escanear QR para Entregar'),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.orange.shade700,
+                                                  foregroundColor: Colors.white,
+                                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
                                         Row(
                                           children: [
                                             if (envio.estado == 'en_camino' || envio.estado == 'preparando')

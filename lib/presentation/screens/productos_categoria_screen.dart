@@ -235,7 +235,7 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
       carrito.add({
         'id': producto.id,
         'nombre': producto.nombre,
-        'precio': producto.precioVenta,
+        'precio': producto.precioConDescuento, // Usar precio con descuento si aplica
         'cantidad': 1,
         'stock': producto.stockActual,
       });
@@ -599,6 +599,38 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
     );
   }
 
+  Widget _buildProductoImagen(ProductoModel producto) {
+    final imagenes = producto.todasLasImagenes;
+    if (imagenes.isNotEmpty) {
+      return Image.network(
+        imagenes[0],
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Icon(
+            Icons.medication,
+            size: 50,
+            color: Colors.green.shade700,
+          );
+        },
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
+          );
+        },
+      );
+    }
+    return Icon(
+      Icons.medication,
+      size: 50,
+      color: Colors.green.shade700,
+    );
+  }
+
   Widget _buildProductoCard(ProductoModel producto) {
     final stockBajo = producto.stockActual <= producto.stockMinimo;
 
@@ -662,11 +694,7 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Icon(
-                      Icons.medication,
-                      size: 50,
-                      color: Colors.green.shade700,
-                    ),
+                    child: _buildProductoImagen(producto),
                   ),
                 ),
                 const SizedBox(width: 12),

@@ -9,6 +9,7 @@ import '../widgets/cliente_bottom_nav.dart';
 import 'seguimiento_envio_screen.dart';
 import 'mapa_recojo_screen.dart';
 import 'login_screen.dart';
+import 'qr_pedido_screen.dart';
 
 class PedidosClienteScreen extends StatefulWidget {
   const PedidosClienteScreen({super.key});
@@ -516,6 +517,36 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
                                         ],
                                       ),
                                     ],
+                                    // Botón para ver código QR (solo si el pedido no está completado)
+                                    if (estadoMostrar != 'completada' && estadoMostrar != 'completado')
+                                      ...[
+                                        const SizedBox(height: 12),
+                                        Divider(height: 1, color: Colors.grey.shade300),
+                                        const SizedBox(height: 8),
+                                        SizedBox(
+                                          width: double.infinity,
+                                          child: OutlinedButton.icon(
+                                            onPressed: () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (context) => QrPedidoScreen(
+                                                    ventaId: pedido.id!,
+                                                    numeroVenta: pedido.numeroVenta,
+                                                    tipoVenta: pedido.tipoVenta,
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                            icon: const Icon(Icons.qr_code),
+                                            label: const Text('Ver Código QR'),
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: Colors.green.shade700,
+                                              side: BorderSide(color: Colors.green.shade700),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                   ],
                                 ),
                               ),

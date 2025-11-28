@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/error_message_helper.dart';
 import '../../core/constants/api_constants.dart';
 import '../../main.dart';
 import '../../presentation/screens/login_screen.dart';
@@ -132,95 +133,78 @@ class DioClient {
               // Solo limpiar si el error es realmente de autenticación confirmada
               final errorData = error.response?.data;
               if (errorData is Map) {
-              final description = errorData['description']?.toString() ?? '';
-              final errorMsg = errorData['error']?.toString() ?? '';
-              final message = errorData['message']?.toString() ?? '';
-              
-              print('   Descripción del servidor: $description');
-              print('   Error del servidor: $errorMsg');
-              print('   Mensaje del servidor: $message');
-              
-              // Detectar errores específicos de formato de token
-              if (description.contains('Unsupported authorization type') || 
-                  errorMsg.contains('Invalid JWT header')) {
-                print('⚠️ Error de formato de header detectado');
-                print('   Flask-JWT no reconoce el formato del header Authorization');
-                print('   El token se mantiene - el problema es de formato, no de validez');
-              } else if (message.contains('Token inválido') || 
-                  message.contains('Invalid token') ||
-                  message.contains('Token expired') ||
-                  errorMsg.contains('Token expired') ||
-                  description.contains('expired') ||
-                  description.contains('Signature has expired') ||
-                  errorMsg.contains('expired') ||
-                  errorMsg.contains('Signature has expired')) {
-                print('🔒 Token confirmado como inválido o expirado, limpiando datos');
-                print('   El token ha expirado. Por favor, inicia sesión nuevamente.');
-                await SharedPrefsHelper.clearAuthData();
+                final description = errorData['description']?.toString() ?? '';
+                final errorMsg = errorData['error']?.toString() ?? '';
+                final message = errorData['message']?.toString() ?? '';
                 
-                // Redirigir al login si estamos en una pantalla autenticada
-                if (navigatorKey.currentContext != null) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    final context = navigatorKey.currentContext;
-                    if (context != null) {
-                      // Mostrar mensaje al usuario
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Tu sesión ha expirado. Por favor, inicia sesión nuevamente.'),
-                          backgroundColor: Colors.orange,
-                          duration: Duration(seconds: 3),
-                        ),
-                      );
-                      
-                      // Redirigir al login
-                      Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(
-                          builder: (context) => const LoginScreen(),
-                        ),
-                        (route) => false,
-                      );
-                    }
-                  });
-                }
-              } else if (message.contains('no autenticado') || 
-                         message.contains('Usuario no autenticado') ||
-                         message.contains('No autenticado')) {
-                // El servidor confirma que el usuario no está autenticado
-                print('🔒 Usuario no autenticado confirmado por el servidor, limpiando datos');
-                print('   El token no es válido o ha expirado. Por favor, inicia sesión nuevamente.');
-                await SharedPrefsHelper.clearAuthData();
+                print('   Descripción del servidor: $description');
+                print('   Error del servidor: $errorMsg');
+                print('   Mensaje del servidor: $message');
                 
-                // Redirigir al login si estamos en una pantalla autenticada
-                if (navigatorKey.currentContext != null) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    final context = navigatorKey.currentContext;
-                    if (context != null) {
-                      // Mostrar mensaje al usuario
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Tu sesión ha expirado. Por favor, inicia sesión nuevamente.'),
-                          backgroundColor: Colors.orange,
-                          duration: Duration(seconds: 3),
-                        ),
-                      );
-                      
-                      // Redirigir al login
-                      Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(
-                          builder: (context) => const LoginScreen(),
-                        ),
-                        (route) => false,
-                      );
-                    }
-                  });
+                // Detectar errores específicos de formato de token
+                if (description.contains('Unsupported authorization type') || 
+                    errorMsg.contains('Invalid JWT header')) {
+                  print('⚠️ Error de formato de header detectado');
+                  print('   Flask-JWT no reconoce el formato del header Authorization');
+                  print('   El token se mantiene - el problema es de formato, no de validez');
+                } else {
+                  // Cualquier error 401 en endpoint protegido significa que la sesión no es válida
+                  // Puede ser: token expirado, cliente desactivado, token inválido, etc.
+                  print('🔒 Error 401 confirmado - Sesión no válida, limpiando datos');
+                  await SharedPrefsHelper.clearAuthData();
+                  
+                  // Redirigir al login si estamos en una pantalla autenticada
+                  if (navigatorKey.currentContext != null) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      final context = navigatorKey.currentContext;
+                      if (context != null) {
+                        // Mostrar diálogo amigable con el mensaje apropiado
+                        ErrorMessageHelper.showAuthErrorDialog(
+                          context,
+                          description: description,
+                          errorMsg: errorMsg,
+                          message: message,
+                          onConfirm: () {
+                            // Redirigir al login después de cerrar el diálogo
+                            Navigator.of(context).pushAndRemoveUntil(
+                              MaterialPageRoute(
+                                builder: (context) => const LoginScreen(),
+                              ),
+                              (route) => false,
+                            );
+                          },
+                        );
+                      }
+                    });
+                  }
                 }
               } else {
-                print('⚠️ Error 401 pero el servidor no confirma token inválido específicamente');
-                print('   El token se mantiene en el cliente para reintentar');
-              }
-              } else {
+                // Error 401 sin datos estructurados - tratar como sesión expirada
                 print('⚠️ Error 401 sin mensaje específico del servidor');
-                print('   Probable problema de configuración del servidor');
+                print('   Tratando como sesión expirada');
+                await SharedPrefsHelper.clearAuthData();
+                
+                // Redirigir al login si estamos en una pantalla autenticada
+                if (navigatorKey.currentContext != null) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    final context = navigatorKey.currentContext;
+                    if (context != null) {
+                      // Mostrar diálogo amigable
+                      ErrorMessageHelper.showAuthErrorDialog(
+                        context,
+                        onConfirm: () {
+                          // Redirigir al login después de cerrar el diálogo
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(
+                              builder: (context) => const LoginScreen(),
+                            ),
+                            (route) => false,
+                          );
+                        },
+                      );
+                    }
+                  });
+                }
               }
             }
           }

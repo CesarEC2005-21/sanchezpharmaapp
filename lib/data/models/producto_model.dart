@@ -19,6 +19,8 @@ class ProductoModel {
   final double precioCompra;
   @JsonKey(name: 'precio_venta', fromJson: _precioFromJson)
   final double precioVenta;
+  @JsonKey(name: 'descuento_porcentaje', fromJson: _precioFromJson)
+  final double descuentoPorcentaje;
   @JsonKey(name: 'stock_actual', fromJson: _stockFromJson)
   final int stockActual;
   @JsonKey(name: 'stock_minimo', fromJson: _stockFromJson)
@@ -37,6 +39,10 @@ class ProductoModel {
   @JsonKey(name: 'dias_restantes')
   final int? diasRestantes;
   final int? faltante;
+  @JsonKey(name: 'imagen_url')
+  final String? imagenUrl;
+  @JsonKey(name: 'imagenes')
+  final List<String>? imagenes;
 
   ProductoModel({
     this.id,
@@ -48,6 +54,7 @@ class ProductoModel {
     this.proveedorId,
     required this.precioCompra,
     required this.precioVenta,
+    this.descuentoPorcentaje = 0.0,
     required this.stockActual,
     required this.stockMinimo,
     this.unidadMedida = 'unidad',
@@ -58,6 +65,8 @@ class ProductoModel {
     this.estadoAlerta,
     this.diasRestantes,
     this.faltante,
+    this.imagenUrl,
+    this.imagenes,
   });
 
   factory ProductoModel.fromJson(Map<String, dynamic> json) =>
@@ -89,11 +98,14 @@ class ProductoModel {
     int? proveedorId,
     double? precioCompra,
     double? precioVenta,
+    double? descuentoPorcentaje,
     int? stockActual,
     int? stockMinimo,
     String? unidadMedida,
     DateTime? fechaVencimiento,
     String? estado,
+    String? imagenUrl,
+    List<String>? imagenes,
   }) {
     return ProductoModel(
       id: id ?? this.id,
@@ -105,12 +117,39 @@ class ProductoModel {
       proveedorId: proveedorId ?? this.proveedorId,
       precioCompra: precioCompra ?? this.precioCompra,
       precioVenta: precioVenta ?? this.precioVenta,
+      descuentoPorcentaje: descuentoPorcentaje ?? this.descuentoPorcentaje,
       stockActual: stockActual ?? this.stockActual,
       stockMinimo: stockMinimo ?? this.stockMinimo,
       unidadMedida: unidadMedida ?? this.unidadMedida,
       fechaVencimiento: fechaVencimiento ?? this.fechaVencimiento,
       estado: estado ?? this.estado,
+      imagenUrl: imagenUrl ?? this.imagenUrl,
+      imagenes: imagenes ?? this.imagenes,
     );
+  }
+  
+  // Método helper para obtener todas las imágenes disponibles
+  List<String> get todasLasImagenes {
+    List<String> lista = [];
+    if (imagenes != null && imagenes!.isNotEmpty) {
+      lista.addAll(imagenes!);
+    } else if (imagenUrl != null && imagenUrl!.isNotEmpty) {
+      lista.add(imagenUrl!);
+    }
+    return lista;
+  }
+  
+  // Método helper para obtener el precio con descuento aplicado
+  double get precioConDescuento {
+    if (descuentoPorcentaje > 0) {
+      return precioVenta * (1 - descuentoPorcentaje / 100);
+    }
+    return precioVenta;
+  }
+  
+  // Método helper para verificar si tiene descuento
+  bool get tieneDescuento {
+    return descuentoPorcentaje > 0;
   }
 }
 

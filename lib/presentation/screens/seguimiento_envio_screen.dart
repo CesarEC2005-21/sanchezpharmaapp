@@ -8,6 +8,7 @@ import '../../data/models/envio_model.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../data/services/directions_service.dart';
 import '../widgets/cliente_bottom_nav.dart';
 
 class SeguimientoEnvioScreen extends StatefulWidget {
@@ -33,6 +34,13 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
   bool _esRepartidor = false;
   String? _username;
   final ApiService _apiService = ApiService(DioClient.createDio());
+  
+  // Marcador personalizado para el repartidor
+  BitmapDescriptor? _repartidorIcon;
+  
+  // Información de la ruta
+  String? _routeDistance;
+  String? _routeDuration;
 
   // Timer para actualizar ubicación en tiempo real
   Timer? _locationUpdateTimer;
@@ -40,9 +48,30 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
   @override
   void initState() {
     super.initState();
+    _createRepartidorIcon();
     _verificarUsuario();
     _initializeMap();
     _startLocationUpdates();
+  }
+  
+  /// Crea un ícono personalizado para el repartidor (vehículo)
+  Future<void> _createRepartidorIcon() async {
+    // Crear un marcador personalizado con color azul para el repartidor
+    try {
+      // Intentar crear un marcador personalizado con un círculo azul
+      _repartidorIcon = await _createCustomMarkerIcon();
+    } catch (e) {
+      print('Error al crear ícono personalizado: $e');
+      // Usar marcador por defecto con color azul
+      _repartidorIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
+    }
+  }
+  
+  /// Crea un marcador personalizado para el repartidor
+  Future<BitmapDescriptor> _createCustomMarkerIcon() async {
+    // Por ahora, usar un marcador azul para el repartidor
+    // En el futuro se puede crear un ícono de vehículo personalizado
+    return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
   }
 
   Future<void> _verificarUsuario() async {
@@ -139,7 +168,7 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
       // Actualizar marcadores y ruta INMEDIATAMENTE
       if (_repartidorPosition != null) {
         await _updateMarkers();
-        _updateRoute(); // Dibujar la ruta automáticamente
+        await _updateRoute(); // Dibujar la ruta automáticamente
       } else if (_destinoPosition != null) {
         await _updateMarkers(); // Al menos mostrar el destino
       }
@@ -232,16 +261,32 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
   Future<void> _updateMarkers() async {
     _markers.clear();
 
-    // NO MOSTRAR marcador del repartidor - usar solo myLocation (punto azul GPS)
-    // La ubicación del repartidor se muestra con el punto azul nativo de Google Maps
-    print('📍 Repartidor: usando ubicación GPS real (punto azul del mapa)');
+    // Mostrar marcador del REPARTIDOR con ícono personalizado
     if (_repartidorPosition != null) {
-      print('   Posición GPS: ${_repartidorPosition!.latitude}, ${_repartidorPosition!.longitude}');
+      print('📍 Repartidor: ${_repartidorPosition!.latitude}, ${_repartidorPosition!.longitude}');
+      
+      _markers.add(
+        Marker(
+          markerId: const MarkerId('repartidor'),
+          position: LatLng(
+            _repartidorPosition!.latitude,
+            _repartidorPosition!.longitude,
+          ),
+          icon: _repartidorIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          infoWindow: InfoWindow(
+            title: '🚚 Repartidor',
+            snippet: widget.envio.conductorRepartidor ?? 'En camino',
+          ),
+          // Rotar el marcador según la dirección del movimiento (si está disponible)
+          rotation: _repartidorPosition!.heading,
+          anchor: const Offset(0.5, 0.5),
+        ),
+      );
     }
 
-    // SOLO mostrar marcador del DESTINO (rojo) - donde debe llegar el repartidor
+    // Mostrar marcador del DESTINO (rojo)
     if (_destinoPosition != null) {
-      print('📍 Actualizando marcador del destino en: ${_destinoPosition!.latitude}, ${_destinoPosition!.longitude}');
+      print('📍 Destino: ${_destinoPosition!.latitude}, ${_destinoPosition!.longitude}');
       
       _markers.add(
         Marker(
@@ -259,36 +304,114 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
       );
     }
     
-    print('✅ Total de marcadores: ${_markers.length} (solo destino)');
+    print('✅ Total de marcadores: ${_markers.length}');
     
     if (mounted) {
       setState(() {});
     }
   }
 
-  void _updateRoute() {
+  /// Actualiza la ruta usando Google Directions API para mostrar las calles reales
+  Future<void> _updateRoute() async {
     _polylines.clear();
     
-    // Dibujar ruta desde la ubicación GPS real (punto azul) hasta el destino (punto rojo)
     if (_repartidorPosition != null && _destinoPosition != null) {
-      print('✅ Dibujando ruta desde ubicación GPS real hasta destino');
-      print('   Tu ubicación GPS: (${_repartidorPosition!.latitude}, ${_repartidorPosition!.longitude})');
+      print('🗺️ Obteniendo ruta real por las calles...');
+      print('   Repartidor: (${_repartidorPosition!.latitude}, ${_repartidorPosition!.longitude})');
       print('   Destino: (${_destinoPosition!.latitude}, ${_destinoPosition!.longitude})');
       
-      _polylines.add(
-        Polyline(
-          polylineId: const PolylineId('ruta_gps_a_destino'),
-          points: [
-            LatLng(_repartidorPosition!.latitude, _repartidorPosition!.longitude),
-            LatLng(_destinoPosition!.latitude, _destinoPosition!.longitude),
-          ],
-          color: Colors.green,
-          width: 6,
-          patterns: [PatternItem.dash(20), PatternItem.gap(10)],
-        ),
-      );
+      try {
+        // Obtener la ruta real usando Google Directions API
+        final routePoints = await DirectionsService.getRoute(
+          originLat: _repartidorPosition!.latitude,
+          originLng: _repartidorPosition!.longitude,
+          destLat: _destinoPosition!.latitude,
+          destLng: _destinoPosition!.longitude,
+        );
+        
+        // Obtener información adicional de la ruta
+        final routeInfo = await DirectionsService.getRouteInfo(
+          originLat: _repartidorPosition!.latitude,
+          originLng: _repartidorPosition!.longitude,
+          destLat: _destinoPosition!.latitude,
+          destLng: _destinoPosition!.longitude,
+        );
+        
+        if (routeInfo != null) {
+          _routeDistance = routeInfo['distance'];
+          _routeDuration = routeInfo['duration'];
+        }
+        
+        if (routePoints.isEmpty) {
+          print('❌ ERROR: No se obtuvieron puntos de ruta.');
+          print('   La Directions API no está funcionando correctamente.');
+          print('   Por favor, verifica:');
+          print('   1. Que la API key tenga habilitada la Directions API en Google Cloud Console');
+          print('   2. Que la API key tenga los permisos necesarios');
+          print('   3. Que no se haya excedido la cuota de la API');
+          
+          // Mostrar mensaje al usuario
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('⚠️ No se pudo obtener la ruta. Verifica la configuración de la API.'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 5),
+              ),
+            );
+          }
+        } else if (routePoints.length < 10) {
+          print('⚠️ ADVERTENCIA: La ruta tiene solo ${routePoints.length} puntos.');
+          print('   Esto puede indicar que la Directions API no está funcionando correctamente.');
+          print('   Verifica que la API key tenga habilitada la Directions API en Google Cloud Console.');
+          
+          // Aún así dibujar la ruta, pero con advertencia
+          _polylines.add(
+            Polyline(
+              polylineId: const PolylineId('ruta_real'),
+              points: routePoints,
+              color: Colors.orange,
+              width: 5,
+              jointType: JointType.round,
+              endCap: Cap.roundCap,
+              startCap: Cap.roundCap,
+            ),
+          );
+          
+          print('⚠️ Ruta dibujada con solo ${routePoints.length} puntos (puede verse como línea recta)');
+        } else {
+          // Ruta con suficientes puntos - dibujar normalmente
+          _polylines.add(
+            Polyline(
+              polylineId: const PolylineId('ruta_real'),
+              points: routePoints,
+              color: Colors.blue,
+              width: 5,
+              jointType: JointType.round,
+              endCap: Cap.roundCap,
+              startCap: Cap.roundCap,
+            ),
+          );
+          
+          print('✅ Ruta dibujada correctamente con ${routePoints.length} puntos');
+        }
+      } catch (e, stackTrace) {
+        print('❌ Error al obtener ruta: $e');
+        print('   Stack trace: $stackTrace');
+        
+        // NO dibujar línea recta como fallback - mejor mostrar error
+        // para que el usuario sepa que hay un problema
+        print('   ⚠️ No se pudo obtener la ruta por las calles. Verifica:');
+        print('      1. Que la API key tenga habilitada la Directions API');
+        print('      2. Que haya conexión a internet');
+        print('      3. Revisa los logs para más detalles');
+      }
+      
+      if (mounted) {
+        setState(() {});
+      }
     } else {
-      print('⚠️ Esperando ubicación GPS o destino para dibujar ruta');
+      print('⚠️ Esperando ubicación del repartidor o destino para dibujar ruta');
     }
   }
 
@@ -342,8 +465,8 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
     print('   ID del envío: ${widget.envio.id}');
     print('   Es repartidor: $_esRepartidor');
     
-    // Actualizar ubicación cada 10 segundos si el envío está en camino
-    _locationUpdateTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+    // Actualizar ubicación cada 3 segundos si el envío está en camino (tiempo real)
+    _locationUpdateTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
       // Verificar que el widget todavía esté montado
       if (!mounted) {
         print('❌ Widget no montado, cancelando timer');
@@ -377,7 +500,7 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
               }
               
               await _updateMarkers();
-              _updateRoute();
+              await _updateRoute();
               
               if (_mapController != null) {
                 _mapController!.animateCamera(
@@ -420,7 +543,7 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
                       });
                       
                       await _updateMarkers();
-                      _updateRoute();
+                      await _updateRoute();
                       
                       // Mover cámara para mostrar ambas ubicaciones
                       if (_mapController != null && mounted) {
@@ -524,8 +647,8 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
                           ),
                           markers: _markers,
                           polylines: _polylines,
-                          myLocationEnabled: true,
-                          myLocationButtonEnabled: true,
+                          myLocationEnabled: false, // Desactivar porque usamos marcador personalizado
+                          myLocationButtonEnabled: false,
                           mapType: MapType.normal,
                           onCameraMoveStarted: () {
                             // Evitar errores durante el movimiento de la cámara
@@ -615,13 +738,45 @@ class _SeguimientoEnvioScreenState extends State<SeguimientoEnvioScreen> {
                             if (_repartidorPosition != null && _destinoPosition != null)
                               Padding(
                                 padding: const EdgeInsets.only(top: 8),
-                                child: Text(
-                                  'Distancia aproximada: ${_calculateDistance().toStringAsFixed(2)} km',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.green.shade700,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (_routeDistance != null && _routeDuration != null)
+                                      Row(
+                                        children: [
+                                          Icon(Icons.route, size: 16, color: Colors.blue.shade700),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'Ruta: $_routeDistance',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                              color: Colors.blue.shade700,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Icon(Icons.access_time, size: 16, color: Colors.blue.shade700),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'Tiempo: $_routeDuration',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                              color: Colors.blue.shade700,
+                                            ),
+                                          ),
+                                        ],
+                                      )
+                                    else
+                                      Text(
+                                        'Distancia aproximada: ${_calculateDistance().toStringAsFixed(2)} km',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.green.shade700,
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
                           ],

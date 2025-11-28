@@ -38,6 +38,17 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            pickFirsts += "**/libc++_shared.so"
+            pickFirsts += "**/libfbjni.so"
+            // Fix for mobile_scanner ML Kit assets duplication
+            pickFirsts += "**/barcode_ssd_mobilenet_v1_dmp25_quant.tflite"
+            pickFirsts += "assets/mlkit_barcode_models/**"
+        }
+    }
 }
 
 flutter {

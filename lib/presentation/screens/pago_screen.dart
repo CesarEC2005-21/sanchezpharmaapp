@@ -79,7 +79,8 @@ class _PagoScreenState extends State<PagoScreen> {
     }
   }
 
-  double get _subtotal {
+  // Subtotal con IGV incluido (lo que el usuario ve en los precios)
+  double get _subtotalConIGV {
     return widget.carrito.fold(0.0, (sum, item) {
       final precio = (item['precio'] as num).toDouble();
       final cantidad = (item['cantidad'] as int);
@@ -87,12 +88,26 @@ class _PagoScreenState extends State<PagoScreen> {
     });
   }
 
+  // Subtotal sin IGV (para cálculos internos)
+  double get _subtotal {
+    // El subtotal con IGV ya incluye el 18%, así que calculamos el subtotal sin IGV
+    final totalConIGV = _subtotalConIGV;
+    return totalConIGV / 1.18;
+  }
+
+  // IGV (18%)
+  double get _impuesto {
+    final totalConIGV = _subtotalConIGV;
+    return totalConIGV * 0.18 / 1.18;
+  }
+
   double get _costoEnvio {
     return _tipoEntrega == 'envio_domicilio' ? 10.0 : 0.0;
   }
 
+  // Total con IGV incluido
   double get _total {
-    return _subtotal + _costoEnvio;
+    return _subtotalConIGV + _costoEnvio;
   }
 
   Future<void> _procesarPago() async {
@@ -142,7 +157,7 @@ class _PagoScreenState extends State<PagoScreen> {
         'cliente_id': _clienteId,
         'tipo_venta': _tipoEntrega,
         'metodo_pago_id': _metodoPagoId,
-        'subtotal': _subtotal,
+        'subtotal': _subtotalConIGV, // Enviar el subtotal con IGV incluido
         'descuento': 0.0,
         'productos': productos, // El backend espera 'productos' no 'detalle'
       };
@@ -264,8 +279,15 @@ class _PagoScreenState extends State<PagoScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Subtotal:'),
+                          const Text('Subtotal (sin IGV):'),
                           Text('S/ ${_subtotal.toStringAsFixed(2)}'),
+                        ],
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('IGV (18%):'),
+                          Text('S/ ${_impuesto.toStringAsFixed(2)}'),
                         ],
                       ),
                       if (_costoEnvio > 0)
@@ -281,7 +303,7 @@ class _PagoScreenState extends State<PagoScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
-                            'Total:',
+                            'Total (IGV incluido):',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,

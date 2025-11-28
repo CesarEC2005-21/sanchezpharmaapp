@@ -149,6 +149,12 @@ abstract class ApiService {
   @PUT('${ApiConstants.anularVenta}/{id}')
   Future<HttpResponse<dynamic>> anularVenta(@Path('id') int id);
 
+  @GET('${ApiConstants.codigoQrVenta}/{id}')
+  Future<HttpResponse<dynamic>> getCodigoQrVenta(@Path('id') int id);
+
+  @POST(ApiConstants.validarQrEntrega)
+  Future<HttpResponse<dynamic>> validarQrEntrega(@Body() Map<String, dynamic> datos);
+
   // ========== VENTAS - ENVÍOS ==========
   @GET(ApiConstants.envios)
   Future<HttpResponse<dynamic>> getEnvios(@Queries() Map<String, dynamic>? query);

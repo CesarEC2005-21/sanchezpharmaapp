@@ -356,7 +356,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
       carrito.add({
         'id': producto.id,
         'nombre': producto.nombre,
-        'precio': producto.precioVenta,
+        'precio': producto.precioConDescuento, // Usar precio con descuento si aplica
         'cantidad': 1,
         'stock': producto.stockActual,
       });
@@ -1175,6 +1175,38 @@ class _TiendaScreenState extends State<TiendaScreen> {
     );
   }
 
+  Widget _buildProductoImagen(ProductoModel producto) {
+    final imagenes = producto.todasLasImagenes;
+    if (imagenes.isNotEmpty) {
+      return Image.network(
+        imagenes[0],
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Icon(
+            Icons.medication,
+            size: 50,
+            color: Colors.green.shade700,
+          );
+        },
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
+          );
+        },
+      );
+    }
+    return Icon(
+      Icons.medication,
+      size: 50,
+      color: Colors.green.shade700,
+    );
+  }
+
   Widget _buildProductoCard(ProductoModel producto) {
     final stockBajo = producto.stockActual <= producto.stockMinimo;
 
@@ -1203,6 +1235,30 @@ class _TiendaScreenState extends State<TiendaScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+          // Banner de descuento
+          if (producto.tieneDescuento)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade100,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.local_offer, size: 16, color: Colors.red.shade900),
+                  const SizedBox(width: 6),
+                  Text(
+                    '¡${producto.descuentoPorcentaje.toStringAsFixed(0)}% DE DESCUENTO!',
+                    style: TextStyle(
+                      color: Colors.red.shade900,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // Banner de stock bajo
           if (stockBajo && producto.stockActual > 0)
             Container(
@@ -1210,7 +1266,9 @@ class _TiendaScreenState extends State<TiendaScreen> {
               padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
               decoration: BoxDecoration(
                 color: Colors.orange.shade100,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                borderRadius: BorderRadius.vertical(
+                  top: producto.tieneDescuento ? Radius.zero : const Radius.circular(12),
+                ),
               ),
               child: Text(
                 'Quedan ${producto.stockActual} en stock',
@@ -1238,11 +1296,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Icon(
-                      Icons.medication,
-                      size: 50,
-                      color: Colors.green.shade700,
-                    ),
+                    child: _buildProductoImagen(producto),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1308,26 +1362,66 @@ class _TiendaScreenState extends State<TiendaScreen> {
                       const SizedBox(height: 8),
                       
                       // Precio
-                      Row(
-                        children: [
-                          Text(
-                            'S/ ${producto.precioVenta.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green.shade700,
+                      if (producto.tieneDescuento) ...[
+                        Row(
+                          children: [
+                            Text(
+                              'S/ ${producto.precioConDescuento.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red.shade700,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Precio regular',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '-${producto.descuentoPorcentaje.toStringAsFixed(0)}%',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.red.shade900,
+                                ),
+                              ),
                             ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'S/ ${producto.precioVenta.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            decoration: TextDecoration.lineThrough,
+                            color: Colors.grey.shade600,
                           ),
-                        ],
-                      ),
+                        ),
+                      ] else ...[
+                        Row(
+                          children: [
+                            Text(
+                              'S/ ${producto.precioVenta.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green.shade700,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Precio regular',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),

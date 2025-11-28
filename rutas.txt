@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request, g, send_file
+from werkzeug.utils import secure_filename
 import pymysql.cursors
 from flask_jwt import JWT, jwt_required
 from flask_cors import CORS
@@ -155,6 +156,8 @@ app.debug = True
 app.config['SECRET_KEY'] = 'super-secret'
 # Configurar Flask-JWT para aceptar "Bearer" en lugar de "JWT"
 app.config['JWT_AUTH_HEADER_PREFIX'] = 'Bearer'
+# Configurar tamaño máximo de archivo (16MB)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 # ---------------------------------------------------
 # CONFIGURACIÓN FLASK-MAIL
@@ -423,6 +426,36 @@ def verificar_columnas_seguimiento_envios():
         logging.error(f"Error al verificar columnas de seguimiento: {repr(e)}")
 
 verificar_columnas_seguimiento_envios()
+
+# ---------------------------------------------------
+# VERIFICAR Y CREAR TABLA DE IMÁGENES DE PRODUCTOS
+# ---------------------------------------------------
+def crear_tabla_imagenes_productos():
+    """
+    Crea la tabla imagenes_productos si no existe para soportar múltiples imágenes por producto.
+    """
+    conn = obtenerconexion_sanchezpharma()
+    try:
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS imagenes_productos (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        producto_id INT NOT NULL,
+                        imagen_url VARCHAR(500) NOT NULL,
+                        orden INT DEFAULT 0,
+                        fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE,
+                        INDEX idx_producto (producto_id),
+                        INDEX idx_orden (producto_id, orden)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """)
+            conn.commit()
+            logging.info("Tabla imagenes_productos verificada/creada correctamente")
+    except Exception as e:
+        logging.error(f"Error al crear tabla imagenes_productos: {repr(e)}")
+
+crear_tabla_imagenes_productos()
 
 
 # ---------------------------------------------------
@@ -1284,7 +1317,20 @@ def productos_sanchezpharma():
                     LEFT JOIN proveedores pr ON p.proveedor_id = pr.id
                     ORDER BY p.nombre
                 """)
-                data = cursor.fetchall()
+                productos = cursor.fetchall()
+                
+                # Obtener imágenes para cada producto
+                data = []
+                for producto in productos:
+                    producto_id = producto['id']
+                    cursor.execute("""
+                        SELECT imagen_url FROM imagenes_productos 
+                        WHERE producto_id = %s 
+                        ORDER BY orden ASC
+                    """, (producto_id,))
+                    imagenes = cursor.fetchall()
+                    producto['imagenes'] = [img['imagen_url'] for img in imagenes] if imagenes else []
+                    data.append(producto)
 
         return jsonify({"code": 1, "data": data, "message": "Productos listados correctamente"})
 
@@ -1308,6 +1354,16 @@ def producto_sanchezpharma(producto_id):
                     WHERE p.id = %s
                 """, (producto_id,))
                 data = cursor.fetchone()
+                
+                # Obtener imágenes del producto
+                if data:
+                    cursor.execute("""
+                        SELECT imagen_url FROM imagenes_productos 
+                        WHERE producto_id = %s 
+                        ORDER BY orden ASC
+                    """, (producto_id,))
+                    imagenes = cursor.fetchall()
+                    data['imagenes'] = [img['imagen_url'] for img in imagenes] if imagenes else []
 
         if data:
             return jsonify({"code": 1, "data": data, "message": "Producto obtenido correctamente"})
@@ -1332,12 +1388,21 @@ def registrar_producto_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
+                # Verificar si existe la columna descuento_porcentaje, si no existe, crearla
+                try:
+                    cursor.execute("SHOW COLUMNS FROM productos LIKE 'descuento_porcentaje'")
+                    if not cursor.fetchone():
+                        cursor.execute("ALTER TABLE productos ADD COLUMN descuento_porcentaje DECIMAL(5,2) DEFAULT 0.00 AFTER precio_venta")
+                        logging.info("Columna descuento_porcentaje agregada a la tabla productos")
+                except Exception as e:
+                    logging.warning(f"No se pudo verificar/crear columna descuento_porcentaje: {e}")
+                
                 cursor.execute("""
                     INSERT INTO productos 
                     (codigo, codigo_barras, nombre, descripcion, categoria_id, proveedor_id,
-                     precio_compra, precio_venta, stock_actual, stock_minimo, unidad_medida,
-                     fecha_vencimiento, estado)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     precio_compra, precio_venta, descuento_porcentaje, stock_actual, stock_minimo, unidad_medida,
+                     fecha_vencimiento, estado, imagen_url)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     data.get("codigo"),
                     data.get("codigo_barras"),
@@ -1347,12 +1412,31 @@ def registrar_producto_sanchezpharma():
                     data.get("proveedor_id"),
                     data.get("precio_compra"),
                     data.get("precio_venta"),
+                    data.get("descuento_porcentaje", 0.0),
                     data.get("stock_actual"),
                     data.get("stock_minimo"),
                     data.get("unidad_medida", "unidad"),
                     data.get("fecha_vencimiento"),
-                    data.get("estado", "activo")
+                    data.get("estado", "activo"),
+                    data.get("imagen_url")
                 ))
+                producto_id = cursor.lastrowid
+                
+                # Si se proporcionan múltiples imágenes, guardarlas en la tabla imagenes_productos
+                imagenes = data.get("imagenes", [])
+                logging.info(f"📸 Registrando producto {producto_id}: recibidas {len(imagenes) if isinstance(imagenes, list) else 0} imágenes")
+                logging.info(f"   Datos recibidos - imagen_url: {data.get('imagen_url')}, imagenes: {imagenes}")
+                
+                if imagenes and isinstance(imagenes, list):
+                    for idx, imagen_url in enumerate(imagenes):
+                        if imagen_url and imagen_url.strip():
+                            logging.info(f"   Guardando imagen {idx + 1}: {imagen_url.strip()}")
+                            cursor.execute("""
+                                INSERT INTO imagenes_productos (producto_id, imagen_url, orden)
+                                VALUES (%s, %s, %s)
+                            """, (producto_id, imagen_url.strip(), idx))
+                else:
+                    logging.warning(f"   No se recibieron imágenes válidas. Tipo: {type(imagenes)}, Valor: {imagenes}")
             conn.commit()
 
         return jsonify({"code": 1, "message": "Producto registrado correctamente"})
@@ -1374,12 +1458,23 @@ def editar_producto_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
+                producto_id = data.get("id")
+                # Verificar si existe la columna descuento_porcentaje, si no existe, crearla
+                try:
+                    cursor.execute("SHOW COLUMNS FROM productos LIKE 'descuento_porcentaje'")
+                    if not cursor.fetchone():
+                        cursor.execute("ALTER TABLE productos ADD COLUMN descuento_porcentaje DECIMAL(5,2) DEFAULT 0.00 AFTER precio_venta")
+                        logging.info("Columna descuento_porcentaje agregada a la tabla productos")
+                except Exception as e:
+                    logging.warning(f"No se pudo verificar/crear columna descuento_porcentaje: {e}")
+                
                 cursor.execute("""
                     UPDATE productos 
                     SET codigo = %s, codigo_barras = %s, nombre = %s, descripcion = %s,
                         categoria_id = %s, proveedor_id = %s, precio_compra = %s,
-                        precio_venta = %s, stock_actual = %s, stock_minimo = %s,
-                        unidad_medida = %s, fecha_vencimiento = %s, estado = %s
+                        precio_venta = %s, descuento_porcentaje = %s, stock_actual = %s, stock_minimo = %s,
+                        unidad_medida = %s, fecha_vencimiento = %s, estado = %s,
+                        imagen_url = %s
                     WHERE id = %s
                 """, (
                     data.get("codigo"),
@@ -1390,13 +1485,35 @@ def editar_producto_sanchezpharma():
                     data.get("proveedor_id"),
                     data.get("precio_compra"),
                     data.get("precio_venta"),
+                    data.get("descuento_porcentaje", 0.0),
                     data.get("stock_actual"),
                     data.get("stock_minimo"),
                     data.get("unidad_medida", "unidad"),
                     data.get("fecha_vencimiento"),
                     data.get("estado", "activo"),
-                    data.get("id")
+                    data.get("imagen_url"),
+                    producto_id
                 ))
+                
+                # Si se proporcionan múltiples imágenes, actualizar la tabla imagenes_productos
+                imagenes = data.get("imagenes", [])
+                logging.info(f"📸 Editando producto {producto_id}: recibidas {len(imagenes) if isinstance(imagenes, list) else 0} imágenes")
+                logging.info(f"   Datos recibidos - imagen_url: {data.get('imagen_url')}, imagenes: {imagenes}")
+                
+                if imagenes is not None:
+                    # Eliminar imágenes existentes
+                    cursor.execute("DELETE FROM imagenes_productos WHERE producto_id = %s", (producto_id,))
+                    # Insertar nuevas imágenes
+                    if isinstance(imagenes, list) and len(imagenes) > 0:
+                        for idx, imagen_url in enumerate(imagenes):
+                            if imagen_url and imagen_url.strip():
+                                logging.info(f"   Guardando imagen {idx + 1}: {imagen_url.strip()}")
+                                cursor.execute("""
+                                    INSERT INTO imagenes_productos (producto_id, imagen_url, orden)
+                                    VALUES (%s, %s, %s)
+                                """, (producto_id, imagen_url.strip(), idx))
+                    else:
+                        logging.warning(f"   No se recibieron imágenes válidas. Tipo: {type(imagenes)}, Valor: {imagenes}")
             conn.commit()
 
         return jsonify({"code": 1, "message": "Producto actualizado correctamente"})
@@ -1413,6 +1530,7 @@ def eliminar_producto_sanchezpharma(producto_id):
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
+                # Las imágenes se eliminan automáticamente por CASCADE
                 cursor.execute("DELETE FROM productos WHERE id = %s", (producto_id,))
             conn.commit()
 
@@ -1420,6 +1538,167 @@ def eliminar_producto_sanchezpharma(producto_id):
 
     except Exception as e:
         return jsonify({"code": 0, "message": repr(e)})
+
+
+# ---------------------------------------------------
+# GESTIÓN DE IMÁGENES DE PRODUCTOS
+# ---------------------------------------------------
+
+# SUBIR IMÁGENES DE PRODUCTO
+@app.route('/subir_imagenes_producto_sanchezpharma', methods=['POST'])
+@jwt_required()
+def subir_imagenes_producto_sanchezpharma():
+    """
+    Endpoint para subir imágenes de productos.
+    Acepta múltiples archivos y retorna las URLs de las imágenes guardadas.
+    """
+    try:
+        # Verificar que se hayan enviado archivos
+        if 'imagenes' not in request.files:
+            return jsonify({"code": 0, "message": "No se recibieron archivos"}), 400
+        
+        archivos = request.files.getlist('imagenes')
+        
+        if not archivos or len(archivos) == 0:
+            return jsonify({"code": 0, "message": "No se recibieron archivos"}), 400
+        
+        # Crear directorio para imágenes si no existe
+        # En PythonAnywhere, los archivos estáticos se guardan en /home/usuario/mysite/static/
+        upload_dir = '/home/nxlsxx/mysite/static/uploads/productos'
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # Extensiones permitidas
+        ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+        
+        def allowed_file(filename):
+            return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+        
+        urls_subidas = []
+        
+        for archivo in archivos:
+            if archivo.filename == '':
+                continue
+            
+            if not allowed_file(archivo.filename):
+                logging.warning(f"Archivo con extensión no permitida: {archivo.filename}")
+                continue
+            
+            # Generar nombre único para el archivo
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+            filename = secure_filename(archivo.filename)
+            nombre_base, extension = os.path.splitext(filename)
+            nombre_archivo = f"{nombre_base}_{timestamp}{extension}"
+            
+            # Ruta completa del archivo
+            filepath = os.path.join(upload_dir, nombre_archivo)
+            
+            try:
+                # Guardar archivo
+                archivo.save(filepath)
+                
+                # Verificar que el archivo se guardó correctamente
+                if not os.path.exists(filepath):
+                    logging.error(f"No se pudo guardar el archivo: {filepath}")
+                    continue
+                
+                # Generar URL pública
+                # En PythonAnywhere, las carpetas static se sirven desde /static/
+                url_imagen = f"https://nxlsxx.pythonanywhere.com/static/uploads/productos/{nombre_archivo}"
+                
+                urls_subidas.append(url_imagen)
+                logging.info(f"Imagen guardada: {filepath} -> {url_imagen}")
+            except Exception as save_error:
+                logging.error(f"Error al guardar archivo {archivo.filename}: {repr(save_error)}")
+                continue
+        
+        if not urls_subidas:
+            return jsonify({"code": 0, "message": "No se pudieron guardar las imágenes. Verifica que sean archivos válidos (png, jpg, jpeg, gif, webp)"}), 400
+        
+        return jsonify({
+            "code": 1,
+            "message": f"{len(urls_subidas)} imagen(es) subida(s) correctamente",
+            "urls": urls_subidas
+        })
+    
+    except Exception as e:
+        logging.error(f"Error al subir imágenes: {repr(e)}")
+        return jsonify({"code": 0, "message": f"Error al subir imágenes: {str(e)}"}), 500
+
+
+# AGREGAR IMAGEN A PRODUCTO
+@app.route('/agregar_imagen_producto_sanchezpharma', methods=['POST'])
+@jwt_required()
+def agregar_imagen_producto_sanchezpharma():
+    try:
+        data = request.json
+        producto_id = data.get("producto_id")
+        imagen_url = data.get("imagen_url")
+        
+        if not producto_id or not imagen_url:
+            return jsonify({"code": 0, "message": "producto_id e imagen_url son requeridos"})
+        
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Obtener el siguiente orden
+                cursor.execute("""
+                    SELECT COALESCE(MAX(orden), -1) + 1 as siguiente_orden
+                    FROM imagenes_productos 
+                    WHERE producto_id = %s
+                """, (producto_id,))
+                resultado = cursor.fetchone()
+                siguiente_orden = resultado['siguiente_orden'] if resultado else 0
+                
+                cursor.execute("""
+                    INSERT INTO imagenes_productos (producto_id, imagen_url, orden)
+                    VALUES (%s, %s, %s)
+                """, (producto_id, imagen_url, siguiente_orden))
+                imagen_id = cursor.lastrowid
+            conn.commit()
+        
+        return jsonify({"code": 1, "message": "Imagen agregada correctamente", "imagen_id": imagen_id})
+    
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# ELIMINAR IMAGEN DE PRODUCTO
+@app.route('/eliminar_imagen_producto_sanchezpharma/<int:imagen_id>', methods=['DELETE'])
+@jwt_required()
+def eliminar_imagen_producto_sanchezpharma(imagen_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM imagenes_productos WHERE id = %s", (imagen_id,))
+            conn.commit()
+        
+        return jsonify({"code": 1, "message": "Imagen eliminada correctamente"})
+    
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# OBTENER IMÁGENES DE UN PRODUCTO
+@app.route('/imagenes_producto_sanchezpharma/<int:producto_id>')
+@jwt_required()
+def imagenes_producto_sanchezpharma(producto_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT id, imagen_url, orden 
+                    FROM imagenes_productos 
+                    WHERE producto_id = %s 
+                    ORDER BY orden ASC
+                """, (producto_id,))
+                data = cursor.fetchall()
+        
+        return jsonify({"code": 1, "data": data, "message": "Imágenes obtenidas correctamente"})
+    
+    except Exception as e:
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
 # BUSCAR PRODUCTOS
@@ -2632,7 +2911,7 @@ def registrar_venta_sanchezpharma():
                     producto_id = producto.get("producto_id")
                     cantidad = producto.get("cantidad")
                     
-                    cursor.execute("SELECT precio_venta, stock_actual FROM productos WHERE id = %s", (producto_id,))
+                    cursor.execute("SELECT precio_venta, descuento_porcentaje, stock_actual FROM productos WHERE id = %s", (producto_id,))
                     producto_info = cursor.fetchone()
                     
                     if not producto_info:
@@ -2643,13 +2922,43 @@ def registrar_venta_sanchezpharma():
                     
                     # Asegurar que precio_venta y cantidad sean Decimal
                     precio_venta = Decimal(str(producto_info["precio_venta"]))
+                    descuento_porcentaje = Decimal(str(producto_info.get("descuento_porcentaje", 0) or 0))
                     cantidad_decimal = Decimal(str(cantidad))
-                    subtotal += precio_venta * cantidad_decimal
+                    
+                    # Calcular precio con descuento si aplica
+                    if descuento_porcentaje > 0:
+                        descuento_producto = precio_venta * (descuento_porcentaje / Decimal('100'))
+                        precio_con_descuento = precio_venta - descuento_producto
+                    else:
+                        precio_con_descuento = precio_venta
+                    
+                    subtotal += precio_con_descuento * cantidad_decimal
 
                 # Convertir descuento a Decimal para evitar errores de tipo
                 descuento_valor = data.get("descuento", 0)
                 descuento = Decimal(str(descuento_valor)) if descuento_valor else Decimal('0')
+                
+                # Calcular total (subtotal - descuento)
+                # Nota: El subtotal calculado ya incluye el IGV del 18% porque los precios_venta
+                # de los productos ya incluyen el IGV (según normativa peruana)
                 total = subtotal - descuento
+                
+                # Calcular IGV (18%) a partir del total que ya lo incluye
+                # En Perú, el IGV está incluido en el precio, por lo que debemos extraerlo
+                # Fórmula: IGV = Total * (0.18 / 1.18)
+                #          Subtotal sin IGV = Total - IGV
+                IGV_PORCENTAJE = Decimal('0.18')  # 18%
+                # Calcular impuesto directamente
+                impuesto = total * IGV_PORCENTAJE / (Decimal('1') + IGV_PORCENTAJE)
+                # Calcular subtotal sin IGV
+                subtotal_sin_igv = total - impuesto
+                
+                # Redondear a 2 decimales
+                impuesto = round(impuesto, 2)
+                subtotal_sin_igv = round(subtotal_sin_igv, 2)
+                
+                # Actualizar el subtotal al valor sin IGV para guardarlo correctamente
+                subtotal = subtotal_sin_igv
 
                 # Determinar el estado inicial según el tipo de venta
                 # Para envío a domicilio y recojo en tienda, el estado inicial es 'pendiente'
@@ -2688,11 +2997,23 @@ def registrar_venta_sanchezpharma():
                             usuario_id_final = primer_usuario["id"]
                 
                 # Si aún no hay usuario_id, registrar con NULL (si la tabla lo permite)
+                # Verificar si existe la columna codigo_qr, si no existe, crearla
+                try:
+                    cursor.execute("SHOW COLUMNS FROM ventas LIKE 'codigo_qr'")
+                    if not cursor.fetchone():
+                        cursor.execute("ALTER TABLE ventas ADD COLUMN codigo_qr VARCHAR(255) UNIQUE AFTER numero_venta")
+                        logging.info("Columna codigo_qr agregada a la tabla ventas")
+                except Exception as e:
+                    logging.warning(f"No se pudo verificar/crear columna codigo_qr: {e}")
+                
+                # Generar código QR único para la venta
+                # Formato: VENTA-{venta_id}-{hash_seguridad}
+                # Primero insertamos sin código QR, luego lo generamos con el ID
                 cursor.execute("""
                     INSERT INTO ventas 
                     (cliente_id, usuario_id, tipo_venta, metodo_pago_id,
-                     subtotal, descuento, total, estado, observaciones)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     subtotal, descuento, impuesto, total, estado, observaciones)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     data.get("cliente_id"),
                     usuario_id_final,
@@ -2700,12 +3021,23 @@ def registrar_venta_sanchezpharma():
                     data.get("metodo_pago_id"),
                     subtotal,
                     descuento,
+                    impuesto,
                     total,
                     estado_inicial,
                     data.get("observaciones")
                 ))
 
                 venta_id = cursor.lastrowid
+                
+                # Generar código QR único después de obtener el ID
+                import hashlib
+                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                hash_input = f"{venta_id}{timestamp}{data.get('cliente_id')}{total}"
+                hash_seguridad = hashlib.md5(hash_input.encode()).hexdigest()[:8].upper()
+                codigo_qr = f"VENTA-{venta_id}-{hash_seguridad}"
+                
+                # Actualizar la venta con el código QR
+                cursor.execute("UPDATE ventas SET codigo_qr = %s WHERE id = %s", (codigo_qr, venta_id))
                 
                 # Verificar la fecha guardada y el estado
                 cursor.execute("SELECT fecha_venta, estado, tipo_venta FROM ventas WHERE id = %s", (venta_id,))
@@ -2730,9 +3062,18 @@ def registrar_venta_sanchezpharma():
                     producto_id = producto.get("producto_id")
                     cantidad = producto.get("cantidad")
                     
-                    cursor.execute("SELECT precio_venta FROM productos WHERE id = %s", (producto_id,))
+                    cursor.execute("SELECT precio_venta, descuento_porcentaje FROM productos WHERE id = %s", (producto_id,))
                     precio_info = cursor.fetchone()
-                    precio = Decimal(str(precio_info["precio_venta"]))
+                    precio_venta = Decimal(str(precio_info["precio_venta"]))
+                    descuento_porcentaje = Decimal(str(precio_info.get("descuento_porcentaje", 0) or 0))
+                    
+                    # Calcular precio con descuento si aplica
+                    if descuento_porcentaje > 0:
+                        descuento_producto = precio_venta * (descuento_porcentaje / Decimal('100'))
+                        precio = precio_venta - descuento_producto
+                    else:
+                        precio = precio_venta
+                    
                     cantidad_decimal = Decimal(str(cantidad))
                     producto_subtotal = precio * cantidad_decimal
 
@@ -3052,6 +3393,188 @@ def actualizar_estado_envio_sanchezpharma(envio_id):
     except Exception as e:
         logging.error(f"Error al actualizar estado de envío: {repr(e)}")
         return jsonify({"code": 0, "message": repr(e)})
+
+
+# OBTENER CÓDIGO QR DE UNA VENTA
+@app.route('/codigo_qr_venta_sanchezpharma/<int:venta_id>', methods=['GET'])
+@jwt_required()
+def codigo_qr_venta_sanchezpharma(venta_id):
+    try:
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Verificar si existe la columna codigo_qr, si no existe, crearla
+                try:
+                    cursor.execute("SHOW COLUMNS FROM ventas LIKE 'codigo_qr'")
+                    if not cursor.fetchone():
+                        cursor.execute("ALTER TABLE ventas ADD COLUMN codigo_qr VARCHAR(255) UNIQUE AFTER numero_venta")
+                        conn.commit()
+                        logging.info("Columna codigo_qr agregada a la tabla ventas")
+                except Exception as e:
+                    logging.warning(f"No se pudo verificar/crear columna codigo_qr: {e}")
+                
+                cursor.execute("""
+                    SELECT codigo_qr, estado, tipo_venta, cliente_id
+                    FROM ventas 
+                    WHERE id = %s
+                """, (venta_id,))
+                venta = cursor.fetchone()
+                
+                if not venta:
+                    return jsonify({"code": 0, "message": "Venta no encontrada"}), 404
+                
+                # Si no tiene código QR, generarlo
+                if not venta.get("codigo_qr"):
+                    import hashlib
+                    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                    hash_input = f"{venta_id}{timestamp}{venta.get('cliente_id')}{venta_id}"
+                    hash_seguridad = hashlib.md5(hash_input.encode()).hexdigest()[:8].upper()
+                    codigo_qr = f"VENTA-{venta_id}-{hash_seguridad}"
+                    
+                    cursor.execute("UPDATE ventas SET codigo_qr = %s WHERE id = %s", (codigo_qr, venta_id))
+                    conn.commit()
+                    
+                    return jsonify({
+                        "code": 1,
+                        "data": {
+                            "codigo_qr": codigo_qr,
+                            "venta_id": venta_id,
+                            "estado": venta.get("estado"),
+                            "tipo_venta": venta.get("tipo_venta")
+                        },
+                        "message": "Código QR generado correctamente"
+                    })
+                
+                return jsonify({
+                    "code": 1,
+                    "data": {
+                        "codigo_qr": venta.get("codigo_qr"),
+                        "venta_id": venta_id,
+                        "estado": venta.get("estado"),
+                        "tipo_venta": venta.get("tipo_venta")
+                    },
+                    "message": "Código QR obtenido correctamente"
+                })
+    
+    except Exception as e:
+        return jsonify({"code": 0, "message": repr(e)})
+
+
+# VALIDAR Y MARCAR COMO ENTREGADO MEDIANTE QR
+@app.route('/validar_qr_entrega_sanchezpharma', methods=['POST'])
+@jwt_required()
+def validar_qr_entrega_sanchezpharma():
+    try:
+        data = request.json
+        codigo_qr = data.get("codigo_qr")
+        
+        if not codigo_qr:
+            return jsonify({"code": 0, "message": "Código QR es requerido"}), 400
+        
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Verificar si existe la columna codigo_qr, si no existe, crearla
+                try:
+                    cursor.execute("SHOW COLUMNS FROM ventas LIKE 'codigo_qr'")
+                    if not cursor.fetchone():
+                        cursor.execute("ALTER TABLE ventas ADD COLUMN codigo_qr VARCHAR(255) UNIQUE AFTER numero_venta")
+                        conn.commit()
+                        logging.info("Columna codigo_qr agregada a la tabla ventas")
+                except Exception as e:
+                    logging.warning(f"No se pudo verificar/crear columna codigo_qr: {e}")
+                
+                # Buscar venta por código QR
+                cursor.execute("""
+                    SELECT v.id as venta_id, v.estado, v.tipo_venta, v.cliente_id,
+                           e.id as envio_id, e.estado as estado_envio
+                    FROM ventas v
+                    LEFT JOIN envios e ON v.id = e.venta_id
+                    WHERE v.codigo_qr = %s
+                """, (codigo_qr,))
+                venta = cursor.fetchone()
+                
+                if not venta:
+                    return jsonify({"code": 0, "message": "Código QR inválido o venta no encontrada"}), 404
+                
+                venta_id = venta["venta_id"]
+                tipo_venta = venta["tipo_venta"]
+                estado_actual = venta["estado"]
+                envio_id = venta.get("envio_id")
+                estado_envio = venta.get("estado_envio")
+                
+                # Verificar que el pedido no esté ya entregado
+                if estado_actual == 'completada':
+                    return jsonify({
+                        "code": 0,
+                        "message": "Este pedido ya fue entregado anteriormente",
+                        "venta_id": venta_id
+                    }), 400
+                
+                # Obtener usuario que está escaneando
+                current_user = getattr(g, 'current_identity', None)
+                usuario_id = current_user.id if current_user else None
+                
+                # Marcar venta como completada
+                cursor.execute("""
+                    UPDATE ventas 
+                    SET estado = 'completada', fecha_actualizacion = NOW()
+                    WHERE id = %s
+                """, (venta_id,))
+                
+                # Si es envío a domicilio, también actualizar el estado del envío
+                if tipo_venta == 'envio_domicilio' and envio_id:
+                    if estado_envio != 'entregado':
+                        cursor.execute("""
+                            UPDATE envios 
+                            SET estado = 'entregado', 
+                                fecha_real_entrega = NOW(),
+                                fecha_actualizacion = NOW()
+                            WHERE id = %s
+                        """, (envio_id,))
+                        
+                        # Registrar en historial de estados
+                        cursor.execute("""
+                            INSERT INTO estados_envio 
+                            (envio_id, estado_anterior, estado_nuevo, usuario_id, observaciones)
+                            VALUES (%s, %s, %s, %s, %s)
+                        """, (envio_id, estado_envio or 'en_camino', 'entregado', usuario_id, 'Entregado mediante escaneo QR'))
+                        
+                        # Crear notificación para el cliente
+                        cursor.execute("""
+                            SELECT cliente_id, numero_seguimiento 
+                            FROM envios 
+                            WHERE id = %s
+                        """, (envio_id,))
+                        envio_info = cursor.fetchone()
+                        
+                        if envio_info and envio_info.get("cliente_id"):
+                            cursor.execute("""
+                                INSERT INTO notificaciones_clientes 
+                                (cliente_id, titulo, cuerpo, tipo, relacion_id, leida, fecha_creacion)
+                                VALUES (%s, %s, %s, 'pedido_entregado', %s, FALSE, NOW())
+                            """, (
+                                envio_info["cliente_id"],
+                                '¡Pedido Entregado!',
+                                f'Tu pedido {envio_info.get("numero_seguimiento", "")} ha sido entregado exitosamente.',
+                                venta_id
+                            ))
+                
+                conn.commit()
+                
+                return jsonify({
+                    "code": 1,
+                    "message": "Pedido marcado como entregado correctamente",
+                    "data": {
+                        "venta_id": venta_id,
+                        "tipo_venta": tipo_venta,
+                        "estado": "completada"
+                    }
+                })
+    
+    except Exception as e:
+        logging.error(f"Error al validar QR: {repr(e)}")
+        return jsonify({"code": 0, "message": repr(e)}), 500
 
 
 # ACTUALIZAR INFORMACIÓN DE ENVÍO

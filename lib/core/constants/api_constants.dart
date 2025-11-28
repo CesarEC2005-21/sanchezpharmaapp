@@ -21,6 +21,7 @@ class ApiConstants {
   static const String buscarProductos = '/buscar_productos_sanchezpharma';
   static const String productosStockBajo = '/productos_stock_bajo_sanchezpharma';
   static const String productosProximosVencer = '/productos_proximos_vencer_sanchezpharma';
+  static const String subirImagenesProducto = '/subir_imagenes_producto_sanchezpharma';
   
   // Endpoints - Inventario - Categorías
   static const String categorias = '/categorias_sanchezpharma';
@@ -64,6 +65,8 @@ class ApiConstants {
   static const String venta = '/venta_sanchezpharma';
   static const String registrarVenta = '/registrar_venta_sanchezpharma';
   static const String anularVenta = '/anular_venta_sanchezpharma';
+  static const String codigoQrVenta = '/codigo_qr_venta_sanchezpharma';
+  static const String validarQrEntrega = '/validar_qr_entrega_sanchezpharma';
   
   // Endpoints - Ventas - Envíos
   static const String envios = '/envios_sanchezpharma';

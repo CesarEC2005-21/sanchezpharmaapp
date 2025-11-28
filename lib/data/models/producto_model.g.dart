@@ -17,6 +17,9 @@ ProductoModel _$ProductoModelFromJson(Map<String, dynamic> json) =>
       proveedorId: (json['proveedor_id'] as num?)?.toInt(),
       precioCompra: ProductoModel._precioFromJson(json['precio_compra']),
       precioVenta: ProductoModel._precioFromJson(json['precio_venta']),
+      descuentoPorcentaje: json['descuento_porcentaje'] == null
+          ? 0.0
+          : ProductoModel._precioFromJson(json['descuento_porcentaje']),
       stockActual: ProductoModel._stockFromJson(json['stock_actual']),
       stockMinimo: ProductoModel._stockFromJson(json['stock_minimo']),
       unidadMedida: json['unidad_medida'] as String? ?? 'unidad',
@@ -27,6 +30,10 @@ ProductoModel _$ProductoModelFromJson(Map<String, dynamic> json) =>
       estadoAlerta: json['estado_alerta'] as String?,
       diasRestantes: (json['dias_restantes'] as num?)?.toInt(),
       faltante: (json['faltante'] as num?)?.toInt(),
+      imagenUrl: json['imagen_url'] as String?,
+      imagenes: (json['imagenes'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
     );
 
 Map<String, dynamic> _$ProductoModelToJson(ProductoModel instance) =>
@@ -40,6 +47,7 @@ Map<String, dynamic> _$ProductoModelToJson(ProductoModel instance) =>
       'proveedor_id': instance.proveedorId,
       'precio_compra': instance.precioCompra,
       'precio_venta': instance.precioVenta,
+      'descuento_porcentaje': instance.descuentoPorcentaje,
       'stock_actual': instance.stockActual,
       'stock_minimo': instance.stockMinimo,
       'unidad_medida': instance.unidadMedida,
@@ -50,4 +58,6 @@ Map<String, dynamic> _$ProductoModelToJson(ProductoModel instance) =>
       'estado_alerta': instance.estadoAlerta,
       'dias_restantes': instance.diasRestantes,
       'faltante': instance.faltante,
+      'imagen_url': instance.imagenUrl,
+      'imagenes': instance.imagenes,
     };

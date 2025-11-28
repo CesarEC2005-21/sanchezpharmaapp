@@ -39,6 +39,8 @@ class VentaModel {
   final String? usuarioNombre;
   @JsonKey(name: 'metodo_pago_nombre')
   final String? metodoPagoNombre;
+  @JsonKey(name: 'codigo_qr')
+  final String? codigoQr;
   @JsonKey(name: 'detalle')
   final List<DetalleVentaModel>? detalle;
 
@@ -61,6 +63,7 @@ class VentaModel {
     this.clienteDocumento,
     this.usuarioNombre,
     this.metodoPagoNombre,
+    this.codigoQr,
     this.detalle,
   });
 

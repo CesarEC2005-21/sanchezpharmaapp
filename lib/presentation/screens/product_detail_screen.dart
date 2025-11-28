@@ -181,7 +181,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       carrito.add({
         'id': producto.id,
         'nombre': producto.nombre,
-        'precio': producto.precioVenta,
+        'precio': producto.precioConDescuento, // Usar precio con descuento si aplica
         'cantidad': 1,
         'stock': producto.stockActual,
       });
@@ -225,7 +225,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final producto = widget.producto;
-    final regular = producto.precioVenta + 20;
+    final regular = producto.precioVenta; // Precio original sin descuento
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
@@ -494,6 +494,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   List<String> _generateImageUrls() {
+    // Usar todas las imágenes disponibles del producto
+    List<String> imagenes = widget.producto.todasLasImagenes;
+    
+    if (imagenes.isNotEmpty) {
+      return imagenes;
+    }
+    
+    // Si no hay imágenes, generar placeholders
     final encodedName = Uri.encodeComponent(widget.producto.nombre);
     return List.generate(
       3,
@@ -558,10 +566,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Widget _buildPriceSection(ProductoModel producto, double regular) {
-    final ahorro = (regular - producto.precioVenta).clamp(0, double.infinity);
-    final descuento = regular > 0
-        ? ((ahorro / regular) * 100).clamp(0, 99).round()
-        : 0;
+    // Usar el descuento real del producto si existe
+    final tieneDescuento = producto.tieneDescuento;
+    final precioConDescuento = producto.precioConDescuento;
+    final precioOriginal = producto.precioVenta;
+    final porcentajeDescuento = producto.descuentoPorcentaje.round();
+    final ahorro = tieneDescuento ? (precioOriginal - precioConDescuento) : 0.0;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
@@ -569,7 +579,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         gradient: LinearGradient(
-          colors: [Colors.white, Colors.green.shade50],
+          colors: tieneDescuento 
+              ? [Colors.white, Colors.red.shade50]
+              : [Colors.white, Colors.green.shade50],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -591,27 +603,31 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 Row(
                   children: [
                     Text(
-                      'S/ ${producto.precioVenta.toStringAsFixed(2)}',
+                      tieneDescuento 
+                          ? 'S/ ${precioConDescuento.toStringAsFixed(2)}'
+                          : 'S/ ${precioOriginal.toStringAsFixed(2)}',
                       style: TextStyle(
-                        color: Colors.green.shade800,
+                        color: tieneDescuento 
+                            ? Colors.red.shade800
+                            : Colors.green.shade800,
                         fontSize: 34,
                         fontWeight: FontWeight.bold,
                         height: 1,
                       ),
                     ),
                     const SizedBox(width: 10),
-                    if (descuento > 0)
+                    if (tieneDescuento)
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.black87,
+                          color: Colors.red.shade700,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          '-$descuento%',
+                          '-$porcentajeDescuento%',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -621,19 +637,21 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'Antes S/ ${regular.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    decoration: TextDecoration.lineThrough,
-                    color: Colors.grey,
-                    fontSize: 15,
+                if (tieneDescuento) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Antes S/ ${precioOriginal.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      decoration: TextDecoration.lineThrough,
+                      color: Colors.grey,
+                      fontSize: 15,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
-          if (ahorro > 0)
+          if (tieneDescuento && ahorro > 0)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
@@ -932,8 +950,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Widget _buildSuggestionCard(ProductoModel producto) {
-    final encoded = Uri.encodeComponent(producto.nombre);
-    final thumbUrl = 'https://placehold.co/400x400?text=$encoded';
+    // Usar primera imagen disponible, si no usar placeholder
+    final imagenes = producto.todasLasImagenes;
+    final thumbUrl = imagenes.isNotEmpty
+        ? imagenes[0]
+        : 'https://placehold.co/400x400?text=${Uri.encodeComponent(producto.nombre)}';
     return InkWell(
       onTap: () {
         Navigator.push(
@@ -991,7 +1012,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          'S/ ${producto.precioVenta.toStringAsFixed(2)}',
+                          producto.tieneDescuento
+                              ? 'S/ ${producto.precioConDescuento.toStringAsFixed(2)}'
+                              : 'S/ ${producto.precioVenta.toStringAsFixed(2)}',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 10,
