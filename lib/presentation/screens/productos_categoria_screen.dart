@@ -4,6 +4,7 @@ import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../data/models/producto_model.dart';
 import '../../data/models/categoria_model.dart';
+import '../../core/utils/error_message_helper.dart';
 import '../widgets/cliente_bottom_nav.dart';
 import 'carrito_screen.dart';
 import 'product_detail_screen.dart';
@@ -121,9 +122,18 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Error: ${e.toString()}';
+        _errorMessage = ErrorMessageHelper.getFriendlyErrorMessage(e);
         _isLoading = false;
       });
+      // No mostrar SnackBar adicional si es error 401 (el interceptor ya lo maneja)
+      if (mounted) {
+        final errorString = e.toString().toLowerCase();
+        if (!errorString.contains('401') && 
+            !errorString.contains('sesión expirada') &&
+            !errorString.contains('unauthorized')) {
+          ErrorMessageHelper.showErrorSnackBar(context, e);
+        }
+      }
     }
   }
 
@@ -558,7 +568,7 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
                             children: [
                               Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
                               const SizedBox(height: 16),
-                              Text(_errorMessage!),
+                              Text(ErrorMessageHelper.getFriendlyErrorMessage(_errorMessage!)),
                               const SizedBox(height: 16),
                               ElevatedButton(
                                 onPressed: _cargarProductos,
@@ -738,16 +748,19 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
-                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(Icons.add, size: 14, color: Colors.blue.shade700),
                               const SizedBox(width: 4),
-                              Text(
-                                producto.proveedorNombre!,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey.shade700,
-                                  fontWeight: FontWeight.w500,
+                              Flexible(
+                                child: Text(
+                                  producto.proveedorNombre!,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],

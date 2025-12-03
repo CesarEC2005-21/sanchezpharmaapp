@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import '../../data/services/directions_service.dart';
+import '../../core/utils/error_message_helper.dart';
 
 class MapaRecojoScreen extends StatefulWidget {
   final String? numeroPedido;
@@ -26,6 +28,8 @@ class _MapaRecojoScreenState extends State<MapaRecojoScreen> {
   Set<Polyline> _polylines = {};
   bool _isLoading = true;
   String? _errorMessage;
+  String? _routeDistance;
+  String? _routeDuration;
 
   // Ubicación del local (Puerto de Palos 390, La Victoria, Chiclayo, Lambayeque)
   static const String _direccionLocal = 'Puerto de Palos 390, La Victoria, Chiclayo, Lambayeque, Perú';
@@ -97,7 +101,7 @@ class _MapaRecojoScreenState extends State<MapaRecojoScreen> {
 
       if (_ubicacionLocal != null && _miUbicacion != null) {
         _updateMarkers();
-        _updateRoute();
+        await _updateRoute();
       }
 
       setState(() {
@@ -107,7 +111,7 @@ class _MapaRecojoScreenState extends State<MapaRecojoScreen> {
       print('Error al inicializar mapa: $e');
       print('Stack trace: $stackTrace');
       setState(() {
-        _errorMessage = 'Error al cargar el mapa: ${e.toString()}\n\nAsegúrate de que:\n1. La API key de Google Maps esté configurada\n2. Tengas conexión a internet\n3. Los permisos de ubicación estén habilitados';
+        _errorMessage = 'Error al cargar el mapa.\n\nAsegúrate de que:\n1. La API key de Google Maps esté configurada\n2. Tengas conexión a internet\n3. Los permisos de ubicación estén habilitados';
         _isLoading = false;
       });
     }
@@ -178,21 +182,116 @@ class _MapaRecojoScreenState extends State<MapaRecojoScreen> {
     }
   }
 
-  void _updateRoute() {
+  /// Actualiza la ruta usando Google Directions API para mostrar las calles reales
+  Future<void> _updateRoute() async {
+    _polylines.clear();
+    
     if (_miUbicacion != null && _ubicacionLocal != null) {
-      _polylines.clear();
-      _polylines.add(
-        Polyline(
-          polylineId: const PolylineId('ruta'),
-          points: [
-            LatLng(_miUbicacion!.latitude, _miUbicacion!.longitude),
-            LatLng(_ubicacionLocal!.latitude, _ubicacionLocal!.longitude),
-          ],
-          color: Colors.green,
-          width: 4,
-          patterns: [PatternItem.dash(20), PatternItem.gap(10)],
-        ),
-      );
+      print('🗺️ Obteniendo ruta real por las calles...');
+      print('   Cliente: (${_miUbicacion!.latitude}, ${_miUbicacion!.longitude})');
+      print('   Local: (${_ubicacionLocal!.latitude}, ${_ubicacionLocal!.longitude})');
+      
+      try {
+        // Obtener la ruta real usando Google Directions API
+        final routePoints = await DirectionsService.getRoute(
+          originLat: _miUbicacion!.latitude,
+          originLng: _miUbicacion!.longitude,
+          destLat: _ubicacionLocal!.latitude,
+          destLng: _ubicacionLocal!.longitude,
+        );
+        
+        // Obtener información adicional de la ruta
+        final routeInfo = await DirectionsService.getRouteInfo(
+          originLat: _miUbicacion!.latitude,
+          originLng: _miUbicacion!.longitude,
+          destLat: _ubicacionLocal!.latitude,
+          destLng: _ubicacionLocal!.longitude,
+        );
+        
+        if (routeInfo != null) {
+          _routeDistance = routeInfo['distance'];
+          _routeDuration = routeInfo['duration'];
+        }
+        
+        if (routePoints.isEmpty) {
+          print('   ⚠️ No se pudo obtener la ruta. Mostrando línea recta como fallback.');
+          // Fallback: mostrar línea recta si no se puede obtener la ruta
+          _polylines.add(
+            Polyline(
+              polylineId: const PolylineId('ruta_fallback'),
+              points: [
+                LatLng(_miUbicacion!.latitude, _miUbicacion!.longitude),
+                LatLng(_ubicacionLocal!.latitude, _ubicacionLocal!.longitude),
+              ],
+              color: Colors.orange,
+              width: 4,
+              patterns: [PatternItem.dash(20), PatternItem.gap(10)],
+            ),
+          );
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('⚠️ No se pudo obtener la ruta detallada. Verifica tu conexión a Internet.'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        } else if (routePoints.length < 10) {
+          print('⚠️ ADVERTENCIA: La ruta tiene solo ${routePoints.length} puntos.');
+          // Aún así dibujar la ruta, pero con advertencia
+          _polylines.add(
+            Polyline(
+              polylineId: const PolylineId('ruta_real'),
+              points: routePoints,
+              color: Colors.orange,
+              width: 5,
+              jointType: JointType.round,
+              endCap: Cap.roundCap,
+              startCap: Cap.roundCap,
+            ),
+          );
+        } else {
+          // Ruta con suficientes puntos - dibujar normalmente
+          _polylines.add(
+            Polyline(
+              polylineId: const PolylineId('ruta_real'),
+              points: routePoints,
+              color: Colors.green,
+              width: 5,
+              jointType: JointType.round,
+              endCap: Cap.roundCap,
+              startCap: Cap.roundCap,
+            ),
+          );
+          
+          print('✅ Ruta dibujada correctamente con ${routePoints.length} puntos');
+        }
+      } catch (e, stackTrace) {
+        print('❌ Error al obtener ruta: $e');
+        print('   Stack trace: $stackTrace');
+        
+        // Fallback: mostrar línea recta si hay error
+        _polylines.add(
+          Polyline(
+            polylineId: const PolylineId('ruta_error'),
+            points: [
+              LatLng(_miUbicacion!.latitude, _miUbicacion!.longitude),
+              LatLng(_ubicacionLocal!.latitude, _ubicacionLocal!.longitude),
+            ],
+            color: Colors.orange,
+            width: 4,
+            patterns: [PatternItem.dash(20), PatternItem.gap(10)],
+          ),
+        );
+      }
+      
+      if (mounted) {
+        setState(() {});
+      }
+    } else {
+      print('⚠️ Esperando ubicación del cliente o local para dibujar ruta');
     }
   }
 
@@ -385,7 +484,9 @@ class _MapaRecojoScreenState extends State<MapaRecojoScreen> {
                                       Icon(Icons.straighten, color: Colors.green.shade700, size: 18),
                                       const SizedBox(width: 4),
                                       Text(
-                                        'Distancia: ${_calculateDistance().toStringAsFixed(2)} km',
+                                        _routeDistance != null 
+                                            ? 'Distancia: $_routeDistance'
+                                            : 'Distancia: ${_calculateDistance().toStringAsFixed(2)} km',
                                         style: TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w500,
@@ -400,7 +501,9 @@ class _MapaRecojoScreenState extends State<MapaRecojoScreen> {
                                       Icon(Icons.access_time, color: Colors.green.shade700, size: 18),
                                       const SizedBox(width: 4),
                                       Text(
-                                        'Tiempo estimado: ${_calculateEstimatedTime()}',
+                                        _routeDuration != null
+                                            ? 'Tiempo estimado: $_routeDuration'
+                                            : 'Tiempo estimado: ${_calculateEstimatedTime()}',
                                         style: TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w500,

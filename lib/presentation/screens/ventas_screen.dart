@@ -7,6 +7,7 @@ import '../../data/models/producto_model.dart';
 import '../../data/models/cliente_model.dart';
 import '../../data/models/metodo_pago_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/error_message_helper.dart';
 import '../../core/utils/validators.dart';
 import 'clientes_screen.dart';
 import 'escanner_qr_screen.dart';
@@ -65,6 +66,13 @@ class _VentasScreenState extends State<VentasScreen> {
             _isLoading = false;
           });
         }
+      } else if (response.response.statusCode == 401) {
+        // Error 401 (token expirado) - no mostrar error en pantalla
+        // El modal de "Atención" ya lo maneja
+        setState(() {
+          _errorMessage = null;
+          _isLoading = false;
+        });
       } else {
         setState(() {
           _errorMessage = 'Error al conectar con el servidor';
@@ -72,10 +80,33 @@ class _VentasScreenState extends State<VentasScreen> {
         });
       }
     } catch (e) {
+      // Si es un error 401 (token expirado), no mostrar el error en la pantalla
+      // porque el modal de "Atención" ya lo maneja
+      final errorString = e.toString();
+      if (errorString.contains('401') || 
+          errorString.contains('status code: 401') ||
+          errorString.contains('Token inválido') ||
+          errorString.contains('token expirado')) {
+        setState(() {
+          _errorMessage = null;
+          _isLoading = false;
+        });
+        return;
+      }
+      
       setState(() {
-        _errorMessage = 'Error: ${e.toString()}';
+        _errorMessage = ErrorMessageHelper.getFriendlyErrorMessage(e);
         _isLoading = false;
       });
+      // No mostrar SnackBar adicional si es error 401 (el interceptor ya lo maneja)
+      if (mounted) {
+        final errorString = e.toString().toLowerCase();
+        if (!errorString.contains('401') && 
+            !errorString.contains('sesión expirada') &&
+            !errorString.contains('unauthorized')) {
+          ErrorMessageHelper.showErrorSnackBar(context, e);
+        }
+      }
     }
   }
 
@@ -179,7 +210,7 @@ class _VentasScreenState extends State<VentasScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString()}'),
+            content: Text(ErrorMessageHelper.getFriendlyErrorMessage(e)),
             backgroundColor: Colors.red,
           ),
         );
@@ -446,7 +477,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al cargar datos: ${e.toString()}'),
+            content: Text(ErrorMessageHelper.getFriendlyErrorMessage(e)),
             backgroundColor: Colors.red,
           ),
         );
@@ -648,7 +679,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString()}'),
+            content: Text(ErrorMessageHelper.getFriendlyErrorMessage(e)),
             backgroundColor: Colors.red,
           ),
         );
@@ -804,13 +835,13 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
             ),
       bottomNavigationBar: Container(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.6,
+          maxHeight: MediaQuery.of(context).size.height * 0.65,
         ),
         padding: EdgeInsets.only(
           left: 16,
           right: 16,
-          top: 16,
-          bottom: 16 + MediaQuery.of(context).viewInsets.bottom,
+          top: 8,
+          bottom: 8 + MediaQuery.of(context).viewInsets.bottom,
         ),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -830,194 +861,261 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
             Flexible(
               child: ExpansionTile(
                 title: const Text('Configurar Venta'),
+                childrenPadding: EdgeInsets.zero,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.45,
+                    ),
                     child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                        DropdownButtonFormField<int?>(
-                  value: _clienteIdSeleccionado,
-                  decoration: const InputDecoration(
-                    labelText: 'Cliente',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    const DropdownMenuItem<int?>(value: null, child: Text('Cliente no registrado')),
-                    ..._clientes.map((cliente) => DropdownMenuItem<int?>(
-                      value: cliente.id,
-                      child: Text(cliente.nombreCompleto),
-                    )),
-                  ],
-                  onChanged: (value) {
-                    setState(() {
-                      _clienteIdSeleccionado = value;
-                    });
-                  },
-                ),
-                const SizedBox(height: 8),
-                TextButton.icon(
-                  icon: const Icon(Icons.person_add),
-                  label: const Text('Registrar Nuevo Cliente'),
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const ClientesScreen(),
-                      ),
-                    );
-                    _cargarDatos();
-                  },
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  value: _tipoVenta,
-                  decoration: const InputDecoration(
-                    labelText: 'Tipo de Venta',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'recojo_tienda', child: Text('Recojo en Tienda')),
-                    DropdownMenuItem(value: 'envio_domicilio', child: Text('Envío a Domicilio')),
-                  ],
-                  onChanged: (value) {
-                    setState(() {
-                      _tipoVenta = value ?? 'recojo_tienda';
-                      // Si cambia a envio_domicilio y hay cliente seleccionado, cargar datos del cliente
-                      if (value == 'envio_domicilio' && _clienteIdSeleccionado != null) {
-                        final cliente = _clientes.firstWhere((c) => c.id == _clienteIdSeleccionado);
-                        _direccionEnvioController.text = cliente.direccion ?? '';
-                        _telefonoEnvioController.text = cliente.telefono ?? '';
-                        _nombreDestinatarioController.text = '${cliente.nombre} ${cliente.apellido ?? ''}'.trim();
-                      } else if (value == 'recojo_tienda') {
-                        // Limpiar campos de envío
-                        _direccionEnvioController.clear();
-                        _telefonoEnvioController.clear();
-                        _nombreDestinatarioController.clear();
-                        _referenciaDireccionController.clear();
-                      }
-                    });
-                  },
-                ),
-                // Campos de envío (solo si es envio_domicilio)
-                if (_tipoVenta == 'envio_domicilio') ...[
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const Text(
-                    'Datos de Envío',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _direccionEnvioController,
-                    decoration: const InputDecoration(
-                      labelText: 'Dirección de Entrega *',
-                      hintText: 'Ej: Los Claveles 213, José Leonardo Ortiz',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.location_on),
-                    ),
-                    maxLines: 2,
-                    validator: (value) {
-                      if (_tipoVenta == 'envio_domicilio' && (value == null || value.isEmpty)) {
-                        return 'La dirección de entrega es requerida';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _telefonoEnvioController,
-                    decoration: const InputDecoration(
-                      labelText: 'Teléfono de Contacto *',
-                      hintText: '987654321',
-                      helperText: 'Máximo 9 dígitos, solo números',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.phone),
-                    ),
-                    keyboardType: TextInputType.phone,
-                    maxLength: 9,
-                    inputFormatters: [Validators.telefonoFormatter],
-                    validator: (value) {
-                      if (_tipoVenta == 'envio_domicilio') {
-                        if (value == null || value.isEmpty) {
-                          return 'El teléfono de contacto es requerido';
-                        }
-                        return Validators.validateTelefonoRequerido(value);
-                      }
-                      return Validators.validateTelefonoOpcional(value);
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _nombreDestinatarioController,
-                    decoration: const InputDecoration(
-                      labelText: 'Nombre del Destinatario *',
-                      hintText: 'Nombre completo de quien recibirá',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.person),
-                    ),
-                    validator: (value) {
-                      if (_tipoVenta == 'envio_domicilio' && (value == null || value.isEmpty)) {
-                        return 'El nombre del destinatario es requerido';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _referenciaDireccionController,
-                    decoration: const InputDecoration(
-                      labelText: 'Referencia de Dirección (Opcional)',
-                      hintText: 'Ej: Casa azul, portón negro, etc.',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.info_outline),
-                    ),
-                    maxLines: 2,
-                  ),
-                ],
-                const SizedBox(height: 8),
-                DropdownButtonFormField<int?>(
-                  value: _metodoPagoIdSeleccionado,
-                  decoration: const InputDecoration(
-                    labelText: 'Método de Pago',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    const DropdownMenuItem<int?>(value: null, child: Text('Seleccionar método')),
-                    ..._metodosPago.map((metodo) => DropdownMenuItem<int?>(
-                      value: metodo.id,
-                      child: Text(metodo.nombre),
-                    )),
-                  ],
-                  onChanged: (value) {
-                    setState(() {
-                      _metodoPagoIdSeleccionado = value;
-                    });
-                  },
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  decoration: const InputDecoration(
-                    labelText: 'Descuento',
-                    border: OutlineInputBorder(),
-                    prefixText: '\$ ',
-                  ),
-                  keyboardType: TextInputType.number,
-                  onChanged: (value) {
-                    setState(() {
-                      _descuento = double.tryParse(value) ?? 0.0;
-                    });
-                  },
-                ),
-                        ],
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            DropdownButtonFormField<int?>(
+                              value: _clienteIdSeleccionado,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Cliente',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              ),
+                              items: [
+                                DropdownMenuItem<int?>(
+                                  value: null,
+                                  child: Text(
+                                    'Cliente no registrado',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                ..._clientes.map((cliente) => DropdownMenuItem<int?>(
+                                  value: cliente.id,
+                                  child: Text(
+                                    cliente.nombreCompleto,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                )),
+                              ],
+                              onChanged: (value) {
+                                setState(() {
+                                  _clienteIdSeleccionado = value;
+                                });
+                              },
+                            ),
+                            const SizedBox(height: 4),
+                            TextButton.icon(
+                              icon: const Icon(Icons.person_add, size: 18),
+                              label: const Text('Registrar Nuevo Cliente', style: TextStyle(fontSize: 14)),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              ),
+                              onPressed: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const ClientesScreen(),
+                                  ),
+                                );
+                                _cargarDatos();
+                              },
+                            ),
+                            const SizedBox(height: 4),
+                            DropdownButtonFormField<String>(
+                              value: _tipoVenta,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Tipo de Venta',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'recojo_tienda',
+                                  child: Text(
+                                    'Recojo en Tienda',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'envio_domicilio',
+                                  child: Text(
+                                    'Envío a Domicilio',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                setState(() {
+                                  _tipoVenta = value ?? 'recojo_tienda';
+                                  // Si cambia a envio_domicilio y hay cliente seleccionado, cargar datos del cliente
+                                  if (value == 'envio_domicilio' && _clienteIdSeleccionado != null) {
+                                    final cliente = _clientes.firstWhere((c) => c.id == _clienteIdSeleccionado);
+                                    _direccionEnvioController.text = cliente.direccion ?? '';
+                                    _telefonoEnvioController.text = cliente.telefono ?? '';
+                                    _nombreDestinatarioController.text = cliente.nombreCompleto;
+                                  } else if (value == 'recojo_tienda') {
+                                    // Limpiar campos de envío
+                                    _direccionEnvioController.clear();
+                                    _telefonoEnvioController.clear();
+                                    _nombreDestinatarioController.clear();
+                                    _referenciaDireccionController.clear();
+                                  }
+                                });
+                              },
+                            ),
+                            // Campos de envío (solo si es envio_domicilio)
+                            if (_tipoVenta == 'envio_domicilio') ...[
+                              const SizedBox(height: 8),
+                              const Divider(),
+                              const Text(
+                                'Datos de Envío',
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 4),
+                              TextFormField(
+                                controller: _direccionEnvioController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Dirección de Entrega *',
+                                  hintText: 'Ej: Los Claveles 213, José Leonardo Ortiz',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.location_on),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                ),
+                                maxLines: 2,
+                                validator: (value) {
+                                  if (_tipoVenta == 'envio_domicilio' && (value == null || value.isEmpty)) {
+                                    return 'La dirección de entrega es requerida';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 4),
+                              TextFormField(
+                                controller: _telefonoEnvioController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Teléfono de Contacto *',
+                                  hintText: '987654321',
+                                  helperText: 'Máximo 9 dígitos, solo números',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.phone),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                ),
+                                keyboardType: TextInputType.phone,
+                                maxLength: 9,
+                                inputFormatters: [Validators.telefonoFormatter],
+                                validator: (value) {
+                                  if (_tipoVenta == 'envio_domicilio') {
+                                    if (value == null || value.isEmpty) {
+                                      return 'El teléfono de contacto es requerido';
+                                    }
+                                    return Validators.validateTelefonoRequerido(value);
+                                  }
+                                  return Validators.validateTelefonoOpcional(value);
+                                },
+                              ),
+                              const SizedBox(height: 4),
+                              TextFormField(
+                                controller: _nombreDestinatarioController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Nombre del Destinatario *',
+                                  hintText: 'Nombre completo de quien recibirá',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.person),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                ),
+                                validator: (value) {
+                                  if (_tipoVenta == 'envio_domicilio' && (value == null || value.isEmpty)) {
+                                    return 'El nombre del destinatario es requerido';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 4),
+                              TextFormField(
+                                controller: _referenciaDireccionController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Referencia de Dirección (Opcional)',
+                                  hintText: 'Ej: Casa azul, portón negro, etc.',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.info_outline),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                ),
+                                maxLines: 2,
+                              ),
+                            ],
+                            const SizedBox(height: 6),
+                            DropdownButtonFormField<int?>(
+                              value: _metodoPagoIdSeleccionado,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Método de Pago',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              ),
+                              items: [
+                                const DropdownMenuItem<int?>(
+                                  value: null,
+                                  child: Text(
+                                    'Seleccionar método',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                ..._metodosPago.map((metodo) => DropdownMenuItem<int?>(
+                                  value: metodo.id,
+                                  child: Text(
+                                    metodo.nombre,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                )),
+                              ],
+                              onChanged: (value) {
+                                setState(() {
+                                  _metodoPagoIdSeleccionado = value;
+                                });
+                              },
+                            ),
+                            const SizedBox(height: 4),
+                            TextFormField(
+                              decoration: const InputDecoration(
+                                labelText: 'Descuento',
+                                border: OutlineInputBorder(),
+                                prefixText: '\$ ',
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              ),
+                              keyboardType: TextInputType.number,
+                              onChanged: (value) {
+                                setState(() {
+                                  _descuento = double.tryParse(value) ?? 0.0;
+                                });
+                              },
+                            ),
+                            const SizedBox(height: 4),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -1025,7 +1123,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange.shade700,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
                 ),
                 child: _isGuardando
                     ? const SizedBox(
@@ -1033,9 +1131,17 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
-                    : Text(
-                        'Finalizar Venta - \$${_total.toStringAsFixed(2)}',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    : FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'Finalizar Venta - \$${_total.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
               ),
             ),

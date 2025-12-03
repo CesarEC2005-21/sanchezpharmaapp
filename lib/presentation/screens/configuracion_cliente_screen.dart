@@ -3,6 +3,8 @@ import 'package:dio/dio.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/error_message_helper.dart';
+import '../../core/utils/responsive_helper.dart';
 import '../../core/constants/api_constants.dart';
 import '../widgets/cliente_bottom_nav.dart';
 import 'login_screen.dart';
@@ -104,24 +106,14 @@ class _ConfiguracionClienteScreenState extends State<ConfiguracionClienteScreen>
       }
     } catch (e) {
       if (mounted) {
-        String errorMessage = 'Error al cambiar la contraseña';
-        if (e is DioException) {
-          if (e.response != null) {
-            final data = e.response!.data;
-            errorMessage = data['message'] ?? errorMessage;
-          } else {
-            errorMessage = 'Error de conexión. Verifique su internet.';
-          }
-        } else {
-          errorMessage = e.toString();
+        // Usar ErrorMessageHelper para obtener mensaje amigable
+        // No mostrar si es error 401 (el interceptor ya lo maneja)
+        final errorString = e.toString().toLowerCase();
+        if (!errorString.contains('401') && 
+            !errorString.contains('sesión expirada') &&
+            !errorString.contains('unauthorized')) {
+          ErrorMessageHelper.showErrorSnackBar(context, e);
         }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: Colors.red,
-          ),
-        );
       }
     } finally {
       if (mounted) {
@@ -187,44 +179,51 @@ class _ConfiguracionClienteScreenState extends State<ConfiguracionClienteScreen>
       ),
       bottomNavigationBar: const ClienteBottomNav(currentIndex: 2),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Card(
-                elevation: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.lock, color: Colors.green.shade700),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Cambiar Contraseña',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
+        padding: ResponsiveHelper.formPadding(context),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: ResponsiveHelper.maxContentWidth(context) ?? double.infinity,
+          ),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Card(
+                  elevation: 2,
+                  child: Padding(
+                    padding: ResponsiveHelper.formPadding(context),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.lock, color: Colors.green.shade700, size: ResponsiveHelper.iconSize(context)),
+                            SizedBox(width: ResponsiveHelper.spacing(context) / 2),
+                            Text(
+                              'Cambiar Contraseña',
+                              style: TextStyle(
+                                fontSize: ResponsiveHelper.subtitleFontSize(context) + 4,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
+                          ],
+                        ),
+                        SizedBox(height: ResponsiveHelper.spacing(context)),
                       TextFormField(
                         controller: _passwordActualController,
                         obscureText: _obscurePasswordActual,
+                        style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                         decoration: InputDecoration(
                           labelText: 'Contraseña Actual',
-                          prefixIcon: const Icon(Icons.lock_outline),
+                          labelStyle: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                          prefixIcon: Icon(Icons.lock_outline, size: ResponsiveHelper.iconSize(context)),
                           suffixIcon: IconButton(
                             icon: Icon(
                               _obscurePasswordActual
                                   ? Icons.visibility
                                   : Icons.visibility_off,
+                              size: ResponsiveHelper.iconSize(context),
                             ),
                             onPressed: () {
                               setState(() {
@@ -243,18 +242,21 @@ class _ConfiguracionClienteScreenState extends State<ConfiguracionClienteScreen>
                           return null;
                         },
                       ),
-                      const SizedBox(height: 16),
+                      SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                       TextFormField(
                         controller: _passwordNuevaController,
                         obscureText: _obscurePasswordNueva,
+                        style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                         decoration: InputDecoration(
                           labelText: 'Nueva Contraseña',
-                          prefixIcon: const Icon(Icons.lock),
+                          labelStyle: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                          prefixIcon: Icon(Icons.lock, size: ResponsiveHelper.iconSize(context)),
                           suffixIcon: IconButton(
                             icon: Icon(
                               _obscurePasswordNueva
                                   ? Icons.visibility
                                   : Icons.visibility_off,
+                              size: ResponsiveHelper.iconSize(context),
                             ),
                             onPressed: () {
                               setState(() {
@@ -276,18 +278,21 @@ class _ConfiguracionClienteScreenState extends State<ConfiguracionClienteScreen>
                           return null;
                         },
                       ),
-                      const SizedBox(height: 16),
+                      SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                       TextFormField(
                         controller: _passwordConfirmarController,
                         obscureText: _obscurePasswordConfirmar,
+                        style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                         decoration: InputDecoration(
                           labelText: 'Confirmar Nueva Contraseña',
-                          prefixIcon: const Icon(Icons.lock),
+                          labelStyle: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                          prefixIcon: Icon(Icons.lock, size: ResponsiveHelper.iconSize(context)),
                           suffixIcon: IconButton(
                             icon: Icon(
                               _obscurePasswordConfirmar
                                   ? Icons.visibility
                                   : Icons.visibility_off,
+                              size: ResponsiveHelper.iconSize(context),
                             ),
                             onPressed: () {
                               setState(() {
@@ -309,10 +314,10 @@ class _ConfiguracionClienteScreenState extends State<ConfiguracionClienteScreen>
                           return null;
                         },
                       ),
-                      const SizedBox(height: 24),
+                      SizedBox(height: ResponsiveHelper.spacing(context) * 1.5),
                       SizedBox(
                         width: double.infinity,
-                        height: 50,
+                        height: ResponsiveHelper.isSmallScreen(context) ? 45 : 50,
                         child: ElevatedButton(
                           onPressed: _isGuardando ? null : _cambiarContrasena,
                           style: ElevatedButton.styleFrom(
@@ -331,10 +336,10 @@ class _ConfiguracionClienteScreenState extends State<ConfiguracionClienteScreen>
                                     valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                   ),
                                 )
-                              : const Text(
+                              : Text(
                                   'Cambiar Contraseña',
                                   style: TextStyle(
-                                    fontSize: 16,
+                                    fontSize: ResponsiveHelper.bodyFontSize(context),
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
@@ -348,6 +353,7 @@ class _ConfiguracionClienteScreenState extends State<ConfiguracionClienteScreen>
           ),
         ),
       ),
+    ),
     );
   }
 }

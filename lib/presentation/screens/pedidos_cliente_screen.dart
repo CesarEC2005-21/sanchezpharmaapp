@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/error_message_helper.dart';
 import '../../core/utils/date_parser.dart';
 import '../../data/models/envio_model.dart';
 import '../../data/models/venta_model.dart';
@@ -107,9 +108,18 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Error al cargar pedidos: ${e.toString()}';
+        _errorMessage = ErrorMessageHelper.getFriendlyErrorMessage(e);
         _isLoading = false;
       });
+      // No mostrar SnackBar adicional si es error 401 (el interceptor ya lo maneja)
+      if (mounted) {
+        final errorString = e.toString().toLowerCase();
+        if (!errorString.contains('401') && 
+            !errorString.contains('sesión expirada') &&
+            !errorString.contains('unauthorized')) {
+          ErrorMessageHelper.showErrorSnackBar(context, e);
+        }
+      }
     }
   }
 
@@ -246,7 +256,7 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
                     children: [
                       Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
                       const SizedBox(height: 16),
-                      Text(_errorMessage!),
+                      Text(ErrorMessageHelper.getFriendlyErrorMessage(_errorMessage!)),
                       const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: _cargarPedidos,
@@ -323,7 +333,7 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
                                     } catch (e) {
                                       ScaffoldMessenger.of(context).showSnackBar(
                                         SnackBar(
-                                          content: Text('Error al cargar seguimiento: $e'),
+                                          content: Text(ErrorMessageHelper.getFriendlyErrorMessage(e)),
                                           backgroundColor: Colors.red,
                                         ),
                                       );
@@ -479,12 +489,16 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
                                               color: Colors.green.shade700,
                                             ),
                                             const SizedBox(width: 4),
-                                            Text(
-                                              'Toca para ver seguimiento en tiempo real',
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                color: Colors.green.shade700,
-                                                fontWeight: FontWeight.w600,
+                                            Flexible(
+                                              child: Text(
+                                                'Toca para ver seguimiento en tiempo real',
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  color: Colors.green.shade700,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
                                               ),
                                             ),
                                             const SizedBox(width: 4),
@@ -506,12 +520,16 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
                                             color: Colors.green.shade700,
                                           ),
                                           const SizedBox(width: 4),
-                                          Text(
-                                            'Ver ubicación del local',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.green.shade700,
-                                              fontWeight: FontWeight.w500,
+                                          Flexible(
+                                            child: Text(
+                                              'Ver ubicación del local',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: Colors.green.shade700,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                         ],

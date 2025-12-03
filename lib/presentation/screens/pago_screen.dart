@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
@@ -7,6 +8,60 @@ import '../../core/utils/validators.dart';
 import '../widgets/cliente_bottom_nav.dart';
 import 'home_cliente_screen.dart';
 import 'seleccionar_ubicacion_screen.dart';
+
+// Formateador para fecha de vencimiento (MM/AA)
+class _FechaVencimientoFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
+    
+    if (text.isEmpty) {
+      return newValue.copyWith(text: '');
+    }
+    
+    if (text.length <= 2) {
+      return newValue.copyWith(text: text);
+    }
+    
+    return newValue.copyWith(
+      text: '${text.substring(0, 2)}/${text.substring(2)}',
+      selection: TextSelection.collapsed(
+        offset: '${text.substring(0, 2)}/${text.substring(2)}'.length,
+      ),
+    );
+  }
+}
+
+// Formateador para número de tarjeta (espacios cada 4 dígitos)
+class _NumeroTarjetaFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
+    
+    if (text.isEmpty) {
+      return newValue.copyWith(text: '');
+    }
+    
+    final buffer = StringBuffer();
+    for (int i = 0; i < text.length; i++) {
+      if (i > 0 && i % 4 == 0) {
+        buffer.write(' ');
+      }
+      buffer.write(text[i]);
+    }
+    
+    return newValue.copyWith(
+      text: buffer.toString(),
+      selection: TextSelection.collapsed(offset: buffer.length),
+    );
+  }
+}
 
 class PagoScreen extends StatefulWidget {
   final List<Map<String, dynamic>> carrito;
@@ -41,6 +96,14 @@ class _PagoScreenState extends State<PagoScreen> {
   String _tipoEntrega = 'recojo_tienda'; // 'recojo_tienda' o 'envio_domicilio'
   int? _metodoPagoId;
   List<Map<String, dynamic>> _metodosPago = [];
+  
+  // Controllers para simulación de pagos
+  final TextEditingController _numeroTelefonoController = TextEditingController();
+  final TextEditingController _codigoAprobacionController = TextEditingController();
+  final TextEditingController _numeroTarjetaController = TextEditingController();
+  final TextEditingController _nombreTarjetaController = TextEditingController();
+  final TextEditingController _fechaVencimientoController = TextEditingController();
+  final TextEditingController _cvvController = TextEditingController();
 
   @override
   void initState() {
@@ -54,6 +117,12 @@ class _PagoScreenState extends State<PagoScreen> {
     _telefonoController.dispose();
     _nombreDestinatarioController.dispose();
     _referenciaController.dispose();
+    _numeroTelefonoController.dispose();
+    _codigoAprobacionController.dispose();
+    _numeroTarjetaController.dispose();
+    _nombreTarjetaController.dispose();
+    _fechaVencimientoController.dispose();
+    _cvvController.dispose();
     super.dispose();
   }
 
@@ -110,6 +179,464 @@ class _PagoScreenState extends State<PagoScreen> {
     return _subtotalConIGV + _costoEnvio;
   }
 
+  // Obtener el nombre del método de pago seleccionado
+  String? get _nombreMetodoPago {
+    if (_metodoPagoId == null) return null;
+    final metodo = _metodosPago.firstWhere(
+      (m) => m['id'] == _metodoPagoId,
+      orElse: () => {},
+    );
+    return metodo['nombre'] as String?;
+  }
+
+  // Verificar si el método de pago requiere simulación
+  bool _requiereSimulacion(String? nombreMetodo) {
+    if (nombreMetodo == null) return false;
+    final nombre = nombreMetodo.toLowerCase();
+    return nombre.contains('plin') || 
+           nombre.contains('yape') || 
+           nombre.contains('tarjeta de crédito') || 
+           nombre.contains('tarjeta de debito') ||
+           nombre.contains('tarjeta crédito') ||
+           nombre.contains('tarjeta débito');
+  }
+
+  // Mostrar diálogo de simulación de pago
+  Future<bool> _mostrarSimulacionPago() async {
+    final nombreMetodo = _nombreMetodoPago;
+    if (nombreMetodo == null) return false;
+
+    final nombre = nombreMetodo.toLowerCase();
+    
+    // Plin y Yape
+    if (nombre.contains('plin') || nombre.contains('yape')) {
+      return await _mostrarSimulacionPlinYape(nombreMetodo);
+    }
+    
+    // Tarjeta de crédito
+    if (nombre.contains('tarjeta de crédito') || nombre.contains('tarjeta crédito')) {
+      return await _mostrarSimulacionTarjetaCredito();
+    }
+    
+    // Tarjeta de débito
+    if (nombre.contains('tarjeta de debito') || nombre.contains('tarjeta débito')) {
+      return await _mostrarSimulacionTarjetaDebito();
+    }
+    
+    // Transferencia bancaria - no requiere simulación
+    return true;
+  }
+
+  Future<bool> _mostrarSimulacionPlinYape(String nombreMetodo) async {
+    _numeroTelefonoController.clear();
+    _codigoAprobacionController.clear();
+    
+    return await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('Simulación de Pago - $nombreMetodo'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _numeroTelefonoController,
+                decoration: InputDecoration(
+                  labelText: 'Número de $nombreMetodo',
+                  hintText: 'Ej: 987654321',
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.phone),
+                ),
+                keyboardType: TextInputType.phone,
+                maxLength: 9,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Por favor ingrese el número';
+                  }
+                  if (value.length != 9) {
+                    return 'El número debe tener 9 dígitos';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _codigoAprobacionController,
+                decoration: const InputDecoration(
+                  labelText: 'Código de Aprobación',
+                  hintText: 'Ej: 123456',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.lock),
+                ),
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Por favor ingrese el código de aprobación';
+                  }
+                  if (value.length != 6) {
+                    return 'El código debe tener 6 dígitos';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final numero = _numeroTelefonoController.text.trim();
+              final codigo = _codigoAprobacionController.text.trim();
+              
+              if (numero.length == 9 && codigo.length == 6) {
+                Navigator.of(context).pop(true);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      numero.length != 9 
+                        ? 'El número debe tener 9 dígitos'
+                        : 'El código de aprobación debe tener 6 dígitos'
+                    ),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade700,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+
+  Future<bool> _mostrarSimulacionTarjetaCredito() async {
+    _numeroTarjetaController.clear();
+    _nombreTarjetaController.clear();
+    _fechaVencimientoController.clear();
+    _cvvController.clear();
+    
+    return await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Simulación de Pago - Tarjeta de Crédito'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _numeroTarjetaController,
+                decoration: const InputDecoration(
+                  labelText: 'Número de Tarjeta',
+                  hintText: '1234 5678 9012 3456',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.credit_card),
+                ),
+                keyboardType: TextInputType.number,
+                maxLength: 23, // 19 dígitos + 4 espacios
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  _NumeroTarjetaFormatter(),
+                ],
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Por favor ingrese el número de tarjeta';
+                  }
+                  final digitsOnly = value.replaceAll(RegExp(r'[^\d]'), '');
+                  if (digitsOnly.length < 13 || digitsOnly.length > 19) {
+                    return 'El número de tarjeta debe tener entre 13 y 19 dígitos';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _nombreTarjetaController,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre en la Tarjeta',
+                  hintText: 'Ej: JUAN PEREZ',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person),
+                ),
+                textCapitalization: TextCapitalization.characters,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Por favor ingrese el nombre';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child:               TextFormField(
+                controller: _fechaVencimientoController,
+                decoration: const InputDecoration(
+                  labelText: 'MM/AA',
+                  hintText: '12/25',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.calendar_today),
+                ),
+                keyboardType: TextInputType.number,
+                maxLength: 5,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(4),
+                  _FechaVencimientoFormatter(),
+                ],
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Requerido';
+                  }
+                  if (!RegExp(r'^\d{2}/\d{2}$').hasMatch(value)) {
+                    return 'Formato: MM/AA';
+                  }
+                  return null;
+                },
+              ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _cvvController,
+                      decoration: const InputDecoration(
+                        labelText: 'CVV',
+                        hintText: '123',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.lock),
+                      ),
+                      keyboardType: TextInputType.number,
+                      maxLength: 4,
+                      obscureText: true,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Requerido';
+                        }
+                        if (value.length < 3 || value.length > 4) {
+                          return 'CVV inválido';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final numeroTarjeta = _numeroTarjetaController.text.replaceAll(RegExp(r'[^\d]'), '');
+              final nombre = _nombreTarjetaController.text.trim();
+              final fecha = _fechaVencimientoController.text.trim();
+              final cvv = _cvvController.text.trim();
+              
+              String? error;
+              if (numeroTarjeta.length < 13 || numeroTarjeta.length > 19) {
+                error = 'El número de tarjeta debe tener entre 13 y 19 dígitos';
+              } else if (nombre.isEmpty) {
+                error = 'Por favor ingrese el nombre en la tarjeta';
+              } else if (fecha.length != 5 || !RegExp(r'^\d{2}/\d{2}$').hasMatch(fecha)) {
+                error = 'La fecha debe tener el formato MM/AA';
+              } else if (cvv.length < 3 || cvv.length > 4) {
+                error = 'El CVV debe tener 3 o 4 dígitos';
+              }
+              
+              if (error == null) {
+                Navigator.of(context).pop(true);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(error),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade700,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+
+  Future<bool> _mostrarSimulacionTarjetaDebito() async {
+    _numeroTarjetaController.clear();
+    _nombreTarjetaController.clear();
+    _fechaVencimientoController.clear();
+    _cvvController.clear();
+    
+    return await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Simulación de Pago - Tarjeta de Débito'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _numeroTarjetaController,
+                decoration: const InputDecoration(
+                  labelText: 'Número de Tarjeta',
+                  hintText: '1234 5678 9012 3456',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.credit_card),
+                ),
+                keyboardType: TextInputType.number,
+                maxLength: 19,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Por favor ingrese el número de tarjeta';
+                  }
+                  if (value.length < 13 || value.length > 19) {
+                    return 'El número de tarjeta debe tener entre 13 y 19 dígitos';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _nombreTarjetaController,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre en la Tarjeta',
+                  hintText: 'Ej: JUAN PEREZ',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person),
+                ),
+                textCapitalization: TextCapitalization.characters,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Por favor ingrese el nombre';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child:               TextFormField(
+                controller: _fechaVencimientoController,
+                decoration: const InputDecoration(
+                  labelText: 'MM/AA',
+                  hintText: '12/25',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.calendar_today),
+                ),
+                keyboardType: TextInputType.number,
+                maxLength: 5,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(4),
+                  _FechaVencimientoFormatter(),
+                ],
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Requerido';
+                  }
+                  if (!RegExp(r'^\d{2}/\d{2}$').hasMatch(value)) {
+                    return 'Formato: MM/AA';
+                  }
+                  return null;
+                },
+              ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _cvvController,
+                      decoration: const InputDecoration(
+                        labelText: 'CVV',
+                        hintText: '123',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.lock),
+                      ),
+                      keyboardType: TextInputType.number,
+                      maxLength: 4,
+                      obscureText: true,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Requerido';
+                        }
+                        if (value.length < 3 || value.length > 4) {
+                          return 'CVV inválido';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final numeroTarjeta = _numeroTarjetaController.text.replaceAll(RegExp(r'[^\d]'), '');
+              final nombre = _nombreTarjetaController.text.trim();
+              final fecha = _fechaVencimientoController.text.trim();
+              final cvv = _cvvController.text.trim();
+              
+              String? error;
+              if (numeroTarjeta.length < 13 || numeroTarjeta.length > 19) {
+                error = 'El número de tarjeta debe tener entre 13 y 19 dígitos';
+              } else if (nombre.isEmpty) {
+                error = 'Por favor ingrese el nombre en la tarjeta';
+              } else if (fecha.length != 5 || !RegExp(r'^\d{2}/\d{2}$').hasMatch(fecha)) {
+                error = 'La fecha debe tener el formato MM/AA';
+              } else if (cvv.length < 3 || cvv.length > 4) {
+                error = 'El CVV debe tener 3 o 4 dígitos';
+              }
+              
+              if (error == null) {
+                Navigator.of(context).pop(true);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(error),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade700,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+
   Future<void> _procesarPago() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -134,6 +661,75 @@ class _PagoScreenState extends State<PagoScreen> {
         ),
       );
       return;
+    }
+
+    // Validar campos de simulación si es necesario
+    if (_requiereSimulacion(_nombreMetodoPago)) {
+      final nombre = _nombreMetodoPago?.toLowerCase() ?? '';
+      
+      // Validar Plin y Yape
+      if (nombre.contains('plin') || nombre.contains('yape')) {
+        if (_numeroTelefonoController.text.length != 9) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Por favor ingrese el número de teléfono (9 dígitos)'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
+        if (_codigoAprobacionController.text.length != 6) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Por favor ingrese el código de aprobación (6 dígitos)'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
+      }
+      
+      // Validar tarjetas
+      if (nombre.contains('tarjeta')) {
+        final numeroTarjeta = _numeroTarjetaController.text.replaceAll(RegExp(r'[^\d]'), '');
+        if (numeroTarjeta.length < 13 || numeroTarjeta.length > 19) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Por favor ingrese un número de tarjeta válido'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
+        if (_nombreTarjetaController.text.trim().isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Por favor ingrese el nombre en la tarjeta'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
+        if (_fechaVencimientoController.text.length != 5 || 
+            !RegExp(r'^\d{2}/\d{2}$').hasMatch(_fechaVencimientoController.text)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Por favor ingrese una fecha de vencimiento válida (MM/AA)'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
+        if (_cvvController.text.length < 3 || _cvvController.text.length > 4) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Por favor ingrese un CVV válido (3 o 4 dígitos)'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
+      }
     }
 
     setState(() {
@@ -270,7 +866,14 @@ class _PagoScreenState extends State<PagoScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('${item['nombre']} x${item['cantidad']}'),
+                                Expanded(
+                                  child: Text(
+                                    '${item['nombre']} x${item['cantidad']}',
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 2,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
                                 Text('S/ ${((item['precio'] as num) * (item['cantidad'] as int)).toStringAsFixed(2)}'),
                               ],
                             ),
@@ -279,14 +882,18 @@ class _PagoScreenState extends State<PagoScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Subtotal (sin IGV):'),
+                          const Flexible(
+                            child: Text('Subtotal (sin IGV):'),
+                          ),
                           Text('S/ ${_subtotal.toStringAsFixed(2)}'),
                         ],
                       ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('IGV (18%):'),
+                          const Flexible(
+                            child: Text('IGV (18%):'),
+                          ),
                           Text('S/ ${_impuesto.toStringAsFixed(2)}'),
                         ],
                       ),
@@ -294,7 +901,9 @@ class _PagoScreenState extends State<PagoScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Costo de envío:'),
+                            const Flexible(
+                              child: Text('Costo de envío:'),
+                            ),
                             Text('S/ ${_costoEnvio.toStringAsFixed(2)}'),
                           ],
                         ),
@@ -302,11 +911,13 @@ class _PagoScreenState extends State<PagoScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            'Total (IGV incluido):',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                          const Flexible(
+                            child: Text(
+                              'Total (IGV incluido):',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                           Text(
@@ -428,12 +1039,16 @@ class _PagoScreenState extends State<PagoScreen> {
                       children: [
                         Icon(Icons.check_circle, color: Colors.green.shade700, size: 16),
                         const SizedBox(width: 4),
-                        Text(
-                          'Ubicación marcada: ${_latitudDestino!.toStringAsFixed(6)}, ${_longitudDestino!.toStringAsFixed(6)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.green.shade700,
-                            fontStyle: FontStyle.italic,
+                        Expanded(
+                          child: Text(
+                            'Ubicación marcada: ${_latitudDestino!.toStringAsFixed(6)}, ${_longitudDestino!.toStringAsFixed(6)}',
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.green.shade700,
+                              fontStyle: FontStyle.italic,
+                            ),
                           ),
                         ),
                       ],
@@ -502,9 +1117,212 @@ class _PagoScreenState extends State<PagoScreen> {
                     onChanged: (value) {
                       setState(() {
                         _metodoPagoId = value;
+                        // Limpiar campos de simulación al cambiar método de pago
+                        _numeroTelefonoController.clear();
+                        _codigoAprobacionController.clear();
+                        _numeroTarjetaController.clear();
+                        _nombreTarjetaController.clear();
+                        _fechaVencimientoController.clear();
+                        _cvvController.clear();
                       });
                     },
                   )),
+              
+              // Campos de simulación según el método de pago seleccionado
+              if (_requiereSimulacion(_nombreMetodoPago)) ...[
+                const SizedBox(height: 16),
+                Card(
+                  color: Colors.blue.shade50,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.payment, color: Colors.blue.shade700),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Datos de Pago - ${_nombreMetodoPago}',
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        // Campos para Plin y Yape
+                        if (_nombreMetodoPago?.toLowerCase().contains('plin') == true ||
+                            _nombreMetodoPago?.toLowerCase().contains('yape') == true) ...[
+                          TextFormField(
+                            controller: _numeroTelefonoController,
+                            decoration: InputDecoration(
+                              labelText: 'Número de ${_nombreMetodoPago}',
+                              hintText: 'Ej: 987654321',
+                              border: const OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.phone),
+                            ),
+                            keyboardType: TextInputType.phone,
+                            maxLength: 9,
+                            validator: (value) {
+                              if (_requiereSimulacion(_nombreMetodoPago)) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Por favor ingrese el número';
+                                }
+                                if (value.length != 9) {
+                                  return 'El número debe tener 9 dígitos';
+                                }
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _codigoAprobacionController,
+                            decoration: const InputDecoration(
+                              labelText: 'Código de Aprobación',
+                              hintText: 'Ej: 123456',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.lock),
+                            ),
+                            keyboardType: TextInputType.number,
+                            maxLength: 6,
+                            validator: (value) {
+                              if (_requiereSimulacion(_nombreMetodoPago)) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Por favor ingrese el código de aprobación';
+                                }
+                                if (value.length != 6) {
+                                  return 'El código debe tener 6 dígitos';
+                                }
+                              }
+                              return null;
+                            },
+                          ),
+                        ],
+                        // Campos para tarjeta de crédito o débito
+                        if ((_nombreMetodoPago?.toLowerCase().contains('tarjeta de crédito') == true ||
+                             _nombreMetodoPago?.toLowerCase().contains('tarjeta crédito') == true ||
+                             _nombreMetodoPago?.toLowerCase().contains('tarjeta de debito') == true ||
+                             _nombreMetodoPago?.toLowerCase().contains('tarjeta débito') == true)) ...[
+                          TextFormField(
+                            controller: _numeroTarjetaController,
+                            decoration: const InputDecoration(
+                              labelText: 'Número de Tarjeta',
+                              hintText: '1234 5678 9012 3456',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.credit_card),
+                            ),
+                            keyboardType: TextInputType.number,
+                            maxLength: 23,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              _NumeroTarjetaFormatter(),
+                            ],
+                            validator: (value) {
+                              if (_requiereSimulacion(_nombreMetodoPago)) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Por favor ingrese el número de tarjeta';
+                                }
+                                final digitsOnly = value.replaceAll(RegExp(r'[^\d]'), '');
+                                if (digitsOnly.length < 13 || digitsOnly.length > 19) {
+                                  return 'El número debe tener entre 13 y 19 dígitos';
+                                }
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _nombreTarjetaController,
+                            decoration: const InputDecoration(
+                              labelText: 'Nombre en la Tarjeta',
+                              hintText: 'Ej: JUAN PEREZ',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.person),
+                            ),
+                            textCapitalization: TextCapitalization.characters,
+                            validator: (value) {
+                              if (_requiereSimulacion(_nombreMetodoPago)) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Por favor ingrese el nombre';
+                                }
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _fechaVencimientoController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'MM/AA',
+                                    hintText: '12/25',
+                                    border: OutlineInputBorder(),
+                                    prefixIcon: Icon(Icons.calendar_today),
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                  maxLength: 5,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                    LengthLimitingTextInputFormatter(4),
+                                    _FechaVencimientoFormatter(),
+                                  ],
+                                  validator: (value) {
+                                    if (_requiereSimulacion(_nombreMetodoPago)) {
+                                      if (value == null || value.isEmpty) {
+                                        return 'Requerido';
+                                      }
+                                      if (!RegExp(r'^\d{2}/\d{2}$').hasMatch(value)) {
+                                        return 'MM/AA';
+                                      }
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _cvvController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'CVV',
+                                    hintText: '123',
+                                    border: OutlineInputBorder(),
+                                    prefixIcon: Icon(Icons.lock),
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                  maxLength: 4,
+                                  obscureText: true,
+                                  validator: (value) {
+                                    if (_requiereSimulacion(_nombreMetodoPago)) {
+                                      if (value == null || value.isEmpty) {
+                                        return 'Requerido';
+                                      }
+                                      if (value.length < 3 || value.length > 4) {
+                                        return 'CVV inválido';
+                                      }
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               
               const SizedBox(height: 24),
               

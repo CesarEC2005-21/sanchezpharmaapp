@@ -108,8 +108,9 @@ class _ClientesScreenState extends State<ClientesScreen> {
   Future<void> _mostrarFormularioClienteAntiguo({ClienteModel? cliente}) async {
     final formKey = GlobalKey<FormState>();
 
-    final nombreController = TextEditingController(text: cliente?.nombre ?? '');
-    final apellidoController = TextEditingController(text: cliente?.apellido ?? '');
+    final nombresController = TextEditingController(text: cliente?.nombres ?? '');
+    final apellidoPaternoController = TextEditingController(text: cliente?.apellidoPaterno ?? '');
+    final apellidoMaternoController = TextEditingController(text: cliente?.apellidoMaterno ?? '');
     final documentoController = TextEditingController(text: cliente?.documento ?? '');
     final telefonoController = TextEditingController(text: cliente?.telefono ?? '');
     final emailController = TextEditingController(text: cliente?.email ?? '');
@@ -133,20 +134,32 @@ class _ClientesScreenState extends State<ClientesScreen> {
               children: [
                 ModalSectionBuilder.buildSectionTitle('Información Personal', Icons.person),
                 ModalSectionBuilder.buildTextField(
-                  controller: nombreController,
-                  label: 'Nombre',
+                  controller: nombresController,
+                  label: 'Nombres',
                   icon: Icons.person_outline,
                   required: true,
                   validator: (value) {
                     if (value == null || value.isEmpty) {
-                      return 'El nombre es requerido';
+                      return 'Los nombres son requeridos';
                     }
                     return null;
                   },
                 ),
                 ModalSectionBuilder.buildTextField(
-                  controller: apellidoController,
-                  label: 'Apellido',
+                  controller: apellidoPaternoController,
+                  label: 'Apellido Paterno',
+                  icon: Icons.person_outline,
+                  required: true,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'El apellido paterno es requerido';
+                    }
+                    return null;
+                  },
+                ),
+                ModalSectionBuilder.buildTextField(
+                  controller: apellidoMaternoController,
+                  label: 'Apellido Materno',
                   icon: Icons.person_outline,
                 ),
                 Row(
@@ -298,8 +311,9 @@ class _ClientesScreenState extends State<ClientesScreen> {
               if (formKey.currentState!.validate()) {
                 await _guardarCliente(
                   cliente: cliente,
-                  nombre: nombreController.text,
-                  apellido: apellidoController.text.isEmpty ? null : apellidoController.text,
+                  nombres: nombresController.text,
+                  apellidoPaterno: apellidoPaternoController.text.isEmpty ? null : apellidoPaternoController.text,
+                  apellidoMaterno: apellidoMaternoController.text.isEmpty ? null : apellidoMaternoController.text,
                   documento: documentoController.text.isEmpty ? null : documentoController.text,
                   tipoDocumento: tipoDocumentoValue,
                   telefono: telefonoController.text.isEmpty ? null : telefonoController.text,
@@ -320,8 +334,9 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
   Future<void> _guardarCliente({
     ClienteModel? cliente,
-    required String nombre,
-    String? apellido,
+    required String nombres,
+    String? apellidoPaterno,
+    String? apellidoMaterno,
     String? documento,
     required String tipoDocumento,
     String? telefono,
@@ -331,8 +346,9 @@ class _ClientesScreenState extends State<ClientesScreen> {
   }) async {
     try {
       final Map<String, dynamic> datos = {
-        'nombre': nombre,
-        'apellido': apellido,
+        'nombres': nombres,
+        'apellido_paterno': apellidoPaterno,
+        'apellido_materno': apellidoMaterno,
         'documento': documento,
         'tipo_documento': tipoDocumento,
         'telefono': telefono,
@@ -490,7 +506,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                           ? Colors.purple.shade700
                                           : Colors.grey,
                                       child: Text(
-                                        cliente.nombre[0].toUpperCase(),
+                                        cliente.nombres.isNotEmpty ? cliente.nombres[0].toUpperCase() : '?',
                                         style: const TextStyle(color: Colors.white),
                                       ),
                                     ),

@@ -3,6 +3,7 @@ import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../data/services/reniec_service.dart';
 import '../../core/utils/validators.dart';
+import '../../core/utils/responsive_helper.dart';
 import 'login_screen.dart';
 
 class RegistroClienteScreen extends StatefulWidget {
@@ -15,7 +16,8 @@ class RegistroClienteScreen extends StatefulWidget {
 class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nombreController = TextEditingController();
-  final _apellidoController = TextEditingController();
+  final _apellidoPaternoController = TextEditingController();
+  final _apellidoMaternoController = TextEditingController();
   final _documentoController = TextEditingController();
   final _telefonoController = TextEditingController();
   final _emailController = TextEditingController();
@@ -30,12 +32,14 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
   bool _verificandoDNI = false;
   String? _mensajeVerificacionDNI;
   bool? _dniValido;
+  bool _camposBloqueados = true; // Bloqueados desde el inicio hasta verificar DNI
   final ReniecService _reniecService = ReniecService();
 
   @override
   void dispose() {
     _nombreController.dispose();
-    _apellidoController.dispose();
+    _apellidoPaternoController.dispose();
+    _apellidoMaternoController.dispose();
     _documentoController.dispose();
     _telefonoController.dispose();
     _emailController.dispose();
@@ -94,13 +98,22 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
       if (resultado['valido'] == true && resultado['datos'] != null) {
         final datos = resultado['datos'] as Map<String, dynamic>;
         
-        // Prellenar nombre y apellido si están disponibles
-        if (datos['nombre'] != null && _nombreController.text.isEmpty) {
+        // Autocompletar nombres, apellido paterno y apellido materno desde RENIEC
+        // Siempre sobrescribir con los datos de RENIEC para asegurar que sean correctos
+        if (datos['nombre'] != null) {
           _nombreController.text = datos['nombre'].toString();
         }
-        if (datos['apellido_paterno'] != null && _apellidoController.text.isEmpty) {
-          _apellidoController.text = datos['apellido_paterno'].toString();
+        if (datos['apellido_paterno'] != null) {
+          _apellidoPaternoController.text = datos['apellido_paterno'].toString();
         }
+        if (datos['apellido_materno'] != null) {
+          _apellidoMaternoController.text = datos['apellido_materno'].toString();
+        }
+        
+        // Bloquear los campos una vez que se autocompletan desde RENIEC
+        setState(() {
+          _camposBloqueados = true;
+        });
       } else if (mostrarDialogo && mounted) {
         // Solo mostrar diálogo si se solicita explícitamente
         _showErrorDialog(
@@ -165,8 +178,9 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
       final apiService = ApiService(dio);
 
       final datosCliente = {
-        'nombre': _nombreController.text.trim(),
-        'apellido': _apellidoController.text.trim(),
+        'nombres': _nombreController.text.trim(),
+        'apellido_paterno': _apellidoPaternoController.text.trim(),
+        'apellido_materno': _apellidoMaternoController.text.trim(),
         'documento': _documentoController.text.trim(),
         'tipo_documento': _tipoDocumento,
         'telefono': _telefonoController.text.trim(),
@@ -345,61 +359,106 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
           ),
         ),
         child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Crear Cuenta',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
-                    ),
-                    textAlign: TextAlign.center,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding: ResponsiveHelper.formPadding(context),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight,
                   ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'Completa tus datos para registrarte',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 30),
+                  child: IntrinsicHeight(
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(height: ResponsiveHelper.spacing(context)),
+                          Text(
+                            'Crear Cuenta',
+                            style: TextStyle(
+                              fontSize: ResponsiveHelper.titleFontSize(context),
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          SizedBox(height: ResponsiveHelper.spacing(context) * 0.5),
+                          Text(
+                            'Completa tus datos para registrarte',
+                            style: TextStyle(
+                              fontSize: ResponsiveHelper.subtitleFontSize(context),
+                              color: Colors.grey,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          SizedBox(height: ResponsiveHelper.spacing(context) * 1.5),
                   
-                  // Nombre
+                          // Nombre
                   TextFormField(
                     controller: _nombreController,
-                    decoration: const InputDecoration(
+                    readOnly: _camposBloqueados,
+                    decoration: InputDecoration(
                       labelText: 'Nombre *',
-                      prefixIcon: Icon(Icons.person),
-                      border: OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.person),
+                      suffixIcon: _camposBloqueados 
+                          ? const Icon(Icons.lock, color: Colors.green, size: 20)
+                          : null,
+                      border: const OutlineInputBorder(),
+                      filled: _camposBloqueados,
+                      fillColor: _camposBloqueados ? Colors.grey.shade100 : null,
+                      hintText: _camposBloqueados ? 'Verificado desde RENIEC' : null,
                     ),
                     validator: (value) {
-                      if (value == null || value.isEmpty) {
+                      if (value == null || value.trim().isEmpty) {
                         return 'El nombre es requerido';
                       }
                       return null;
                     },
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                   
-                  // Apellido
+                  // Apellido Paterno
                   TextFormField(
-                    controller: _apellidoController,
-                    decoration: const InputDecoration(
-                      labelText: 'Apellido',
-                      prefixIcon: Icon(Icons.person_outline),
-                      border: OutlineInputBorder(),
+                    controller: _apellidoPaternoController,
+                    readOnly: _camposBloqueados,
+                    decoration: InputDecoration(
+                      labelText: 'Apellido Paterno *',
+                      prefixIcon: const Icon(Icons.person_outline),
+                      suffixIcon: _camposBloqueados 
+                          ? const Icon(Icons.lock, color: Colors.green, size: 20)
+                          : null,
+                      border: const OutlineInputBorder(),
+                      filled: _camposBloqueados,
+                      fillColor: _camposBloqueados ? Colors.grey.shade100 : null,
+                      hintText: _camposBloqueados ? 'Verificado desde RENIEC' : null,
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'El apellido paterno es requerido';
+                      }
+                      return null;
+                    },
+                  ),
+                  SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
+                  
+                  // Apellido Materno
+                  TextFormField(
+                    controller: _apellidoMaternoController,
+                    readOnly: _camposBloqueados,
+                    decoration: InputDecoration(
+                      labelText: 'Apellido Materno',
+                      prefixIcon: const Icon(Icons.person_outline),
+                      suffixIcon: _camposBloqueados 
+                          ? const Icon(Icons.lock, color: Colors.green, size: 20)
+                          : null,
+                      border: const OutlineInputBorder(),
+                      filled: _camposBloqueados,
+                      fillColor: _camposBloqueados ? Colors.grey.shade100 : null,
+                      hintText: _camposBloqueados ? 'Verificado desde RENIEC' : null,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                   
                   // Tipo de documento y documento
                   Row(
@@ -423,6 +482,16 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                               _tipoDocumento = value ?? 'DNI';
                               _dniValido = null;
                               _mensajeVerificacionDNI = null;
+                              // Si no es DNI, desbloquear campos para ingreso manual
+                              // Si es DNI, bloquear hasta verificar
+                              if (value != 'DNI') {
+                                _camposBloqueados = false;
+                                _nombreController.clear();
+                                _apellidoPaternoController.clear();
+                                _apellidoMaternoController.clear();
+                              } else {
+                                _camposBloqueados = true;
+                              }
                             });
                           },
                         ),
@@ -436,7 +505,7 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                             labelText: 'Número de Documento *',
                             border: const OutlineInputBorder(),
                             helperText: _tipoDocumento == 'DNI' 
-                                ? 'El documento debe ser único'
+                                ? 'Máximo 8 dígitos, solo números'
                                 : 'El documento debe ser único',
                             suffixIcon: _tipoDocumento == 'DNI'
                                 ? _verificandoDNI
@@ -465,10 +534,15 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                                 : null,
                           ),
                           keyboardType: TextInputType.number,
+                          maxLength: _tipoDocumento == 'DNI' ? 8 : null,
+                          inputFormatters: _tipoDocumento == 'DNI' 
+                              ? [Validators.dniFormatter]
+                              : null,
                           onChanged: (value) {
                             setState(() {
                               _dniValido = null;
                               _mensajeVerificacionDNI = null;
+                              _camposBloqueados = false; // Desbloquear campos si se cambia el DNI
                             });
                             
                             // Verificar automáticamente después de un breve delay
@@ -547,7 +621,7 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                         ],
                       ),
                     ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                   
                   // Teléfono
                   TextFormField(
@@ -563,7 +637,7 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                     inputFormatters: [Validators.telefonoFormatter],
                     validator: Validators.validateTelefonoOpcional,
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                   
                   // Email
                   TextFormField(
@@ -585,7 +659,7 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                   
                   // Contraseña
                   TextFormField(
@@ -616,7 +690,7 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                   
                   // Confirmar contraseña
                   TextFormField(
@@ -647,7 +721,7 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                   
                   // Dirección
                   TextFormField(
@@ -659,12 +733,12 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                     ),
                     maxLines: 2,
                   ),
-                  const SizedBox(height: 30),
+                  SizedBox(height: ResponsiveHelper.spacing(context) * 1.5),
                   
                   // Botón de registro
                   SizedBox(
                     width: double.infinity,
-                    height: 50,
+                    height: ResponsiveHelper.isSmallScreen(context) ? 45 : 50,
                     child: ElevatedButton(
                       onPressed: _isLoading ? null : _handleRegistro,
                       style: ElevatedButton.styleFrom(
@@ -683,16 +757,16 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                                 valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                               ),
                             )
-                          : const Text(
+                          : Text(
                               'Registrarse',
                               style: TextStyle(
-                                fontSize: 18,
+                                fontSize: ResponsiveHelper.bodyFontSize(context) + 2,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: ResponsiveHelper.spacing(context)),
                   
                   // Link para volver al login
                   TextButton(
@@ -719,9 +793,13 @@ class _RegistroClienteScreenState extends State<RegistroClienteScreen> {
                       ),
                     ),
                   ),
-                ],
-              ),
-            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ),

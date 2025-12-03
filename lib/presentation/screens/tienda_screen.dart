@@ -6,7 +6,10 @@ import '../../data/api/api_service.dart';
 import '../../data/models/producto_model.dart';
 import '../../data/models/categoria_model.dart';
 import '../../data/models/banner_model.dart';
+import 'package:dio/dio.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/responsive_helper.dart';
+import '../../core/utils/error_message_helper.dart';
 import '../../core/notifiers/cart_notifier.dart';
 import 'carrito_screen.dart';
 import 'login_screen.dart';
@@ -146,7 +149,9 @@ class _TiendaScreenState extends State<TiendaScreen> {
         }
       }
     } catch (e) {
+      // Manejar errores silenciosamente para categorías (no crítico)
       print('Error al cargar categorías: $e');
+      // No mostrar error al usuario, simplemente no mostrar categorías
     }
   }
 
@@ -261,22 +266,45 @@ class _TiendaScreenState extends State<TiendaScreen> {
             _isLoading = false;
           });
         } else {
+          // Usar mensaje del servidor o mensaje amigable por defecto
+          final serverMessage = data['message'] ?? 'Error al cargar productos';
           setState(() {
-            _errorMessage = data['message'] ?? 'Error al cargar productos';
+            _errorMessage = serverMessage;
             _isLoading = false;
           });
         }
       } else {
+        // Si el status code no es 200, usar mensaje amigable
+        final friendlyMessage = ErrorMessageHelper.getFriendlyErrorMessage(
+          DioException(
+            requestOptions: RequestOptions(path: ''),
+            type: DioExceptionType.badResponse,
+            response: response.response,
+          ),
+        );
         setState(() {
-          _errorMessage = 'Error de conexión';
+          _errorMessage = friendlyMessage;
           _isLoading = false;
         });
       }
     } catch (e) {
+      // IMPORTANTE: El interceptor ya debería haber convertido el error en uno amigable
+      // Pero por si acaso, usar helper para obtener mensaje amigable
+      final friendlyMessage = ErrorMessageHelper.getFriendlyErrorMessage(e);
       setState(() {
-        _errorMessage = 'Error: ${e.toString()}';
+        _errorMessage = friendlyMessage;
         _isLoading = false;
       });
+      
+      // Solo mostrar SnackBar si NO es un error 401 (el interceptor ya lo maneja)
+      if (mounted) {
+        final errorString = e.toString().toLowerCase();
+        if (!errorString.contains('401') && 
+            !errorString.contains('sesión expirada') &&
+            !errorString.contains('unauthorized')) {
+          ErrorMessageHelper.showErrorSnackBar(context, e);
+        }
+      }
     }
   }
 
@@ -454,23 +482,23 @@ class _TiendaScreenState extends State<TiendaScreen> {
   void _mostrarDialogoOrdenar() {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(ResponsiveHelper.spacing(context))),
       ),
       builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
+        padding: ResponsiveHelper.formPadding(context),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Ordenar por',
               style: TextStyle(
-                fontSize: 20,
+                fontSize: ResponsiveHelper.subtitleFontSize(context) + 4,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: ResponsiveHelper.spacing(context)),
             _buildOpcionOrden('relevancia', 'Relevancia', Icons.star),
             _buildOpcionOrden('precio_asc', 'Precio: Menor a Mayor', Icons.arrow_upward),
             _buildOpcionOrden('precio_desc', 'Precio: Mayor a Menor', Icons.arrow_downward),
@@ -484,10 +512,17 @@ class _TiendaScreenState extends State<TiendaScreen> {
   Widget _buildOpcionOrden(String valor, String titulo, IconData icono) {
     final estaSeleccionado = _ordenSeleccionado == valor;
     return ListTile(
-      leading: Icon(icono, color: estaSeleccionado ? Colors.green.shade700 : Colors.grey),
-      title: Text(titulo),
+      leading: Icon(
+        icono,
+        color: estaSeleccionado ? Colors.green.shade700 : Colors.grey,
+        size: ResponsiveHelper.iconSize(context),
+      ),
+      title: Text(
+        titulo,
+        style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+      ),
       trailing: estaSeleccionado
-          ? Icon(Icons.check, color: Colors.green.shade700)
+          ? Icon(Icons.check, color: Colors.green.shade700, size: ResponsiveHelper.iconSize(context))
           : null,
       onTap: () {
         setState(() {
@@ -639,22 +674,25 @@ class _TiendaScreenState extends State<TiendaScreen> {
           },
           borderRadius: BorderRadius.circular(24),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: EdgeInsets.symmetric(
+              horizontal: ResponsiveHelper.spacing(context),
+              vertical: ResponsiveHelper.spacing(context) / 2,
+            ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   emoji, 
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: ResponsiveHelper.bodyFontSize(context),
                     color: isSelected ? Colors.white : null,
                   ),
                 ),
-                const SizedBox(width: 6),
+                SizedBox(width: ResponsiveHelper.spacing(context) / 3),
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: ResponsiveHelper.bodyFontSize(context) - 1,
                     fontWeight: FontWeight.w600,
                     color: isSelected ? Colors.white : Colors.black87,
                   ),
@@ -670,15 +708,22 @@ class _TiendaScreenState extends State<TiendaScreen> {
   Widget _buildCategoriasGrid() {
     if (_categorias.isEmpty) {
       return Container(
-        padding: const EdgeInsets.all(32),
+        padding: ResponsiveHelper.formPadding(context),
         child: Center(
           child: Column(
             children: [
-              Icon(Icons.category_outlined, size: 48, color: Colors.grey.shade400),
-              const SizedBox(height: 8),
+              Icon(
+                Icons.category_outlined,
+                size: ResponsiveHelper.isSmallScreen(context) ? 40 : 48,
+                color: Colors.grey.shade400,
+              ),
+              SizedBox(height: ResponsiveHelper.spacing(context) / 2),
               Text(
                 'No hay categorías disponibles',
-                style: TextStyle(color: Colors.grey.shade600),
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: ResponsiveHelper.bodyFontSize(context),
+                ),
               ),
             ],
           ),
@@ -689,11 +734,11 @@ class _TiendaScreenState extends State<TiendaScreen> {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 1.5,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: ResponsiveHelper.gridCrossAxisCount(context),
+        childAspectRatio: ResponsiveHelper.isSmallScreen(context) ? 1.2 : 1.35,
+        crossAxisSpacing: ResponsiveHelper.spacing(context) / 2,
+        mainAxisSpacing: ResponsiveHelper.spacing(context) / 2,
       ),
       itemCount: _categorias.where((c) => c.estado == 'activo').length,
       itemBuilder: (context, index) {
@@ -723,7 +768,11 @@ class _TiendaScreenState extends State<TiendaScreen> {
         },
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          padding: const EdgeInsets.all(12),
+          padding: EdgeInsets.all(
+            ResponsiveHelper.isSmallScreen(context)
+              ? ResponsiveHelper.spacing(context) / 3
+              : ResponsiveHelper.spacing(context) / 2
+          ),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             gradient: LinearGradient(
@@ -737,23 +786,37 @@ class _TiendaScreenState extends State<TiendaScreen> {
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                _getCategoryIcon(categoria.nombre),
-                size: 40,
-                color: Colors.green.shade700,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                categoria.nombre,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.green.shade900,
+              Flexible(
+                child: Icon(
+                  _getCategoryIcon(categoria.nombre),
+                  size: ResponsiveHelper.isSmallScreen(context) 
+                    ? ResponsiveHelper.iconSize(context) - 4
+                    : ResponsiveHelper.iconSize(context) + 8,
+                  color: Colors.green.shade700,
                 ),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              ),
+              SizedBox(
+                height: ResponsiveHelper.isSmallScreen(context)
+                  ? ResponsiveHelper.spacing(context) / 4
+                  : ResponsiveHelper.spacing(context) / 3
+              ),
+              Flexible(
+                child: Text(
+                  categoria.nombre,
+                  style: TextStyle(
+                    fontSize: ResponsiveHelper.isSmallScreen(context)
+                      ? ResponsiveHelper.bodyFontSize(context) - 2
+                      : ResponsiveHelper.bodyFontSize(context),
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green.shade900,
+                    height: 1.2,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
@@ -789,7 +852,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
 
   Widget _buildBannerCard(BannerModel banner) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4),
+      margin: EdgeInsets.symmetric(horizontal: ResponsiveHelper.spacing(context) / 4),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
@@ -829,12 +892,12 @@ class _TiendaScreenState extends State<TiendaScreen> {
                         ),
                         if (banner.descripcion != null)
                           Padding(
-                            padding: const EdgeInsets.all(8.0),
+                            padding: EdgeInsets.all(ResponsiveHelper.spacing(context) / 2),
                             child: Text(
                               banner.descripcion!,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: Colors.white,
-                                fontSize: 14,
+                                fontSize: ResponsiveHelper.bodyFontSize(context),
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -883,16 +946,28 @@ class _TiendaScreenState extends State<TiendaScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Cerrar Sesión'),
-        content: const Text('¿Está seguro que desea cerrar sesión?'),
+        title: Text(
+          'Cerrar Sesión',
+          style: TextStyle(fontSize: ResponsiveHelper.subtitleFontSize(context) + 4),
+        ),
+        content: Text(
+          '¿Está seguro que desea cerrar sesión?',
+          style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
+            child: Text(
+              'Cancelar',
+              style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Sí, cerrar sesión'),
+            child: Text(
+              'Sí, cerrar sesión',
+              style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+            ),
           ),
         ],
       ),
@@ -930,7 +1005,10 @@ class _TiendaScreenState extends State<TiendaScreen> {
             // Header con dirección y carrito (FIJOS)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: EdgeInsets.symmetric(
+                horizontal: ResponsiveHelper.horizontalPadding(context),
+                vertical: ResponsiveHelper.spacing(context) / 2,
+              ),
               decoration: BoxDecoration(
                 color: Colors.white,
                 boxShadow: [
@@ -957,24 +1035,32 @@ class _TiendaScreenState extends State<TiendaScreen> {
                       },
                       child: Row(
                         children: [
-                          Icon(Icons.location_on, color: Colors.orange.shade700, size: 20),
-                          const SizedBox(width: 4),
-                          const Expanded(
+                          Icon(
+                            Icons.location_on,
+                            color: Colors.orange.shade700,
+                            size: ResponsiveHelper.iconSize(context) - 4,
+                          ),
+                          SizedBox(width: ResponsiveHelper.spacing(context) / 4),
+                          Expanded(
                             child: Text(
                               'Ingresa tu dirección de entrega',
                               style: TextStyle(
-                                fontSize: 14,
+                                fontSize: ResponsiveHelper.bodyFontSize(context),
                                 color: Colors.black87,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
                           ),
-                          Icon(Icons.keyboard_arrow_down, color: Colors.grey.shade600, size: 20),
+                          Icon(
+                            Icons.keyboard_arrow_down,
+                            color: Colors.grey.shade600,
+                            size: ResponsiveHelper.iconSize(context) - 4,
+                          ),
                         ],
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: ResponsiveHelper.spacing(context) / 2),
                   // Carrito
                   ValueListenableBuilder<int>(
                     valueListenable: CartNotifier.instance,
@@ -1003,20 +1089,20 @@ class _TiendaScreenState extends State<TiendaScreen> {
                               right: 0,
                               top: 0,
                               child: Container(
-                                padding: const EdgeInsets.all(6),
+                                padding: EdgeInsets.all(ResponsiveHelper.spacing(context) / 3),
                                 decoration: const BoxDecoration(
                                   color: Colors.blue,
                                   shape: BoxShape.circle,
                                 ),
-                                constraints: const BoxConstraints(
-                                  minWidth: 20,
-                                  minHeight: 20,
+                                constraints: BoxConstraints(
+                                  minWidth: ResponsiveHelper.isSmallScreen(context) ? 18 : 20,
+                                  minHeight: ResponsiveHelper.isSmallScreen(context) ? 18 : 20,
                                 ),
                                 child: Text(
                                   cartCount > 99 ? '99+' : '$cartCount',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: Colors.white,
-                                    fontSize: 11,
+                                    fontSize: ResponsiveHelper.bodyFontSize(context) - 3,
                                     fontWeight: FontWeight.bold,
                                   ),
                                   textAlign: TextAlign.center,
@@ -1033,9 +1119,12 @@ class _TiendaScreenState extends State<TiendaScreen> {
 
             // Barra de búsqueda mejorada (FIJOS)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: EdgeInsets.symmetric(
+                horizontal: ResponsiveHelper.horizontalPadding(context),
+                vertical: ResponsiveHelper.spacing(context) / 2,
+              ),
               child: Container(
-                height: 48,
+                height: ResponsiveHelper.isSmallScreen(context) ? 44 : 48,
                 decoration: BoxDecoration(
                   color: Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(24),
@@ -1043,20 +1132,35 @@ class _TiendaScreenState extends State<TiendaScreen> {
                 ),
                 child: TextField(
                   controller: _searchController,
+                  style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                   decoration: InputDecoration(
                     hintText: '¿Qué buscaremos hoy?',
-                    hintStyle: TextStyle(color: Colors.grey.shade500),
-                    prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
+                    hintStyle: TextStyle(
+                      color: Colors.grey.shade500,
+                      fontSize: ResponsiveHelper.bodyFontSize(context),
+                    ),
+                    prefixIcon: Icon(
+                      Icons.search,
+                      color: Colors.grey.shade600,
+                      size: ResponsiveHelper.iconSize(context),
+                    ),
                     suffixIcon: _searchController.text.isNotEmpty
                         ? IconButton(
-                            icon: Icon(Icons.clear, size: 20, color: Colors.grey.shade600),
+                            icon: Icon(
+                              Icons.clear,
+                              size: ResponsiveHelper.iconSize(context) - 4,
+                              color: Colors.grey.shade600,
+                            ),
                             onPressed: () {
                               _searchController.clear();
                             },
                           )
                         : null,
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: ResponsiveHelper.spacing(context),
+                      vertical: ResponsiveHelper.spacing(context) / 2,
+                    ),
                   ),
                 ),
               ),
@@ -1064,18 +1168,18 @@ class _TiendaScreenState extends State<TiendaScreen> {
 
             // Chips de filtros rápidos (FIJOS)
             Container(
-              height: 50,
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              height: ResponsiveHelper.isSmallScreen(context) ? 45 : 50,
+              padding: EdgeInsets.symmetric(vertical: ResponsiveHelper.spacing(context) / 4),
               child: ListView(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: EdgeInsets.symmetric(horizontal: ResponsiveHelper.horizontalPadding(context)),
                 children: [
                   _buildFilterChip('🔴', 'Últimas unidades'),
-                  const SizedBox(width: 8),
+                  SizedBox(width: ResponsiveHelper.spacing(context) / 2),
                   _buildFilterChip('🎫', 'Sorteo Casa Millón'),
-                  const SizedBox(width: 8),
+                  SizedBox(width: ResponsiveHelper.spacing(context) / 2),
                   _buildFilterChip('🏷️', 'Ofertas'),
-                  const SizedBox(width: 8),
+                  SizedBox(width: ResponsiveHelper.spacing(context) / 2),
                   _buildFilterChip('⭐', 'Populares'),
                 ],
               ),
@@ -1090,13 +1194,28 @@ class _TiendaScreenState extends State<TiendaScreen> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
-                              const SizedBox(height: 16),
-                              Text(_errorMessage!),
-                              const SizedBox(height: 16),
+                              Icon(
+                                Icons.error_outline,
+                                size: ResponsiveHelper.isSmallScreen(context) ? 48 : 64,
+                                color: Colors.red.shade300,
+                              ),
+                              SizedBox(height: ResponsiveHelper.spacing(context)),
+                              Padding(
+                                padding: EdgeInsets.symmetric(horizontal: ResponsiveHelper.horizontalPadding(context)),
+                                child: Text(
+                                  // Asegurar que el mensaje sea amigable (sin detalles técnicos)
+                                  ErrorMessageHelper.getFriendlyErrorMessage(_errorMessage!),
+                                  style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                              SizedBox(height: ResponsiveHelper.spacing(context)),
                               ElevatedButton(
                                 onPressed: _cargarProductos,
-                                child: const Text('Reintentar'),
+                                child: Text(
+                                  'Reintentar',
+                                  style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                                ),
                               ),
                             ],
                           ),
@@ -1107,22 +1226,31 @@ class _TiendaScreenState extends State<TiendaScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: ResponsiveHelper.horizontalPadding(context),
+                                    vertical: ResponsiveHelper.spacing(context) / 2,
+                                  ),
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
                                         "Resultados: ${_productosFiltrados.length}",
-                                        style: const TextStyle(
-                                          fontSize: 18,
+                                        style: TextStyle(
+                                          fontSize: ResponsiveHelper.subtitleFontSize(context) + 2,
                                           fontWeight: FontWeight.bold,
                                           color: Colors.black87,
                                         ),
                                       ),
                                       TextButton.icon(
                                         onPressed: _mostrarDialogoOrdenar,
-                                        icon: const Icon(Icons.sort, size: 20),
-                                        label: const Text('Ordenar'),
+                                        icon: Icon(
+                                          Icons.sort,
+                                          size: ResponsiveHelper.iconSize(context) - 4,
+                                        ),
+                                        label: Text(
+                                          'Ordenar',
+                                          style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                                        ),
                                         style: TextButton.styleFrom(
                                           foregroundColor: Colors.green.shade700,
                                         ),
@@ -1136,11 +1264,15 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                           child: Column(
                                             mainAxisAlignment: MainAxisAlignment.center,
                                             children: [
-                                              Icon(Icons.search_off, size: 64, color: Colors.grey.shade400),
-                                              const SizedBox(height: 16),
-                                              const Text(
+                                              Icon(
+                                                Icons.search_off,
+                                                size: ResponsiveHelper.isSmallScreen(context) ? 48 : 64,
+                                                color: Colors.grey.shade400,
+                                              ),
+                                              SizedBox(height: ResponsiveHelper.spacing(context)),
+                                              Text(
                                                 'No se encontraron productos',
-                                                style: TextStyle(fontSize: 16),
+                                                style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                                               ),
                                             ],
                                           ),
@@ -1148,7 +1280,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                       : RefreshIndicator(
                                           onRefresh: _cargarProductos,
                                           child: ListView.builder(
-                                            padding: const EdgeInsets.all(16),
+                                            padding: ResponsiveHelper.formPadding(context),
                                             itemCount: _productosFiltrados.length,
                                             itemBuilder: (context, index) {
                                               final producto = _productosFiltrados[index];
@@ -1170,8 +1302,11 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                     // Carrusel de banners (AHORA SE MUEVE CON EL SCROLL)
                                     if (_banners.isNotEmpty)
                                       Container(
-                                        height: 200,
-                                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                        height: ResponsiveHelper.isSmallScreen(context) ? 160 : 200,
+                                        margin: EdgeInsets.symmetric(
+                                          horizontal: ResponsiveHelper.horizontalPadding(context),
+                                          vertical: ResponsiveHelper.spacing(context) / 2,
+                                        ),
                                         child: Stack(
                                           children: [
                                             PageView.builder(
@@ -1197,9 +1332,11 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                                 children: List.generate(
                                                   _banners.length,
                                                   (index) => Container(
-                                                    width: 8,
-                                                    height: 8,
-                                                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                                                    width: ResponsiveHelper.isSmallScreen(context) ? 6 : 8,
+                                                    height: ResponsiveHelper.isSmallScreen(context) ? 6 : 8,
+                                                    margin: EdgeInsets.symmetric(
+                                                      horizontal: ResponsiveHelper.spacing(context) / 4,
+                                                    ),
                                                     decoration: BoxDecoration(
                                                       shape: BoxShape.circle,
                                                       color: _currentBannerIndex == index
@@ -1216,12 +1353,15 @@ class _TiendaScreenState extends State<TiendaScreen> {
 
                                     // Texto de advertencia médica
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: ResponsiveHelper.horizontalPadding(context),
+                                        vertical: ResponsiveHelper.spacing(context) / 2,
+                                      ),
                                       child: Text(
                                         'Todos los productos farmacéuticos y dispositivos médicos son distribuidos por Sánchez Pharma (Ley 32033)',
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
-                                          fontSize: 11,
+                                          fontSize: ResponsiveHelper.bodyFontSize(context) - 3,
                                           color: Colors.grey.shade600,
                                         ),
                                       ),
@@ -1230,8 +1370,13 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                     // SECCIÓN: Productos en Oferta
                                     if (_productosEnOferta.isNotEmpty) ...[
                                       Container(
-                                        margin: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-                                        padding: const EdgeInsets.all(20),
+                                        margin: EdgeInsets.fromLTRB(
+                                          ResponsiveHelper.horizontalPadding(context),
+                                          ResponsiveHelper.spacing(context) * 1.25,
+                                          ResponsiveHelper.horizontalPadding(context),
+                                          ResponsiveHelper.spacing(context) / 2,
+                                        ),
+                                        padding: ResponsiveHelper.formPadding(context),
                                         decoration: BoxDecoration(
                                           gradient: LinearGradient(
                                             colors: [
@@ -1260,71 +1405,124 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                             Row(
                                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                               children: [
-                                                Row(
-                                                  children: [
-                                                    Container(
-                                                      padding: const EdgeInsets.all(10),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.red.shade700,
-                                                        borderRadius: BorderRadius.circular(12),
-                                                        boxShadow: [
-                                                          BoxShadow(
-                                                            color: Colors.red.shade300,
-                                                            blurRadius: 8,
-                                                            spreadRadius: 1,
-                                                          ),
-                                                        ],
-                                                      ),
-                                                      child: const Icon(
-                                                        Icons.local_offer,
-                                                        color: Colors.white,
-                                                        size: 24,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 12),
-                                                    const Column(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      children: [
-                                                        Text(
-                                                          '🔥 OFERTAS ESPECIALES',
-                                                          style: TextStyle(
-                                                            fontSize: 18,
-                                                            fontWeight: FontWeight.bold,
-                                                            color: Colors.black87,
-                                                            letterSpacing: 0.5,
-                                                          ),
+                                                Flexible(
+                                                  flex: 3,
+                                                  child: Row(
+                                                    children: [
+                                                      Container(
+                                                        padding: EdgeInsets.all(
+                                                          ResponsiveHelper.isSmallScreen(context) 
+                                                            ? ResponsiveHelper.spacing(context) / 3 
+                                                            : ResponsiveHelper.spacing(context) / 2
                                                         ),
-                                                        Text(
-                                                          'Descuentos increíbles',
-                                                          style: TextStyle(
-                                                            fontSize: 12,
-                                                            color: Colors.black54,
-                                                          ),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.red.shade700,
+                                                          borderRadius: BorderRadius.circular(12),
+                                                          boxShadow: [
+                                                            BoxShadow(
+                                                              color: Colors.red.shade300,
+                                                              blurRadius: 8,
+                                                              spreadRadius: 1,
+                                                            ),
+                                                          ],
                                                         ),
-                                                      ],
-                                                    ),
-                                                  ],
+                                                        child: Icon(
+                                                          Icons.local_offer,
+                                                          color: Colors.white,
+                                                          size: ResponsiveHelper.isSmallScreen(context)
+                                                            ? ResponsiveHelper.iconSize(context) - 4
+                                                            : ResponsiveHelper.iconSize(context),
+                                                        ),
+                                                      ),
+                                                      SizedBox(
+                                                        width: ResponsiveHelper.isSmallScreen(context)
+                                                          ? ResponsiveHelper.spacing(context) / 3
+                                                          : ResponsiveHelper.spacing(context) / 2
+                                                      ),
+                                                      Flexible(
+                                                        child: Column(
+                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                          mainAxisSize: MainAxisSize.min,
+                                                          children: [
+                                                            Text(
+                                                              '🔥 OFERTAS ESPECIALES',
+                                                              style: TextStyle(
+                                                                fontSize: ResponsiveHelper.isSmallScreen(context)
+                                                                  ? ResponsiveHelper.subtitleFontSize(context)
+                                                                  : ResponsiveHelper.subtitleFontSize(context) + 2,
+                                                                fontWeight: FontWeight.bold,
+                                                                color: Colors.black87,
+                                                                letterSpacing: 0.5,
+                                                              ),
+                                                              maxLines: 2,
+                                                              overflow: TextOverflow.ellipsis,
+                                                            ),
+                                                            if (!ResponsiveHelper.isSmallScreen(context))
+                                                              Text(
+                                                                'Descuentos increíbles',
+                                                                style: TextStyle(
+                                                                  fontSize: ResponsiveHelper.bodyFontSize(context) - 2,
+                                                                  color: Colors.black54,
+                                                                ),
+                                                                maxLines: 1,
+                                                                overflow: TextOverflow.ellipsis,
+                                                              ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
-                                                TextButton.icon(
-                                                  onPressed: () {
-                                                    setState(() {
-                                                      _filtroSeleccionado = 'ofertas';
-                                                      _productosFiltrados = _productosEnOferta;
-                                                      _categoriaSeleccionada = null;
-                                                      _searchController.clear();
-                                                    });
-                                                    if (_productos.isEmpty) _cargarProductos();
-                                                  },
-                                                  icon: const Icon(Icons.arrow_forward, size: 18),
-                                                  label: const Text(
-                                                    'Ver todas',
-                                                    style: TextStyle(
-                                                      fontWeight: FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                  style: TextButton.styleFrom(
-                                                    foregroundColor: Colors.red.shade700,
-                                                  ),
+                                                SizedBox(width: ResponsiveHelper.spacing(context) / 4),
+                                                Flexible(
+                                                  flex: 1,
+                                                  child: ResponsiveHelper.isSmallScreen(context)
+                                                    ? IconButton(
+                                                        onPressed: () {
+                                                          setState(() {
+                                                            _filtroSeleccionado = 'ofertas';
+                                                            _productosFiltrados = _productosEnOferta;
+                                                            _categoriaSeleccionada = null;
+                                                            _searchController.clear();
+                                                          });
+                                                          if (_productos.isEmpty) _cargarProductos();
+                                                        },
+                                                        icon: Icon(
+                                                          Icons.arrow_forward,
+                                                          size: ResponsiveHelper.iconSize(context) - 6,
+                                                          color: Colors.red.shade700,
+                                                        ),
+                                                        tooltip: 'Ver todas',
+                                                      )
+                                                    : TextButton.icon(
+                                                        onPressed: () {
+                                                          setState(() {
+                                                            _filtroSeleccionado = 'ofertas';
+                                                            _productosFiltrados = _productosEnOferta;
+                                                            _categoriaSeleccionada = null;
+                                                            _searchController.clear();
+                                                          });
+                                                          if (_productos.isEmpty) _cargarProductos();
+                                                        },
+                                                        icon: Icon(
+                                                          Icons.arrow_forward,
+                                                          size: ResponsiveHelper.iconSize(context) - 6,
+                                                        ),
+                                                        label: Text(
+                                                          'Ver todas',
+                                                          style: TextStyle(
+                                                            fontWeight: FontWeight.bold,
+                                                            fontSize: ResponsiveHelper.bodyFontSize(context),
+                                                          ),
+                                                        ),
+                                                        style: TextButton.styleFrom(
+                                                          foregroundColor: Colors.red.shade700,
+                                                          padding: EdgeInsets.symmetric(
+                                                            horizontal: ResponsiveHelper.spacing(context) / 2,
+                                                            vertical: ResponsiveHelper.spacing(context) / 4,
+                                                          ),
+                                                        ),
+                                                      ),
                                                 ),
                                               ],
                                             ),
@@ -1332,24 +1530,29 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                         ),
                                       ),
                                       SizedBox(
-                                        height: 240,
+                                        height: ResponsiveHelper.isSmallScreen(context) ? 220 : 240,
                                         child: ListView.builder(
                                           scrollDirection: Axis.horizontal,
-                                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                                          padding: EdgeInsets.symmetric(horizontal: ResponsiveHelper.horizontalPadding(context)),
                                           itemCount: _productosEnOferta.take(10).length,
                                           itemBuilder: (context, index) {
                                             return _buildProductoCardHorizontal(_productosEnOferta[index]);
                                           },
                                         ),
                                       ),
-                                      const SizedBox(height: 16),
+                                      SizedBox(height: ResponsiveHelper.spacing(context)),
                                     ],
 
                                     // SECCIÓN: Últimas Unidades
                                     if (_productosUltimasUnidades.isNotEmpty) ...[
                                       Container(
-                                        margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                                        padding: const EdgeInsets.all(20),
+                                        margin: EdgeInsets.fromLTRB(
+                                          ResponsiveHelper.horizontalPadding(context),
+                                          ResponsiveHelper.spacing(context),
+                                          ResponsiveHelper.horizontalPadding(context),
+                                          ResponsiveHelper.spacing(context) / 2,
+                                        ),
+                                        padding: ResponsiveHelper.formPadding(context),
                                         decoration: BoxDecoration(
                                           gradient: LinearGradient(
                                             colors: [
@@ -1381,7 +1584,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                                 Row(
                                                   children: [
                                                     Container(
-                                                      padding: const EdgeInsets.all(10),
+                                                      padding: EdgeInsets.all(ResponsiveHelper.spacing(context) / 2),
                                                       decoration: BoxDecoration(
                                                         color: Colors.orange.shade700,
                                                         borderRadius: BorderRadius.circular(12),
@@ -1393,13 +1596,13 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                                           ),
                                                         ],
                                                       ),
-                                                      child: const Icon(
+                                                      child: Icon(
                                                         Icons.warning_amber_rounded,
                                                         color: Colors.white,
-                                                        size: 24,
+                                                        size: ResponsiveHelper.iconSize(context),
                                                       ),
                                                     ),
-                                                    const SizedBox(width: 12),
+                                                    SizedBox(width: ResponsiveHelper.spacing(context) / 2),
                                                     const Column(
                                                       crossAxisAlignment: CrossAxisAlignment.start,
                                                       children: [
@@ -1433,11 +1636,15 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                                     });
                                                     if (_productos.isEmpty) _cargarProductos();
                                                   },
-                                                  icon: const Icon(Icons.arrow_forward, size: 18),
-                                                  label: const Text(
+                                                  icon: Icon(
+                                                    Icons.arrow_forward,
+                                                    size: ResponsiveHelper.iconSize(context) - 6,
+                                                  ),
+                                                  label: Text(
                                                     'Ver todas',
                                                     style: TextStyle(
                                                       fontWeight: FontWeight.bold,
+                                                      fontSize: ResponsiveHelper.bodyFontSize(context),
                                                     ),
                                                   ),
                                                   style: TextButton.styleFrom(
@@ -1450,24 +1657,29 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                         ),
                                       ),
                                       SizedBox(
-                                        height: 240,
+                                        height: ResponsiveHelper.isSmallScreen(context) ? 220 : 240,
                                         child: ListView.builder(
                                           scrollDirection: Axis.horizontal,
-                                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                                          padding: EdgeInsets.symmetric(horizontal: ResponsiveHelper.horizontalPadding(context)),
                                           itemCount: _productosUltimasUnidades.take(10).length,
                                           itemBuilder: (context, index) {
                                             return _buildProductoCardHorizontal(_productosUltimasUnidades[index]);
                                           },
                                         ),
                                       ),
-                                      const SizedBox(height: 16),
+                                      SizedBox(height: ResponsiveHelper.spacing(context)),
                                     ],
 
                                     // SECCIÓN: Productos Populares
                                     if (_productosPopulares.isNotEmpty) ...[
                                       Container(
-                                        margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                                        padding: const EdgeInsets.all(20),
+                                        margin: EdgeInsets.fromLTRB(
+                                          ResponsiveHelper.horizontalPadding(context),
+                                          ResponsiveHelper.spacing(context),
+                                          ResponsiveHelper.horizontalPadding(context),
+                                          ResponsiveHelper.spacing(context) / 2,
+                                        ),
+                                        padding: ResponsiveHelper.formPadding(context),
                                         decoration: BoxDecoration(
                                           gradient: LinearGradient(
                                             colors: [
@@ -1493,7 +1705,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                         child: Row(
                                           children: [
                                             Container(
-                                              padding: const EdgeInsets.all(10),
+                                              padding: EdgeInsets.all(ResponsiveHelper.spacing(context) / 2),
                                               decoration: BoxDecoration(
                                                 color: Colors.green.shade700,
                                                 borderRadius: BorderRadius.circular(12),
@@ -1505,21 +1717,21 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                                   ),
                                                 ],
                                               ),
-                                              child: const Icon(
+                                              child: Icon(
                                                 Icons.star,
                                                 color: Colors.white,
-                                                size: 24,
+                                                size: ResponsiveHelper.iconSize(context),
                                               ),
                                             ),
-                                            const SizedBox(width: 12),
-                                            const Expanded(
+                                            SizedBox(width: ResponsiveHelper.spacing(context) / 2),
+                                            Expanded(
                                               child: Column(
                                                 crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
                                                   Text(
                                                     '⭐ MÁS POPULARES',
                                                     style: TextStyle(
-                                                      fontSize: 18,
+                                                      fontSize: ResponsiveHelper.subtitleFontSize(context) + 2,
                                                       fontWeight: FontWeight.bold,
                                                       color: Colors.black87,
                                                       letterSpacing: 0.5,
@@ -1528,7 +1740,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                                   Text(
                                                     'Los favoritos de nuestros clientes',
                                                     style: TextStyle(
-                                                      fontSize: 12,
+                                                      fontSize: ResponsiveHelper.bodyFontSize(context) - 2,
                                                       color: Colors.black54,
                                                     ),
                                                   ),
@@ -1539,46 +1751,46 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                         ),
                                       ),
                                       SizedBox(
-                                        height: 240,
+                                        height: ResponsiveHelper.isSmallScreen(context) ? 220 : 240,
                                         child: ListView.builder(
                                           scrollDirection: Axis.horizontal,
-                                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                                          padding: EdgeInsets.symmetric(horizontal: ResponsiveHelper.horizontalPadding(context)),
                                           itemCount: _productosPopulares.take(10).length,
                                           itemBuilder: (context, index) {
                                             return _buildProductoCardHorizontal(_productosPopulares[index]);
                                           },
                                         ),
                                       ),
-                                      const SizedBox(height: 16),
+                                      SizedBox(height: ResponsiveHelper.spacing(context)),
                                     ],
 
                                     // Título de sección
                                     Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                                      child: const Text(
+                                      padding: EdgeInsets.symmetric(horizontal: ResponsiveHelper.horizontalPadding(context)),
+                                      child: Text(
                                         '¿Qué estás buscando?',
                                         style: TextStyle(
-                                          fontSize: 22,
+                                          fontSize: ResponsiveHelper.titleFontSize(context),
                                           fontWeight: FontWeight.bold,
                                           color: Colors.black87,
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(height: 16),
+                                    SizedBox(height: ResponsiveHelper.spacing(context)),
                                     
                                     // Grid de categorías
                                     Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                      padding: EdgeInsets.symmetric(horizontal: ResponsiveHelper.horizontalPadding(context)),
                                       child: _buildCategoriasGrid(),
                                     ),
                                     
-                                    const SizedBox(height: 24),
+                                    SizedBox(height: ResponsiveHelper.spacing(context) * 1.5),
                                     
                                     // Mensaje para buscar productos
                                     Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                      padding: EdgeInsets.symmetric(horizontal: ResponsiveHelper.horizontalPadding(context)),
                                       child: Container(
-                                        padding: const EdgeInsets.all(20),
+                                        padding: ResponsiveHelper.formPadding(context),
                                         decoration: BoxDecoration(
                                           color: Colors.green.shade50,
                                           borderRadius: BorderRadius.circular(12),
@@ -1588,24 +1800,24 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                           children: [
                                             Icon(
                                               Icons.search,
-                                              size: 48,
+                                              size: ResponsiveHelper.isSmallScreen(context) ? 40 : 48,
                                               color: Colors.green.shade700,
                                             ),
-                                            const SizedBox(height: 12),
+                                            SizedBox(height: ResponsiveHelper.spacing(context) / 2),
                                             Text(
                                               '¡Encuentra lo que necesitas!',
                                               style: TextStyle(
-                                                fontSize: 18,
+                                                fontSize: ResponsiveHelper.subtitleFontSize(context) + 2,
                                                 fontWeight: FontWeight.bold,
                                                 color: Colors.green.shade900,
                                               ),
                                               textAlign: TextAlign.center,
                                             ),
-                                            const SizedBox(height: 8),
+                                            SizedBox(height: ResponsiveHelper.spacing(context) / 2),
                                             Text(
                                               'Selecciona una categoría o usa el buscador para ver nuestros productos',
                                               style: TextStyle(
-                                                fontSize: 14,
+                                                fontSize: ResponsiveHelper.bodyFontSize(context),
                                                 color: Colors.grey.shade700,
                                               ),
                                               textAlign: TextAlign.center,
@@ -1614,7 +1826,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(height: 16),
+                                    SizedBox(height: ResponsiveHelper.spacing(context)),
                                   ],
                                 ),
                               ),
@@ -1690,20 +1902,27 @@ class _TiendaScreenState extends State<TiendaScreen> {
           if (producto.tieneDescuento)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+              padding: EdgeInsets.symmetric(
+                vertical: ResponsiveHelper.spacing(context) / 3,
+                horizontal: ResponsiveHelper.spacing(context) / 2,
+              ),
               decoration: BoxDecoration(
                 color: Colors.red.shade100,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.local_offer, size: 16, color: Colors.red.shade900),
-                  const SizedBox(width: 6),
+                  Icon(
+                    Icons.local_offer,
+                    size: ResponsiveHelper.iconSize(context) - 8,
+                    color: Colors.red.shade900,
+                  ),
+                  SizedBox(width: ResponsiveHelper.spacing(context) / 3),
                   Text(
                     '¡${producto.descuentoPorcentaje.toStringAsFixed(0)}% DE DESCUENTO!',
                     style: TextStyle(
                       color: Colors.red.shade900,
-                      fontSize: 12,
+                      fontSize: ResponsiveHelper.bodyFontSize(context) - 2,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -1714,7 +1933,10 @@ class _TiendaScreenState extends State<TiendaScreen> {
           if (stockBajo && producto.stockActual > 0)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+              padding: EdgeInsets.symmetric(
+                vertical: ResponsiveHelper.spacing(context) / 3,
+                horizontal: ResponsiveHelper.spacing(context) / 2,
+              ),
               decoration: BoxDecoration(
                 color: Colors.orange.shade100,
                 borderRadius: BorderRadius.vertical(
@@ -1725,7 +1947,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                 'Quedan ${producto.stockActual} en stock',
                 style: TextStyle(
                   color: Colors.orange.shade900,
-                  fontSize: 12,
+                  fontSize: ResponsiveHelper.bodyFontSize(context) - 2,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1733,14 +1955,14 @@ class _TiendaScreenState extends State<TiendaScreen> {
           
           // Contenido del producto
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: EdgeInsets.all(ResponsiveHelper.spacing(context) / 2),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Imagen del producto
                 Container(
-                  width: 100,
-                  height: 100,
+                  width: ResponsiveHelper.isSmallScreen(context) ? 80 : 100,
+                  height: ResponsiveHelper.isSmallScreen(context) ? 80 : 100,
                   decoration: BoxDecoration(
                     color: Colors.grey.shade200,
                     borderRadius: BorderRadius.circular(8),
@@ -1750,7 +1972,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                     child: _buildProductoImagen(producto),
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: ResponsiveHelper.spacing(context) / 2),
                 
                 // Información del producto
                 Expanded(
@@ -1762,30 +1984,33 @@ class _TiendaScreenState extends State<TiendaScreen> {
                         Text(
                           producto.unidadMedida.toUpperCase(),
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: ResponsiveHelper.bodyFontSize(context) - 2,
                             color: Colors.grey.shade600,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                      const SizedBox(height: 4),
+                      SizedBox(height: ResponsiveHelper.spacing(context) / 4),
                       
                       // Nombre del producto
                       Text(
                         producto.nombre,
-                        style: const TextStyle(
-                          fontSize: 15,
+                        style: TextStyle(
+                          fontSize: ResponsiveHelper.bodyFontSize(context) + 1,
                           fontWeight: FontWeight.w600,
                           color: Colors.black87,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 6),
+                      SizedBox(height: ResponsiveHelper.spacing(context) / 3),
                       
                       // Vendedor/Proveedor
                       if (producto.proveedorNombre != null)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: ResponsiveHelper.spacing(context) / 2,
+                            vertical: ResponsiveHelper.spacing(context) / 4,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.grey.shade100,
                             borderRadius: BorderRadius.circular(12),
@@ -1793,13 +2018,17 @@ class _TiendaScreenState extends State<TiendaScreen> {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.store, size: 14, color: Colors.blue.shade700),
-                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.store,
+                                size: ResponsiveHelper.iconSize(context) - 10,
+                                color: Colors.blue.shade700,
+                              ),
+                              SizedBox(width: ResponsiveHelper.spacing(context) / 4),
                               Flexible(
                                 child: Text(
                                   producto.proveedorNombre!,
                                   style: TextStyle(
-                                    fontSize: 11,
+                                    fontSize: ResponsiveHelper.bodyFontSize(context) - 3,
                                     color: Colors.grey.shade700,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -1810,7 +2039,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                             ],
                           ),
                         ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: ResponsiveHelper.spacing(context) / 2),
                       
                       // Precio
                       if (producto.tieneDescuento) ...[
@@ -1819,14 +2048,17 @@ class _TiendaScreenState extends State<TiendaScreen> {
                             Text(
                               'S/ ${producto.precioConDescuento.toStringAsFixed(2)}',
                               style: TextStyle(
-                                fontSize: 20,
+                                fontSize: ResponsiveHelper.subtitleFontSize(context) + 4,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.red.shade700,
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            SizedBox(width: ResponsiveHelper.spacing(context) / 2),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: EdgeInsets.symmetric(
+                                horizontal: ResponsiveHelper.spacing(context) / 2,
+                                vertical: ResponsiveHelper.spacing(context) / 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.red.shade100,
                                 borderRadius: BorderRadius.circular(8),
@@ -1834,7 +2066,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                               child: Text(
                                 '-${producto.descuentoPorcentaje.toStringAsFixed(0)}%',
                                 style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: ResponsiveHelper.bodyFontSize(context) - 2,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.red.shade900,
                                 ),
@@ -1842,11 +2074,11 @@ class _TiendaScreenState extends State<TiendaScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
+                        SizedBox(height: ResponsiveHelper.spacing(context) / 4),
                         Text(
                           'S/ ${producto.precioVenta.toStringAsFixed(2)}',
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: ResponsiveHelper.bodyFontSize(context),
                             decoration: TextDecoration.lineThrough,
                             color: Colors.grey.shade600,
                           ),
@@ -1857,16 +2089,16 @@ class _TiendaScreenState extends State<TiendaScreen> {
                             Text(
                               'S/ ${producto.precioVenta.toStringAsFixed(2)}',
                               style: TextStyle(
-                                fontSize: 18,
+                                fontSize: ResponsiveHelper.subtitleFontSize(context) + 2,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.green.shade700,
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            SizedBox(width: ResponsiveHelper.spacing(context) / 2),
                             Text(
                               'Precio regular',
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: ResponsiveHelper.bodyFontSize(context) - 2,
                                 color: Colors.grey.shade600,
                               ),
                             ),
@@ -1882,7 +2114,12 @@ class _TiendaScreenState extends State<TiendaScreen> {
           
           // Botones de acción
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            padding: EdgeInsets.fromLTRB(
+              ResponsiveHelper.spacing(context) / 2,
+              0,
+              ResponsiveHelper.spacing(context) / 2,
+              ResponsiveHelper.spacing(context) / 2,
+            ),
             child: Row(
               children: [
                 Expanded(
@@ -1893,25 +2130,26 @@ class _TiendaScreenState extends State<TiendaScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green.shade700,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding: EdgeInsets.symmetric(vertical: ResponsiveHelper.spacing(context) / 2),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    child: const Text(
+                    child: Text(
                       'Agregar al carrito',
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: ResponsiveHelper.bodyFontSize(context),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: ResponsiveHelper.spacing(context) / 2),
                 IconButton(
                   icon: Icon(
                     _esFavorito(producto.id) ? Icons.favorite : Icons.favorite_border,
                     color: _esFavorito(producto.id) ? Colors.red : Colors.grey.shade600,
+                    size: ResponsiveHelper.iconSize(context),
                   ),
                   onPressed: () => _toggleFavorito(producto),
                 ),
@@ -1931,9 +2169,9 @@ class _TiendaScreenState extends State<TiendaScreen> {
         : 'https://placehold.co/400x400?text=${Uri.encodeComponent(producto.nombre)}';
     
     return Container(
-      width: 170,
-      height: 240,
-      margin: const EdgeInsets.only(right: 12),
+      width: ResponsiveHelper.isSmallScreen(context) ? 150 : 170,
+      height: ResponsiveHelper.isSmallScreen(context) ? 220 : 240,
+      margin: EdgeInsets.only(right: ResponsiveHelper.spacing(context) / 2),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -1962,7 +2200,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
         borderRadius: BorderRadius.circular(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: MainAxisSize.max,
           children: [
             // Imagen del producto
             Stack(
@@ -1970,7 +2208,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                 ClipRRect(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                   child: Container(
-                    height: 120,
+                    height: ResponsiveHelper.isSmallScreen(context) ? 90 : 110,
                     width: double.infinity,
                     color: Colors.grey.shade100,
                     child: Image.network(
@@ -1979,7 +2217,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                       errorBuilder: (_, __, ___) => Icon(
                         Icons.local_pharmacy,
                         color: Colors.green.shade700,
-                        size: 48,
+                        size: ResponsiveHelper.isSmallScreen(context) ? 40 : 48,
                       ),
                     ),
                   ),
@@ -1987,19 +2225,22 @@ class _TiendaScreenState extends State<TiendaScreen> {
                 // Badge de descuento
                 if (producto.tieneDescuento)
                   Positioned(
-                    top: 8,
-                    left: 8,
+                    top: ResponsiveHelper.spacing(context) / 2,
+                    left: ResponsiveHelper.spacing(context) / 2,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: ResponsiveHelper.spacing(context) / 2,
+                        vertical: ResponsiveHelper.spacing(context) / 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.red.shade700,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
                         '-${producto.descuentoPorcentaje.toStringAsFixed(0)}%',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Colors.white,
-                          fontSize: 11,
+                          fontSize: ResponsiveHelper.bodyFontSize(context) - 3,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -2007,15 +2248,15 @@ class _TiendaScreenState extends State<TiendaScreen> {
                   ),
                 // Botón de favorito
                 Positioned(
-                  top: 8,
-                  right: 8,
+                  top: ResponsiveHelper.spacing(context) / 2,
+                  right: ResponsiveHelper.spacing(context) / 2,
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
                       onTap: () => _toggleFavorito(producto),
                       borderRadius: BorderRadius.circular(20),
                       child: Container(
-                        padding: const EdgeInsets.all(6),
+                        padding: EdgeInsets.all(ResponsiveHelper.spacing(context) / 3),
                         decoration: BoxDecoration(
                           color: Colors.black.withOpacity(0.3),
                           shape: BoxShape.circle,
@@ -2023,7 +2264,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                         child: Icon(
                           _esFavorito(producto.id) ? Icons.favorite : Icons.favorite_border,
                           color: _esFavorito(producto.id) ? Colors.red : Colors.white,
-                          size: 18,
+                          size: ResponsiveHelper.iconSize(context) - 6,
                         ),
                       ),
                     ),
@@ -2034,53 +2275,80 @@ class _TiendaScreenState extends State<TiendaScreen> {
             // Información del producto
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: EdgeInsets.all(
+                  ResponsiveHelper.isSmallScreen(context)
+                    ? ResponsiveHelper.spacing(context) / 3
+                    : ResponsiveHelper.spacing(context) / 2
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      producto.nombre,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        height: 1.2,
+                    Flexible(
+                      child: Text(
+                        producto.nombre,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: ResponsiveHelper.isSmallScreen(context)
+                            ? ResponsiveHelper.bodyFontSize(context) - 2
+                            : ResponsiveHelper.bodyFontSize(context) - 1,
+                          fontWeight: FontWeight.w600,
+                          height: 1.2,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    SizedBox(
+                      height: ResponsiveHelper.isSmallScreen(context)
+                        ? ResponsiveHelper.spacing(context) / 4
+                        : ResponsiveHelper.spacing(context) / 3
+                    ),
                     // Precio
                     if (producto.tieneDescuento) ...[
                       Text(
                         'S/ ${producto.precioConDescuento.toStringAsFixed(2)}',
                         style: TextStyle(
-                          fontSize: 15,
+                          fontSize: ResponsiveHelper.isSmallScreen(context)
+                            ? ResponsiveHelper.bodyFontSize(context)
+                            : ResponsiveHelper.bodyFontSize(context) + 1,
                           fontWeight: FontWeight.bold,
                           color: Colors.red.shade700,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       Text(
                         'S/ ${producto.precioVenta.toStringAsFixed(2)}',
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: ResponsiveHelper.isSmallScreen(context)
+                            ? ResponsiveHelper.bodyFontSize(context) - 5
+                            : ResponsiveHelper.bodyFontSize(context) - 4,
                           decoration: TextDecoration.lineThrough,
                           color: Colors.grey.shade500,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ] else ...[
                       Text(
                         'S/ ${producto.precioVenta.toStringAsFixed(2)}',
                         style: TextStyle(
-                          fontSize: 15,
+                          fontSize: ResponsiveHelper.isSmallScreen(context)
+                            ? ResponsiveHelper.bodyFontSize(context)
+                            : ResponsiveHelper.bodyFontSize(context) + 1,
                           fontWeight: FontWeight.bold,
                           color: Colors.green.shade700,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
-                    const Spacer(),
+                    Flexible(
+                      child: SizedBox(height: ResponsiveHelper.spacing(context) / 4),
+                    ),
                     // Botones de acción
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         // Botón de favoritos
                         Container(
@@ -2097,10 +2365,14 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                 : Colors.white,
                           ),
                           child: IconButton(
-                            padding: const EdgeInsets.all(6),
-                            constraints: const BoxConstraints(
-                              minWidth: 36,
-                              minHeight: 36,
+                            padding: EdgeInsets.all(
+                              ResponsiveHelper.isSmallScreen(context)
+                                ? ResponsiveHelper.spacing(context) / 4
+                                : ResponsiveHelper.spacing(context) / 3
+                            ),
+                            constraints: BoxConstraints(
+                              minWidth: ResponsiveHelper.isSmallScreen(context) ? 28 : 32,
+                              minHeight: ResponsiveHelper.isSmallScreen(context) ? 28 : 32,
                             ),
                             icon: Icon(
                               _esFavorito(producto.id) 
@@ -2109,12 +2381,18 @@ class _TiendaScreenState extends State<TiendaScreen> {
                               color: _esFavorito(producto.id) 
                                   ? Colors.red.shade600 
                                   : Colors.grey.shade600,
-                              size: 16,
+                              size: ResponsiveHelper.isSmallScreen(context)
+                                ? ResponsiveHelper.iconSize(context) - 10
+                                : ResponsiveHelper.iconSize(context) - 8,
                             ),
                             onPressed: () => _toggleFavorito(producto),
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        SizedBox(
+                          width: ResponsiveHelper.isSmallScreen(context)
+                            ? ResponsiveHelper.spacing(context) / 4
+                            : ResponsiveHelper.spacing(context) / 3
+                        ),
                         // Botón de agregar al carrito
                         Expanded(
                           child: ElevatedButton(
@@ -2124,18 +2402,27 @@ class _TiendaScreenState extends State<TiendaScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green.shade700,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              padding: EdgeInsets.symmetric(
+                                vertical: ResponsiveHelper.isSmallScreen(context)
+                                  ? ResponsiveHelper.spacing(context) / 3
+                                  : ResponsiveHelper.spacing(context) / 2
+                              ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               elevation: 2,
+                              minimumSize: Size(0, ResponsiveHelper.isSmallScreen(context) ? 28 : 32),
                             ),
-                            child: const Text(
+                            child: Text(
                               'Agregar',
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: ResponsiveHelper.isSmallScreen(context)
+                                  ? ResponsiveHelper.bodyFontSize(context) - 4
+                                  : ResponsiveHelper.bodyFontSize(context) - 3,
                                 fontWeight: FontWeight.bold,
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ),

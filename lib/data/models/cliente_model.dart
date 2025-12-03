@@ -6,8 +6,12 @@ part 'cliente_model.g.dart';
 @JsonSerializable()
 class ClienteModel {
   final int? id;
-  final String nombre;
-  final String? apellido;
+  @JsonKey(name: 'nombres')
+  final String nombres;
+  @JsonKey(name: 'apellido_paterno')
+  final String? apellidoPaterno;
+  @JsonKey(name: 'apellido_materno')
+  final String? apellidoMaterno;
   final String? documento;
   @JsonKey(name: 'tipo_documento')
   final String tipoDocumento;
@@ -20,8 +24,9 @@ class ClienteModel {
 
   ClienteModel({
     this.id,
-    required this.nombre,
-    this.apellido,
+    required this.nombres,
+    this.apellidoPaterno,
+    this.apellidoMaterno,
     this.documento,
     this.tipoDocumento = 'DNI',
     this.telefono,
@@ -36,6 +41,15 @@ class ClienteModel {
 
   Map<String, dynamic> toJson() => _$ClienteModelToJson(this);
 
-  String get nombreCompleto => apellido != null ? '$nombre $apellido' : nombre;
+  String get nombreCompleto {
+    final partes = [nombres];
+    if (apellidoPaterno != null && apellidoPaterno!.isNotEmpty) {
+      partes.add(apellidoPaterno!);
+    }
+    if (apellidoMaterno != null && apellidoMaterno!.isNotEmpty) {
+      partes.add(apellidoMaterno!);
+    }
+    return partes.join(' ');
+  }
 }
 

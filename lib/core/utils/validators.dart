@@ -3,6 +3,10 @@ import 'package:flutter/services.dart';
 /// Utilidades de validación para formularios
 
 class Validators {
+  /// InputFormatter para DNI
+  /// Solo permite números y máximo 8 dígitos
+  static FilteringTextInputFormatter dniFormatter = FilteringTextInputFormatter.allow(RegExp(r'[0-9]'));
+  
   /// InputFormatter para teléfono peruano
   /// Solo permite números y máximo 9 dígitos
   static FilteringTextInputFormatter telefonoFormatter = FilteringTextInputFormatter.allow(RegExp(r'[0-9]'));

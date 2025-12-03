@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/responsive_helper.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/constants/documentos_legales.dart';
@@ -126,42 +127,49 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
       backgroundColor: Colors.grey.shade50,
       body: SafeArea(
         child: SingleChildScrollView(
-          child: Column(
-            children: [
-              // Header
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    const Text(
-                      'Mi cuenta',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: ResponsiveHelper.maxContentWidth(context) ?? double.infinity,
+            ),
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.symmetric(
+                    vertical: ResponsiveHelper.verticalPadding(context),
+                    horizontal: ResponsiveHelper.horizontalPadding(context),
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Mi cuenta',
+                        style: TextStyle(
+                          fontSize: ResponsiveHelper.titleFontSize(context),
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
 
-              const SizedBox(height: 16),
+                SizedBox(height: ResponsiveHelper.spacing(context)),
 
-              // Información del usuario
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                padding: const EdgeInsets.all(16),
+                // Información del usuario
+                Container(
+                  margin: EdgeInsets.symmetric(horizontal: ResponsiveHelper.horizontalPadding(context)),
+                  padding: ResponsiveHelper.formPadding(context),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
@@ -176,26 +184,26 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                 child: Row(
                   children: [
                     CircleAvatar(
-                      radius: 35,
+                      radius: ResponsiveHelper.isSmallScreen(context) ? 30 : 35,
                       backgroundColor: Colors.green.shade700,
                       child: Text(
                         _username.isNotEmpty ? _username[0].toUpperCase() : 'C',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Colors.white,
-                          fontSize: 28,
+                          fontSize: ResponsiveHelper.isSmallScreen(context) ? 24 : 28,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    SizedBox(width: ResponsiveHelper.spacing(context)),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             _username,
-                            style: const TextStyle(
-                              fontSize: 20,
+                            style: TextStyle(
+                              fontSize: ResponsiveHelper.subtitleFontSize(context) + 4,
                               fontWeight: FontWeight.bold,
                               color: Colors.black87,
                             ),
@@ -204,7 +212,7 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                             Text(
                               _email,
                               style: TextStyle(
-                                fontSize: 14,
+                                fontSize: ResponsiveHelper.bodyFontSize(context),
                                 color: Colors.grey.shade600,
                               ),
                             ),
@@ -215,11 +223,11 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                 ),
               ),
 
-              const SizedBox(height: 16),
+              SizedBox(height: ResponsiveHelper.spacing(context)),
 
               // Opciones principales
               Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
+                margin: EdgeInsets.symmetric(horizontal: ResponsiveHelper.horizontalPadding(context)),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
@@ -296,11 +304,11 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                 ),
               ),
 
-              const SizedBox(height: 16),
+              SizedBox(height: ResponsiveHelper.spacing(context)),
 
               // Opciones adicionales
               Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
+                margin: EdgeInsets.symmetric(horizontal: ResponsiveHelper.horizontalPadding(context)),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
@@ -330,11 +338,11 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                 ),
               ),
 
-              const SizedBox(height: 16),
+              SizedBox(height: ResponsiveHelper.spacing(context)),
 
               // Opciones legales
               Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
+                margin: EdgeInsets.symmetric(horizontal: ResponsiveHelper.horizontalPadding(context)),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
@@ -412,11 +420,11 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                 ),
               ),
 
-              const SizedBox(height: 16),
+              SizedBox(height: ResponsiveHelper.spacing(context)),
 
               // Soporte
               Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
+                margin: EdgeInsets.symmetric(horizontal: ResponsiveHelper.horizontalPadding(context)),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
@@ -442,11 +450,11 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                 ),
               ),
 
-              const SizedBox(height: 16),
+              SizedBox(height: ResponsiveHelper.spacing(context)),
 
               // Botón Cerrar Sesión
               Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
+                margin: EdgeInsets.symmetric(horizontal: ResponsiveHelper.horizontalPadding(context)),
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _handleLogout,
@@ -454,26 +462,27 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                     backgroundColor: Colors.red.shade50,
                     foregroundColor: Colors.red.shade700,
                     elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    padding: EdgeInsets.symmetric(vertical: ResponsiveHelper.spacing(context)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text(
+                  child: Text(
                     'Cerrar sesión',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: ResponsiveHelper.bodyFontSize(context),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
               ),
 
-              const SizedBox(height: 32),
+              SizedBox(height: ResponsiveHelper.verticalPadding(context) * 2),
             ],
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -487,12 +496,12 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
       leading: Icon(
         icon,
         color: Colors.green.shade700,
-        size: 28,
+        size: ResponsiveHelper.iconSize(context),
       ),
       title: Text(
         title,
-        style: const TextStyle(
-          fontSize: 16,
+        style: TextStyle(
+          fontSize: ResponsiveHelper.bodyFontSize(context),
           color: Colors.black87,
           fontWeight: FontWeight.w500,
         ),
@@ -502,17 +511,20 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
         children: [
           if (badge != null && badge > 0)
             Container(
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              margin: EdgeInsets.only(right: ResponsiveHelper.spacing(context) / 2),
+              padding: EdgeInsets.symmetric(
+                horizontal: ResponsiveHelper.spacing(context) / 2,
+                vertical: ResponsiveHelper.spacing(context) / 4,
+              ),
               decoration: BoxDecoration(
                 color: Colors.red,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
                 badge > 99 ? '99+' : badge.toString(),
-                style: const TextStyle(
+                style: TextStyle(
                   color: Colors.white,
-                  fontSize: 12,
+                  fontSize: ResponsiveHelper.bodyFontSize(context) - 2,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -520,11 +532,15 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
           Icon(
             Icons.chevron_right,
             color: Colors.grey.shade400,
+            size: ResponsiveHelper.iconSize(context),
           ),
         ],
       ),
       onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      contentPadding: EdgeInsets.symmetric(
+        horizontal: ResponsiveHelper.spacing(context),
+        vertical: ResponsiveHelper.spacing(context) / 2,
+      ),
     );
   }
 }

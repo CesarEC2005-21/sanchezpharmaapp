@@ -8,8 +8,9 @@ part of 'cliente_model.dart';
 
 ClienteModel _$ClienteModelFromJson(Map<String, dynamic> json) => ClienteModel(
   id: (json['id'] as num?)?.toInt(),
-  nombre: json['nombre'] as String,
-  apellido: json['apellido'] as String?,
+  nombres: json['nombres'] as String,
+  apellidoPaterno: json['apellido_paterno'] as String?,
+  apellidoMaterno: json['apellido_materno'] as String?,
   documento: json['documento'] as String?,
   tipoDocumento: json['tipo_documento'] as String? ?? 'DNI',
   telefono: json['telefono'] as String?,
@@ -22,8 +23,9 @@ ClienteModel _$ClienteModelFromJson(Map<String, dynamic> json) => ClienteModel(
 Map<String, dynamic> _$ClienteModelToJson(ClienteModel instance) =>
     <String, dynamic>{
       'id': instance.id,
-      'nombre': instance.nombre,
-      'apellido': instance.apellido,
+      'nombres': instance.nombres,
+      'apellido_paterno': instance.apellidoPaterno,
+      'apellido_materno': instance.apellidoMaterno,
       'documento': instance.documento,
       'tipo_documento': instance.tipoDocumento,
       'telefono': instance.telefono,

@@ -1,6 +1,9 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/utils/shared_prefs_helper.dart';
 import 'core/services/local_notification_service.dart';
+import 'core/services/session_timeout_service.dart';
 import 'presentation/screens/login_screen.dart';
 import 'presentation/screens/dashboard_screen.dart';
 import 'presentation/screens/home_cliente_screen.dart';
@@ -11,8 +14,52 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Capturar errores no controlados de Flutter
+  FlutterError.onError = (FlutterErrorDetails details) {
+    // Log del error para debugging
+    print('❌ Error de Flutter no controlado:');
+    print('   Error: ${details.exception}');
+    print('   Stack: ${details.stack}');
+    
+    // En producción, podrías enviar esto a un servicio de logging
+    // Por ahora, solo lo logueamos
+    
+    // Limpiar datos de autenticación cuando hay un error crítico
+    SharedPrefsHelper.clearAuthData();
+    
+    // Redirigir directamente al login si hay un contexto disponible
+    if (navigatorKey.currentContext != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final context = navigatorKey.currentContext;
+        if (context != null) {
+          // Limpiar toda la pila y redirigir directamente al login
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (context) => const LoginScreen(),
+            ),
+            (route) => false,
+          );
+        }
+      });
+    }
+  };
+  
+  // Capturar errores de la zona de ejecución (async errors)
+  PlatformDispatcher.instance.onError = (error, stack) {
+    // Log del error para debugging
+    print('❌ Error de zona no controlado:');
+    print('   Error: $error');
+    print('   Stack: $stack');
+    
+    // Retornar true indica que el error fue manejado
+    return true;
+  };
+  
   // Inicializar servicio de notificaciones
   await LocalNotificationService().initialize();
+  
+  // Inicializar servicio de timeout de sesión
+  SessionTimeoutService().initialize();
   
   runApp(const MyApp());
 }
@@ -30,7 +77,123 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
         useMaterial3: true,
       ),
+      // Configurar localizaciones para Material widgets como DatePicker
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('es', 'ES'), // Español de España
+        Locale('es', 'MX'), // Español de México
+        Locale('es', 'PE'), // Español de Perú
+        Locale('en', 'US'), // Inglés como fallback
+      ],
+      locale: const Locale('es', 'ES'),
+      // Capturar errores de renderizado y mostrarlos de forma amigable
+      builder: (context, child) {
+        // Configurar ErrorWidget.builder para mostrar errores amigables
+        ErrorWidget.builder = (FlutterErrorDetails details) {
+          // Log del error para debugging
+          print('❌ Error de renderizado: ${details.exception}');
+          print('Stack trace: ${details.stack}');
+          
+          // Limpiar datos de autenticación cuando hay un error crítico
+          SharedPrefsHelper.clearAuthData();
+          
+          // Redirigir directamente al login después de un breve delay
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (navigatorKey.currentContext != null) {
+              // Limpiar toda la pila de navegación y redirigir directamente al login
+              Navigator.of(navigatorKey.currentContext!).pushAndRemoveUntil(
+                MaterialPageRoute(
+                  builder: (context) => const LoginScreen(),
+                ),
+                (route) => false,
+              );
+            }
+          });
+          
+          // Retornar un widget de error temporal mientras se redirige
+          return Scaffold(
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 64,
+                      color: Colors.red.shade300,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Oops! Algo salió mal',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Ocurrió un error inesperado. Redirigiendo...',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 16),
+                    ),
+                    const SizedBox(height: 24),
+                    const CircularProgressIndicator(),
+                  ],
+                ),
+              ),
+            ),
+          );
+        };
+        
+        // Envolver todas las pantallas con el ActivityTracker
+        return ActivityTracker(child: child ?? const SizedBox());
+      },
       home: const SplashScreen(),
+    );
+  }
+}
+
+/// Widget que registra actividad del usuario para el servicio de timeout
+class ActivityTracker extends StatefulWidget {
+  final Widget child;
+  
+  const ActivityTracker({super.key, required this.child});
+
+  @override
+  State<ActivityTracker> createState() => _ActivityTrackerState();
+}
+
+class _ActivityTrackerState extends State<ActivityTracker> {
+  final SessionTimeoutService _timeoutService = SessionTimeoutService();
+
+  @override
+  void initState() {
+    super.initState();
+    // Registrar actividad inicial
+    _timeoutService.registerActivity();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () {
+        // Registrar actividad cuando el usuario toca la pantalla
+        _timeoutService.registerActivity();
+      },
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) {
+          // Registrar actividad cuando el usuario interactúa
+          _timeoutService.registerActivity();
+        },
+        child: widget.child,
+      ),
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
+import '../../core/utils/error_message_helper.dart';
 import '../../core/constants/app_colors.dart';
 
 class EscannerQrScreen extends StatefulWidget {
@@ -98,10 +99,63 @@ class _EscannerQrScreenState extends State<EscannerQrScreen> {
         }
       } else {
         if (mounted) {
+          String mensajeError = 'Error al conectar con el servidor';
+          Color colorError = Colors.red;
+          
+          final statusCode = response.response.statusCode;
+          
+          // Intentar obtener el mensaje de error del servidor si está disponible
+          try {
+            final errorData = response.data;
+            if (errorData is Map && errorData['message'] != null) {
+              String serverMessage = errorData['message'].toString();
+              
+              // Limpiar mensajes de error técnicos y hacerlos más amigables
+              if (serverMessage.contains('Unknown column')) {
+                mensajeError = 'Error en la configuración del servidor. Por favor, contacta al administrador del sistema.';
+              } else if (serverMessage.contains('OperationalError')) {
+                mensajeError = 'Error en la base de datos. Por favor, contacta al administrador del sistema.';
+              } else {
+                mensajeError = serverMessage;
+              }
+            }
+          } catch (e) {
+            // Si no se puede obtener el mensaje, usar el mensaje por defecto
+          }
+          
+          // Manejar diferentes códigos de estado
+          if (statusCode == 500) {
+            if (mensajeError == 'Error al conectar con el servidor' || 
+                mensajeError.contains('Error del servidor') == false) {
+              mensajeError = 'Error del servidor al procesar el pedido de envío a domicilio. Por favor, verifica que el envío esté correctamente configurado o contacta al administrador.';
+            }
+            colorError = Colors.orange;
+          } else if (statusCode == 401) {
+            mensajeError = 'Sesión expirada. Por favor, inicia sesión nuevamente.';
+            colorError = Colors.orange;
+          } else if (statusCode == 403) {
+            mensajeError = 'No tienes permisos para realizar esta acción.';
+            colorError = Colors.orange;
+          } else if (statusCode == 404) {
+            mensajeError = 'El código QR no es válido o el pedido no existe.';
+            colorError = Colors.orange;
+          } else if (statusCode != null && statusCode >= 500) {
+            mensajeError = 'Error del servidor. Por favor, intenta nuevamente más tarde.';
+            colorError = Colors.orange;
+          }
+          
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Error al conectar con el servidor'),
-              backgroundColor: Colors.red,
+            SnackBar(
+              content: Text(mensajeError),
+              backgroundColor: colorError,
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: 'Cerrar',
+                textColor: Colors.white,
+                onPressed: () {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                },
+              ),
             ),
           );
           await Future.delayed(const Duration(seconds: 1));
@@ -112,12 +166,14 @@ class _EscannerQrScreenState extends State<EscannerQrScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        // Usar ErrorMessageHelper para obtener mensaje amigable
+        // No mostrar si es error 401 (el interceptor ya lo maneja)
+        final errorString = e.toString().toLowerCase();
+        if (!errorString.contains('401') && 
+            !errorString.contains('sesión expirada') &&
+            !errorString.contains('unauthorized')) {
+          ErrorMessageHelper.showErrorSnackBar(context, e);
+        }
         await Future.delayed(const Duration(seconds: 1));
         if (mounted) {
           await _controller.start();

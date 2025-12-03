@@ -4,6 +4,7 @@ import 'dart:convert';
 import '../../data/models/direccion_model.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
+import '../../core/utils/responsive_helper.dart';
 import '../widgets/cliente_bottom_nav.dart';
 import 'agregar_direccion_screen.dart';
 
@@ -276,34 +277,43 @@ class _MisDireccionesScreenState extends State<MisDireccionesScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.location_off, size: 80, color: Colors.grey.shade400),
-                      const SizedBox(height: 16),
+                      Icon(
+                        Icons.location_off,
+                        size: ResponsiveHelper.isSmallScreen(context) ? 60 : 80,
+                        color: Colors.grey.shade400,
+                      ),
+                      SizedBox(height: ResponsiveHelper.spacing(context)),
                       Text(
                         'No tienes direcciones guardadas',
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: ResponsiveHelper.subtitleFontSize(context) + 2,
                           color: Colors.grey.shade600,
                         ),
+                        textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: ResponsiveHelper.spacing(context) / 2),
                       Text(
                         'Agrega tu primera dirección de entrega',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: ResponsiveHelper.bodyFontSize(context),
                           color: Colors.grey.shade500,
                         ),
+                        textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 24),
+                      SizedBox(height: ResponsiveHelper.spacing(context) * 1.5),
                       ElevatedButton.icon(
                         onPressed: _agregarDireccion,
-                        icon: const Icon(Icons.add_location_alt),
-                        label: const Text('Agregar dirección'),
+                        icon: Icon(Icons.add_location_alt, size: ResponsiveHelper.iconSize(context)),
+                        label: Text(
+                          'Agregar dirección',
+                          style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green.shade700,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 12,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: ResponsiveHelper.spacing(context) * 1.5,
+                            vertical: ResponsiveHelper.spacing(context) / 2,
                           ),
                         ),
                       ),
@@ -313,12 +323,12 @@ class _MisDireccionesScreenState extends State<MisDireccionesScreen> {
               : RefreshIndicator(
                   onRefresh: _cargarDirecciones,
                   child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
+                    padding: ResponsiveHelper.formPadding(context),
                     itemCount: _direcciones.length,
                     itemBuilder: (context, index) {
                       final direccion = _direcciones[index];
                       return Card(
-                        margin: const EdgeInsets.only(bottom: 12),
+                        margin: EdgeInsets.only(bottom: ResponsiveHelper.spacing(context) / 2),
                         elevation: 2,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -327,7 +337,7 @@ class _MisDireccionesScreenState extends State<MisDireccionesScreen> {
                               : BorderSide.none,
                         ),
                         child: Padding(
-                          padding: const EdgeInsets.all(16),
+                          padding: ResponsiveHelper.formPadding(context),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -340,13 +350,14 @@ class _MisDireccionesScreenState extends State<MisDireccionesScreen> {
                                     color: direccion.esPrincipal
                                         ? Colors.green.shade700
                                         : Colors.grey,
+                                    size: ResponsiveHelper.iconSize(context),
                                   ),
-                                  const SizedBox(width: 8),
+                                  SizedBox(width: ResponsiveHelper.spacing(context) / 2),
                                   Expanded(
                                     child: Text(
                                       direccion.titulo,
                                       style: TextStyle(
-                                        fontSize: 18,
+                                        fontSize: ResponsiveHelper.subtitleFontSize(context) + 2,
                                         fontWeight: FontWeight.bold,
                                         color: direccion.esPrincipal
                                             ? Colors.green.shade700
@@ -356,9 +367,9 @@ class _MisDireccionesScreenState extends State<MisDireccionesScreen> {
                                   ),
                                   if (direccion.esPrincipal)
                                     Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: ResponsiveHelper.spacing(context) / 2,
+                                        vertical: ResponsiveHelper.spacing(context) / 4,
                                       ),
                                       decoration: BoxDecoration(
                                         color: Colors.green.shade100,
@@ -367,7 +378,7 @@ class _MisDireccionesScreenState extends State<MisDireccionesScreen> {
                                       child: Text(
                                         'Principal',
                                         style: TextStyle(
-                                          fontSize: 12,
+                                          fontSize: ResponsiveHelper.bodyFontSize(context) - 2,
                                           fontWeight: FontWeight.w600,
                                           color: Colors.green.shade900,
                                         ),
@@ -375,26 +386,26 @@ class _MisDireccionesScreenState extends State<MisDireccionesScreen> {
                                     ),
                                 ],
                               ),
-                              const SizedBox(height: 8),
+                              SizedBox(height: ResponsiveHelper.spacing(context) / 2),
                               Text(
                                 direccion.direccion,
-                                style: const TextStyle(
-                                  fontSize: 14,
+                                style: TextStyle(
+                                  fontSize: ResponsiveHelper.bodyFontSize(context),
                                   color: Colors.black87,
                                 ),
                               ),
                               if (direccion.referencia != null) ...[
-                                const SizedBox(height: 4),
+                                SizedBox(height: ResponsiveHelper.spacing(context) / 4),
                                 Text(
                                   'Ref: ${direccion.referencia}',
                                   style: TextStyle(
-                                    fontSize: 13,
+                                    fontSize: ResponsiveHelper.bodyFontSize(context) - 1,
                                     color: Colors.grey.shade600,
                                     fontStyle: FontStyle.italic,
                                   ),
                                 ),
                               ],
-                              const SizedBox(height: 12),
+                              SizedBox(height: ResponsiveHelper.spacing(context) / 2),
                               Row(
                                 children: [
                                   if (!direccion.esPrincipal)
@@ -409,12 +420,18 @@ class _MisDireccionesScreenState extends State<MisDireccionesScreen> {
                                       ),
                                     ),
                                   if (!direccion.esPrincipal)
-                                    const SizedBox(width: 8),
+                                    SizedBox(width: ResponsiveHelper.spacing(context) / 2),
                                   Expanded(
                                     child: OutlinedButton.icon(
                                       onPressed: () => _eliminarDireccion(index),
-                                      icon: const Icon(Icons.delete_outline, size: 18),
-                                      label: const Text('Eliminar'),
+                                      icon: Icon(
+                                        Icons.delete_outline,
+                                        size: ResponsiveHelper.iconSize(context) - 6,
+                                      ),
+                                      label: Text(
+                                        'Eliminar',
+                                        style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                                      ),
                                       style: OutlinedButton.styleFrom(
                                         foregroundColor: Colors.red,
                                       ),

@@ -23,6 +23,20 @@ except ImportError:
     MAIL_AVAILABLE = False
     logging.warning("Flask-Mail no está instalado. Las funciones de email no estarán disponibles.")
 
+# Importar librerías para generar PDFs
+try:
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+    from io import BytesIO
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+    logging.warning("ReportLab no está instalado. Las funciones de PDF no estarán disponibles.")
+
 # Importar requests para llamadas HTTP a la API de RENIEC
 try:
     import requests
@@ -202,6 +216,362 @@ CORS(app, resources={
 })
 
 jwt = JWT(app, authenticate, identity)
+
+# ---------------------------------------------------
+# FUNCIONES PARA GENERAR PDFs Y ENVIAR CORREOS
+# ---------------------------------------------------
+
+def generar_pdf_boleta(venta_data, detalle_venta, cliente_data):
+    """Genera un PDF de boleta/comprobante de venta"""
+    if not PDF_AVAILABLE:
+        logging.error("ReportLab no está disponible para generar PDF")
+        return None
+    
+    try:
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+        story = []
+        
+        # Estilos
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=18,
+            textColor=colors.HexColor('#2E7D32'),
+            spaceAfter=30,
+            alignment=TA_CENTER
+        )
+        
+        # Título
+        story.append(Paragraph("BOLETA DE VENTA", title_style))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Información de la empresa
+        empresa_style = ParagraphStyle(
+            'Empresa',
+            parent=styles['Normal'],
+            fontSize=12,
+            alignment=TA_CENTER
+        )
+        story.append(Paragraph("<b>SÁNCHEZ PHARMA</b>", empresa_style))
+        story.append(Paragraph("Farmacia y Productos Farmacéuticos", styles['Normal']))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Información del cliente
+        cliente_info = [
+            ['Cliente:', cliente_data.get('nombre_completo', 'Cliente no registrado')],
+            ['Documento:', cliente_data.get('documento', 'N/A')],
+            ['Email:', cliente_data.get('email', 'N/A')],
+            ['Teléfono:', cliente_data.get('telefono', 'N/A')],
+        ]
+        
+        cliente_table = Table(cliente_info, colWidths=[2*inch, 4*inch])
+        cliente_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.grey),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('BACKGROUND', (1, 0), (1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(cliente_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Información de la venta
+        venta_info = [
+            ['Número de Venta:', venta_data.get('numero_venta', f"#{venta_data.get('id', 'N/A')}")],
+            ['Fecha:', venta_data.get('fecha_venta', datetime.now().strftime('%d/%m/%Y %H:%M'))],
+            ['Tipo de Venta:', 'Envío a Domicilio' if venta_data.get('tipo_venta') == 'envio_domicilio' else 'Recojo en Tienda'],
+            ['Método de Pago:', venta_data.get('metodo_pago_nombre', 'N/A')],
+        ]
+        
+        venta_table = Table(venta_info, colWidths=[2*inch, 4*inch])
+        venta_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.grey),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('BACKGROUND', (1, 0), (1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(venta_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Detalle de productos
+        story.append(Paragraph("<b>DETALLE DE PRODUCTOS</b>", styles['Heading2']))
+        story.append(Spacer(1, 0.1*inch))
+        
+        detalle_data = [['Producto', 'Cantidad', 'Precio Unit.', 'Subtotal']]
+        for item in detalle_venta:
+            detalle_data.append([
+                item.get('producto_nombre', 'N/A'),
+                str(item.get('cantidad', 0)),
+                f"S/. {float(item.get('precio_unitario', 0)):.2f}",
+                f"S/. {float(item.get('subtotal', 0)):.2f}"
+            ])
+        
+        detalle_table = Table(detalle_data, colWidths=[3*inch, 1*inch, 1.5*inch, 1.5*inch])
+        detalle_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2E7D32')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey])
+        ]))
+        story.append(detalle_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Totales
+        totales_data = [
+            ['Subtotal (sin IGV):', f"S/. {float(venta_data.get('subtotal', 0)):.2f}"],
+            ['IGV (18%):', f"S/. {float(venta_data.get('impuesto', 0)):.2f}"],
+        ]
+        
+        if venta_data.get('descuento', 0) > 0:
+            totales_data.append(['Descuento:', f"-S/. {float(venta_data.get('descuento', 0)):.2f}"])
+        
+        totales_data.append(['<b>TOTAL:</b>', f"<b>S/. {float(venta_data.get('total', 0)):.2f}</b>"])
+        
+        totales_table = Table(totales_data, colWidths=[4*inch, 2*inch])
+        totales_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, -1), (1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, -1), (1, -1), 14),
+            ('TEXTCOLOR', (0, -1), (1, -1), colors.HexColor('#2E7D32')),
+            ('LINEBELOW', (0, -2), (1, -2), 2, colors.black),
+            ('TOPPADDING', (0, -1), (1, -1), 12),
+        ]))
+        story.append(totales_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Pie de página
+        story.append(Paragraph("Gracias por su compra", styles['Normal']))
+        story.append(Paragraph("SÁNCHEZ PHARMA - Su salud es nuestra prioridad", styles['Normal']))
+        
+        # Construir PDF
+        doc.build(story)
+        buffer.seek(0)
+        return buffer.getvalue()
+    except Exception as e:
+        logging.error(f"Error al generar PDF de boleta: {repr(e)}")
+        return None
+
+
+def generar_pdf_confirmacion_entrega(venta_data, envio_data, cliente_data, detalle_venta=None, usuario_entrega=None):
+    """Genera un PDF de confirmación de entrega"""
+    if not PDF_AVAILABLE:
+        logging.error("ReportLab no está disponible para generar PDF")
+        return None
+    
+    try:
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+        story = []
+        
+        # Estilos
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=18,
+            textColor=colors.HexColor('#2E7D32'),
+            spaceAfter=30,
+            alignment=TA_CENTER
+        )
+        
+        # Título
+        story.append(Paragraph("CONFIRMACIÓN DE ENTREGA", title_style))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Información de la empresa
+        empresa_style = ParagraphStyle(
+            'Empresa',
+            parent=styles['Normal'],
+            fontSize=12,
+            alignment=TA_CENTER
+        )
+        story.append(Paragraph("<b>SÁNCHEZ PHARMA</b>", empresa_style))
+        story.append(Paragraph("Farmacia y Productos Farmacéuticos", styles['Normal']))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Mensaje de confirmación
+        confirmacion_style = ParagraphStyle(
+            'Confirmacion',
+            parent=styles['Normal'],
+            fontSize=14,
+            textColor=colors.HexColor('#2E7D32'),
+            alignment=TA_CENTER,
+            spaceAfter=20
+        )
+        story.append(Paragraph("<b>¡Su pedido ha sido entregado exitosamente!</b>", confirmacion_style))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Información del cliente
+        cliente_info = [
+            ['Cliente:', cliente_data.get('nombre_completo', 'Cliente no registrado')],
+            ['Documento:', cliente_data.get('documento', 'N/A')],
+            ['Email:', cliente_data.get('email', 'N/A')],
+        ]
+        
+        cliente_table = Table(cliente_info, colWidths=[2*inch, 4*inch])
+        cliente_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.grey),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('BACKGROUND', (1, 0), (1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(cliente_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Información de la entrega
+        entrega_info = [
+            ['Número de Venta:', venta_data.get('numero_venta', f"#{venta_data.get('id', 'N/A')}")],
+        ]
+        
+        # Agregar información específica según el tipo de venta
+        tipo_venta_actual = venta_data.get('tipo_venta', '')
+        if tipo_venta_actual == 'envio_domicilio' and envio_data:
+            # Si es envío a domicilio, mostrar información del envío
+            entrega_info.append(['Número de Seguimiento:', envio_data.get('numero_seguimiento', 'N/A')])
+            entrega_info.append(['Fecha de Entrega:', envio_data.get('fecha_real_entrega', datetime.now().strftime('%d/%m/%Y %H:%M'))])
+            entrega_info.append(['Dirección de Entrega:', envio_data.get('direccion_entrega', 'N/A')])
+            entrega_info.append(['Destinatario:', envio_data.get('nombre_destinatario', 'N/A')])
+        else:
+            # Si es recojo en tienda
+            entrega_info.append(['Fecha de Entrega:', datetime.now().strftime('%d/%m/%Y %H:%M')])
+            entrega_info.append(['Tipo:', 'Recojo en Tienda'])
+        
+        # Agregar información de quién entregó/atendió según el tipo de venta
+        if usuario_entrega:
+            tipo_persona = usuario_entrega.get('tipo', 'usuario')
+            if tipo_persona == 'repartidor':
+                # Si es envío a domicilio, mostrar el repartidor
+                entrega_info.append(['Repartidor:', usuario_entrega.get('nombre_completo', 'N/A')])
+            else:
+                # Si es recojo en tienda, mostrar el usuario que atendió
+                entrega_info.append(['Atendido por:', usuario_entrega.get('nombre_completo', 'N/A')])
+        
+        entrega_table = Table(entrega_info, colWidths=[2*inch, 4*inch])
+        entrega_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.grey),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('BACKGROUND', (1, 0), (1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(entrega_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Detalle de productos entregados
+        if detalle_venta and len(detalle_venta) > 0:
+            story.append(Paragraph("<b>PRODUCTOS ENTREGADOS</b>", styles['Heading2']))
+            story.append(Spacer(1, 0.1*inch))
+            
+            productos_data = [['Producto', 'Cantidad', 'Precio Unit.', 'Subtotal']]
+            for item in detalle_venta:
+                productos_data.append([
+                    item.get('producto_nombre', 'N/A'),
+                    str(item.get('cantidad', 0)),
+                    f"S/. {float(item.get('precio_unitario', 0)):.2f}",
+                    f"S/. {float(item.get('subtotal', 0)):.2f}"
+                ])
+            
+            productos_table = Table(productos_data, colWidths=[3*inch, 1*inch, 1.5*inch, 1.5*inch])
+            productos_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2E7D32')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey])
+            ]))
+            story.append(productos_table)
+            story.append(Spacer(1, 0.3*inch))
+            
+            # Resumen de costos
+            story.append(Paragraph("<b>RESUMEN DE COSTOS</b>", styles['Heading2']))
+            story.append(Spacer(1, 0.1*inch))
+            
+            costos_data = [
+                ['Subtotal (sin IGV):', f"S/. {float(venta_data.get('subtotal', 0)):.2f}"],
+                ['IGV (18%):', f"S/. {float(venta_data.get('impuesto', 0)):.2f}"],
+            ]
+            
+            if venta_data.get('descuento', 0) > 0:
+                costos_data.append(['Descuento:', f"-S/. {float(venta_data.get('descuento', 0)):.2f}"])
+            
+            costos_data.append(['<b>TOTAL PAGADO:</b>', f"<b>S/. {float(venta_data.get('total', 0)):.2f}</b>"])
+            
+            costos_table = Table(costos_data, colWidths=[4*inch, 2*inch])
+            costos_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('FONTNAME', (0, -1), (1, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, -1), (1, -1), 14),
+                ('TEXTCOLOR', (0, -1), (1, -1), colors.HexColor('#2E7D32')),
+                ('LINEBELOW', (0, -2), (1, -2), 2, colors.black),
+                ('TOPPADDING', (0, -1), (1, -1), 12),
+            ]))
+            story.append(costos_table)
+            story.append(Spacer(1, 0.3*inch))
+        
+        # Pie de página
+        story.append(Paragraph("Gracias por confiar en nosotros", styles['Normal']))
+        story.append(Paragraph("SÁNCHEZ PHARMA - Su salud es nuestra prioridad", styles['Normal']))
+        
+        # Construir PDF
+        doc.build(story)
+        buffer.seek(0)
+        return buffer.getvalue()
+    except Exception as e:
+        logging.error(f"Error al generar PDF de confirmación de entrega: {repr(e)}")
+        return None
+
+
+def enviar_correo_con_pdf(destinatario, asunto, cuerpo, pdf_data, nombre_archivo):
+    """Envía un correo electrónico con un PDF adjunto"""
+    if not MAIL_AVAILABLE or mail is None:
+        logging.warning("Flask-Mail no está disponible. No se puede enviar correo.")
+        return False
+    
+    try:
+        msg = Message(
+            subject=asunto,
+            recipients=[destinatario],
+            body=cuerpo,
+            sender=app.config['MAIL_DEFAULT_SENDER']
+        )
+        
+        if pdf_data:
+            msg.attach(nombre_archivo, 'application/pdf', pdf_data)
+        
+        mail.send(msg)
+        logging.info(f"Correo enviado exitosamente a {destinatario}")
+        return True
+    except Exception as e:
+        logging.error(f"Error al enviar correo a {destinatario}: {repr(e)}")
+        return False
+
 
 # Handler personalizado para errores de JWT
 @jwt.jwt_error_handler
@@ -631,6 +1001,9 @@ def verificar_dni_reniec(dni):
             for proxy_var, value in original_proxies.items():
                 if value is not None:
                     os.environ[proxy_var] = value
+                elif proxy_var in os.environ:
+                    # Si la variable no existía originalmente, eliminarla si fue creada
+                    del os.environ[proxy_var]
         
         if respuesta_exitosa:
             # Log completo de la respuesta para debugging
@@ -2214,10 +2587,10 @@ def clientes_sanchezpharma():
                     params.append(estado)
                 
                 if busqueda:
-                    query += " AND (nombre LIKE %s OR apellido LIKE %s OR documento LIKE %s)"
-                    params.extend([f"%{busqueda}%", f"%{busqueda}%", f"%{busqueda}%"])
+                    query += " AND (nombres LIKE %s OR apellido_paterno LIKE %s OR apellido_materno LIKE %s OR documento LIKE %s)"
+                    params.extend([f"%{busqueda}%", f"%{busqueda}%", f"%{busqueda}%", f"%{busqueda}%"])
                 
-                query += " ORDER BY nombre"
+                query += " ORDER BY nombres"
                 cursor.execute(query, params)
                 data = cursor.fetchall()
 
@@ -2274,9 +2647,9 @@ def registrar_cliente_publico_sanchezpharma():
         data = request.json
 
         # Validar campos requeridos
-        campos_requeridos = ["nombre", "email", "password", "documento"]
+        campos_requeridos = ["nombres", "apellido_paterno", "email", "password", "documento"]
         if not all(data.get(c) for c in campos_requeridos):
-            return jsonify({"code": 0, "message": "Faltan campos requeridos: nombre, email, password, documento"})
+            return jsonify({"code": 0, "message": "Faltan campos requeridos: nombres, apellido_paterno, email, password, documento"})
 
         # Verificar DNI con RENIEC (la verificación principal se hace desde el cliente, pero validamos aquí también)
         documento = data.get("documento")
@@ -2285,14 +2658,19 @@ def registrar_cliente_publico_sanchezpharma():
         if documento and tipo_documento == "DNI":
             try:
                 verificacion_dni = verificar_dni_reniec(documento)
-                if not verificacion_dni['valido']:
-                    # Bloquear el registro si el DNI no es válido
+                # Solo bloquear si el DNI no es válido Y NO es un error de conexión
+                if not verificacion_dni['valido'] and not verificacion_dni.get('error_conexion', False):
+                    # Bloquear el registro si el DNI no es válido (pero no si fue un error de conexión)
                     # La verificación principal se hace desde el cliente, pero validamos aquí como medida de seguridad
                     return jsonify({
                         "code": 0, 
                         "message": f"El DNI no pudo ser verificado: {verificacion_dni['mensaje']}. Por favor, verifique que el número sea correcto."
                     })
-                logging.info(f"DNI {documento} verificado correctamente con RENIEC")
+                elif verificacion_dni.get('error_conexion', False):
+                    # Si es un error de conexión, permitir el registro ya que la verificación principal se hace desde el cliente
+                    logging.warning(f"Advertencia: Error de conexión al verificar DNI {documento} en el servidor. El registro continúa porque la verificación se realiza desde el cliente.")
+                else:
+                    logging.info(f"DNI {documento} verificado correctamente con RENIEC")
             except Exception as e:
                 # Si hay un error de conexión (ej: PythonAnywhere bloquea conexiones salientes),
                 # permitir el registro ya que la verificación principal se hace desde el cliente
@@ -2342,12 +2720,13 @@ def registrar_cliente_publico_sanchezpharma():
 
                 # Insertar cliente con contraseña encriptada con SHA256
                 cursor.execute("""
-                    INSERT INTO clientes (nombre, apellido, documento, tipo_documento, 
+                    INSERT INTO clientes (nombres, apellido_paterno, apellido_materno, documento, tipo_documento, 
                                          telefono, email, password, direccion, estado)
-                    VALUES (%s, %s, %s, %s, %s, %s, SHA2(%s, 256), %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, SHA2(%s, 256), %s, %s)
                 """, (
-                    data.get("nombre"),
-                    data.get("apellido"),
+                    data.get("nombres"),
+                    data.get("apellido_paterno"),
+                    data.get("apellido_materno"),
                     data.get("documento"),
                     data.get("tipo_documento", "DNI"),
                     data.get("telefono"),
@@ -2404,7 +2783,7 @@ def login_google_sanchezpharma():
                 
                 # Buscar cliente por email o google_id
                 cursor.execute("""
-                    SELECT id, nombre, apellido, documento, telefono, direccion, estado
+                    SELECT id, nombres, apellido_paterno, apellido_materno, documento, telefono, direccion, estado
                     FROM clientes 
                     WHERE email = %s OR google_id = %s
                 """, (email, google_id))
@@ -2474,9 +2853,9 @@ def registrar_cliente_google_sanchezpharma():
     try:
         data = request.json
         
-        campos_requeridos = ["email", "google_id", "nombre", "documento"]
+        campos_requeridos = ["email", "google_id", "nombres", "apellido_paterno", "documento"]
         if not all(data.get(c) for c in campos_requeridos):
-            return jsonify({"code": 0, "message": "Faltan campos requeridos: email, google_id, nombre, documento"})
+            return jsonify({"code": 0, "message": "Faltan campos requeridos: email, google_id, nombres, apellido_paterno, documento"})
         
         # Verificar DNI con RENIEC (la verificación principal se hace desde el cliente, pero validamos aquí también)
         documento = data.get("documento")
@@ -2485,14 +2864,19 @@ def registrar_cliente_google_sanchezpharma():
         if documento and tipo_documento == "DNI":
             try:
                 verificacion_dni = verificar_dni_reniec(documento)
-                if not verificacion_dni['valido']:
-                    # Bloquear el registro si el DNI no es válido
+                # Solo bloquear si el DNI no es válido Y NO es un error de conexión
+                if not verificacion_dni['valido'] and not verificacion_dni.get('error_conexion', False):
+                    # Bloquear el registro si el DNI no es válido (pero no si fue un error de conexión)
                     # La verificación principal se hace desde el cliente, pero validamos aquí como medida de seguridad
                     return jsonify({
                         "code": 0, 
                         "message": f"El DNI no pudo ser verificado: {verificacion_dni['mensaje']}. Por favor, verifique que el número sea correcto."
                     })
-                logging.info(f"DNI {documento} verificado correctamente con RENIEC")
+                elif verificacion_dni.get('error_conexion', False):
+                    # Si es un error de conexión, permitir el registro ya que la verificación principal se hace desde el cliente
+                    logging.warning(f"Advertencia: Error de conexión al verificar DNI {documento} en el servidor. El registro continúa porque la verificación se realiza desde el cliente.")
+                else:
+                    logging.info(f"DNI {documento} verificado correctamente con RENIEC")
             except Exception as e:
                 # Si hay un error de conexión (ej: PythonAnywhere bloquea conexiones salientes),
                 # permitir el registro ya que la verificación principal se hace desde el cliente
@@ -2551,12 +2935,13 @@ def registrar_cliente_google_sanchezpharma():
                     foto_url = data.get("foto_url") or None  # Asegurar que None se maneje correctamente
                     cursor.execute("""
                         UPDATE clientes 
-                        SET nombre = %s, apellido = %s, documento = %s, tipo_documento = %s,
+                        SET nombres = %s, apellido_paterno = %s, apellido_materno = %s, documento = %s, tipo_documento = %s,
                             telefono = %s, direccion = %s, google_id = %s, foto_url = %s
                         WHERE email = %s
                     """, (
-                        data.get("nombre"),
-                        data.get("apellido"),
+                        data.get("nombres"),
+                        data.get("apellido_paterno"),
+                        data.get("apellido_materno"),
                         data.get("documento"),
                         data.get("tipo_documento", "DNI"),
                         data.get("telefono"),
@@ -2570,12 +2955,13 @@ def registrar_cliente_google_sanchezpharma():
                     # Crear nuevo cliente
                     foto_url = data.get("foto_url") or None  # Asegurar que None se maneje correctamente
                     cursor.execute("""
-                        INSERT INTO clientes (nombre, apellido, documento, tipo_documento, 
+                        INSERT INTO clientes (nombres, apellido_paterno, apellido_materno, documento, tipo_documento, 
                                              telefono, email, direccion, google_id, foto_url, estado)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
-                        data.get("nombre"),
-                        data.get("apellido"),
+                        data.get("nombres"),
+                        data.get("apellido_paterno"),
+                        data.get("apellido_materno"),
                         data.get("documento"),
                         data.get("tipo_documento", "DNI"),
                         data.get("telefono"),
@@ -2770,7 +3156,8 @@ def ventas_sanchezpharma():
         with conn:
             with conn.cursor() as cursor:
                 query = """
-                    SELECT v.*, c.nombre as cliente_nombre, c.apellido as cliente_apellido,
+                    SELECT v.*, c.nombres as cliente_nombre, 
+                           CONCAT(COALESCE(c.apellido_paterno, ''), ' ', COALESCE(c.apellido_materno, '')) as cliente_apellido,
                            c.documento as cliente_documento, u.username as usuario_nombre,
                            mp.nombre as metodo_pago_nombre
                     FROM ventas v
@@ -2822,7 +3209,8 @@ def venta_sanchezpharma(venta_id):
             with conn.cursor() as cursor:
                 # Obtener venta
                 cursor.execute("""
-                    SELECT v.*, c.nombre as cliente_nombre, c.apellido as cliente_apellido,
+                    SELECT v.*, c.nombres as cliente_nombre, 
+                           CONCAT(COALESCE(c.apellido_paterno, ''), ' ', COALESCE(c.apellido_materno, '')) as cliente_apellido,
                            c.documento as cliente_documento, c.telefono as cliente_telefono,
                            u.username as usuario_nombre, mp.nombre as metodo_pago_nombre
                     FROM ventas v
@@ -3102,7 +3490,6 @@ def registrar_venta_sanchezpharma():
                         return jsonify({"code": 0, "message": "Para envío a domicilio se requiere: dirección, teléfono y nombre del destinatario"})
                     
                     # Generar número de seguimiento
-                    from datetime import datetime
                     numero_seguimiento = f"ENV-{venta_id}-{datetime.now().strftime('%Y%m%d')}"
                     
                     # Crear o actualizar el envío (el trigger puede haberlo creado ya)
@@ -3153,6 +3540,75 @@ def registrar_venta_sanchezpharma():
                         ))
 
             conn.commit()
+
+        # Enviar boleta por correo al cliente si tiene email
+        try:
+            # Obtener datos completos de la venta y cliente para el PDF (nueva conexión)
+            # Intentar enviar correo siempre que haya una venta registrada, incluso si cliente_id es None
+            conn2 = obtenerconexion_sanchezpharma()
+            with conn2:
+                with conn2.cursor() as cursor2:
+                    cursor2.execute("""
+                        SELECT v.*, c.nombre, c.apellido, c.email, c.documento, c.telefono,
+                               CONCAT(c.nombre, ' ', c.apellido) as nombre_completo,
+                               mp.nombre as metodo_pago_nombre
+                        FROM ventas v
+                        LEFT JOIN clientes c ON v.cliente_id = c.id
+                        LEFT JOIN metodos_pago mp ON v.metodo_pago_id = mp.id
+                        WHERE v.id = %s
+                    """, (venta_id,))
+                    venta_completa = cursor2.fetchone()
+                    
+                    if venta_completa and venta_completa.get('email'):
+                        # Obtener detalle de la venta
+                        cursor2.execute("""
+                            SELECT dv.*, p.nombre as producto_nombre, p.descripcion as producto_descripcion
+                            FROM detalle_venta dv
+                            LEFT JOIN productos p ON dv.producto_id = p.id
+                            WHERE dv.venta_id = %s
+                        """, (venta_id,))
+                        detalle = cursor2.fetchall()
+                        
+                        # Generar PDF
+                        pdf_data = generar_pdf_boleta(venta_completa, detalle, venta_completa)
+                        
+                        if pdf_data:
+                            # Enviar correo
+                            asunto = f"Boleta de Venta #{venta_completa.get('numero_venta', venta_id)} - Sánchez Pharma"
+                            cuerpo = f"""
+Estimado/a {venta_completa.get('nombre_completo', 'Cliente')},
+
+Le informamos que su pedido ha sido registrado exitosamente.
+
+Detalles de su compra:
+- Número de Venta: {venta_completa.get('numero_venta', f'#{venta_id}')}
+- Fecha: {venta_completa.get('fecha_venta', datetime.now().strftime('%d/%m/%Y %H:%M'))}
+- Subtotal (sin IGV): S/. {float(venta_completa.get('subtotal', 0)):.2f}
+- IGV (18%): S/. {float(venta_completa.get('impuesto', 0)):.2f}
+- Descuento: S/. {float(venta_completa.get('descuento', 0)):.2f}
+- TOTAL: S/. {float(venta_completa.get('total', 0)):.2f}
+
+Adjunto encontrará la boleta de venta en formato PDF con todos los detalles.
+
+Gracias por su compra.
+
+Atentamente,
+Sánchez Pharma
+                            """
+                            nombre_archivo = f"Boleta_{venta_completa.get('numero_venta', venta_id)}.pdf"
+                            enviar_correo_con_pdf(
+                                venta_completa['email'],
+                                asunto,
+                                cuerpo,
+                                pdf_data,
+                                nombre_archivo
+                            )
+                            logging.info(f"Boleta enviada por correo a {venta_completa['email']} para venta {venta_id}")
+                    else:
+                        logging.warning(f"No se pudo enviar boleta por correo: venta_id={venta_id}, tiene_email={venta_completa.get('email') if venta_completa else False}")
+        except Exception as e:
+            logging.error(f"Error al enviar boleta por correo: {repr(e)}")
+            # No fallar la venta si el correo falla
 
         return jsonify({"code": 1, "message": "Venta registrada correctamente", "venta_id": venta_id})
 
@@ -3276,7 +3732,8 @@ def envio_sanchezpharma(envio_id):
             with conn.cursor() as cursor:
                 cursor.execute("""
                     SELECT e.*, v.numero_venta, v.fecha_venta, v.total,
-                           c.nombre as cliente_nombre, c.apellido as cliente_apellido,
+                           c.nombres as cliente_nombre, 
+                           CONCAT(COALESCE(c.apellido_paterno, ''), ' ', COALESCE(c.apellido_materno, '')) as cliente_apellido,
                            c.telefono as cliente_telefono, c.documento as cliente_documento
                     FROM envios e
                     LEFT JOIN ventas v ON e.venta_id = v.id
@@ -3326,7 +3783,7 @@ def actualizar_estado_envio_sanchezpharma(envio_id):
             with conn.cursor() as cursor:
                 # Obtener estado anterior y datos del cliente
                 cursor.execute("""
-                    SELECT e.estado, v.cliente_id, c.nombre as cliente_nombre, e.numero_seguimiento
+                    SELECT e.estado, v.cliente_id, c.nombres as cliente_nombre, e.numero_seguimiento
                     FROM envios e
                     LEFT JOIN ventas v ON e.venta_id = v.id
                     LEFT JOIN clientes c ON v.cliente_id = c.id
@@ -3541,26 +3998,156 @@ def validar_qr_entrega_sanchezpharma():
                         """, (envio_id, estado_envio or 'en_camino', 'entregado', usuario_id, 'Entregado mediante escaneo QR'))
                         
                         # Crear notificación para el cliente
+                        # Obtener el cliente_id de la venta (ya lo tenemos de la consulta inicial)
+                        cliente_id_venta = venta.get("cliente_id")
+                        
+                        # Obtener solo el numero_seguimiento de la tabla envios
                         cursor.execute("""
-                            SELECT cliente_id, numero_seguimiento 
+                            SELECT numero_seguimiento 
                             FROM envios 
                             WHERE id = %s
                         """, (envio_id,))
                         envio_info = cursor.fetchone()
                         
-                        if envio_info and envio_info.get("cliente_id"):
+                        if cliente_id_venta and envio_info:
+                            numero_seguimiento = envio_info.get("numero_seguimiento", "")
                             cursor.execute("""
                                 INSERT INTO notificaciones_clientes 
                                 (cliente_id, titulo, cuerpo, tipo, relacion_id, leida, fecha_creacion)
                                 VALUES (%s, %s, %s, 'pedido_entregado', %s, FALSE, NOW())
                             """, (
-                                envio_info["cliente_id"],
+                                cliente_id_venta,  # Usar el cliente_id de la venta
                                 '¡Pedido Entregado!',
-                                f'Tu pedido {envio_info.get("numero_seguimiento", "")} ha sido entregado exitosamente.',
+                                f'Tu pedido {numero_seguimiento} ha sido entregado exitosamente.',
                                 venta_id
                             ))
                 
                 conn.commit()
+                
+                # Enviar PDF de confirmación de entrega por correo (tanto para envío a domicilio como recojo en tienda)
+                try:
+                    cliente_id_venta = venta.get("cliente_id")
+                    if cliente_id_venta:
+                        # Obtener datos completos para el PDF (nueva conexión)
+                        conn2 = obtenerconexion_sanchezpharma()
+                        with conn2:
+                            with conn2.cursor() as cursor2:
+                                # Obtener datos de la venta y cliente
+                                cursor2.execute("""
+                                    SELECT v.*, c.nombre, c.apellido, c.email, c.documento,
+                                           CONCAT(c.nombre, ' ', c.apellido) as nombre_completo
+                                    FROM ventas v
+                                    LEFT JOIN clientes c ON v.cliente_id = c.id
+                                    WHERE v.id = %s
+                                """, (venta_id,))
+                                venta_completa = cursor2.fetchone()
+                                
+                                if not venta_completa or not venta_completa.get('email'):
+                                    logging.warning(f"No se puede enviar correo: venta_id={venta_id}, tiene_email={venta_completa.get('email') if venta_completa else False}")
+                                else:
+                                    # Obtener datos del envío si existe (solo para envío a domicilio)
+                                    envio_completo = None
+                                    if envio_id:
+                                        cursor2.execute("""
+                                            SELECT e.*, DATE_FORMAT(e.fecha_real_entrega, '%%d/%%m/%%Y %%H:%%i') as fecha_real_entrega,
+                                                   e.conductor_repartidor as repartidor_nombre
+                                            FROM envios e
+                                            WHERE e.id = %s
+                                        """, (envio_id,))
+                                        envio_completo = cursor2.fetchone()
+                                    
+                                    # Si no hay envío (recojo en tienda), crear un objeto con datos básicos
+                                    if not envio_completo:
+                                        envio_completo = {
+                                            'numero_seguimiento': venta_completa.get('numero_venta', f'#{venta_id}'),
+                                            'fecha_real_entrega': datetime.now().strftime('%d/%m/%Y %H:%M'),
+                                            'direccion_entrega': 'Recojo en Tienda',
+                                            'nombre_destinatario': venta_completa.get('nombre_completo', 'Cliente')
+                                        }
+                                    
+                                    # Obtener detalle de productos
+                                    cursor2.execute("""
+                                        SELECT dv.*, p.nombre as producto_nombre, p.descripcion as producto_descripcion
+                                        FROM detalle_venta dv
+                                        LEFT JOIN productos p ON dv.producto_id = p.id
+                                        WHERE dv.venta_id = %s
+                                    """, (venta_id,))
+                                    detalle_entrega = cursor2.fetchall()
+                                    
+                                    # Obtener información según el tipo de venta
+                                    persona_entrega_info = None
+                                    tipo_venta_actual = venta_completa.get('tipo_venta', tipo_venta)
+                                    
+                                    if tipo_venta_actual == 'envio_domicilio':
+                                        # Si es envío a domicilio, mostrar el repartidor asignado
+                                        if envio_completo and envio_completo.get('conductor_repartidor'):
+                                            persona_entrega_info = {
+                                                'nombre_completo': envio_completo.get('conductor_repartidor'),
+                                                'tipo': 'repartidor'
+                                            }
+                                    else:
+                                        # Si es recojo en tienda, mostrar el usuario que atendió (el que escaneó el QR)
+                                        if usuario_id:
+                                            cursor2.execute("""
+                                                SELECT u.*, CONCAT(u.nombre, ' ', u.apellido) as nombre_completo
+                                                FROM usuarios u
+                                                WHERE u.id = %s
+                                            """, (usuario_id,))
+                                            usuario_atendio = cursor2.fetchone()
+                                            if usuario_atendio:
+                                                persona_entrega_info = {
+                                                    'nombre_completo': usuario_atendio.get('nombre_completo', usuario_atendio.get('username', 'N/A')),
+                                                    'tipo': 'usuario'
+                                                }
+                                    
+                                    # Generar PDF de confirmación
+                                    pdf_data = generar_pdf_confirmacion_entrega(
+                                        venta_completa, 
+                                        envio_completo, 
+                                        venta_completa,
+                                        detalle_entrega,
+                                        persona_entrega_info
+                                    )
+                                    
+                                    if pdf_data:
+                                        # Determinar número de seguimiento o número de venta
+                                        numero_seguimiento = envio_completo.get('numero_seguimiento', venta_completa.get('numero_venta', f'#{venta_id}'))
+                                        
+                                        # Enviar correo
+                                        asunto = f"Confirmación de Entrega - Pedido {numero_seguimiento} - Sánchez Pharma"
+                                        cuerpo = f"""
+Estimado/a {venta_completa.get('nombre_completo', 'Cliente')},
+
+Le informamos que su pedido ha sido entregado exitosamente.
+
+Detalles de la entrega:
+- Número de Venta: {venta_completa.get('numero_venta', f'#{venta_id}')}
+- Fecha de Entrega: {envio_completo.get('fecha_real_entrega', datetime.now().strftime('%d/%m/%Y %H:%M'))}
+"""
+                                        if tipo_venta_actual == 'envio_domicilio':
+                                            cuerpo += f"- Número de Seguimiento: {numero_seguimiento}\n"
+                                            cuerpo += f"- Dirección: {envio_completo.get('direccion_entrega', 'N/A')}\n"
+                                        
+                                        cuerpo += """
+Adjunto encontrará la confirmación de entrega en formato PDF.
+
+Gracias por confiar en nosotros.
+
+Atentamente,
+Sánchez Pharma
+                                        """
+                                        nombre_archivo = f"Confirmacion_Entrega_{numero_seguimiento}.pdf"
+                                        enviar_correo_con_pdf(
+                                            venta_completa['email'],
+                                            asunto,
+                                            cuerpo,
+                                            pdf_data,
+                                            nombre_archivo
+                                        )
+                                        logging.info(f"Confirmación de entrega enviada por correo a {venta_completa['email']} para venta {venta_id}")
+                except Exception as e:
+                    logging.error(f"Error al enviar confirmación de entrega por correo: {repr(e)}")
+                    # No fallar la entrega si el correo falla
                 
                 return jsonify({
                     "code": 1,
@@ -4253,15 +4840,16 @@ def vista_ventas_por_cliente_sanchezpharma():
                 cursor.execute("""
                     SELECT 
                         c.id,
-                        c.nombre,
-                        c.apellido,
+                        c.nombres,
+                        c.apellido_paterno,
+                        c.apellido_materno,
                         COUNT(v.id) as total_ventas,
                         COALESCE(SUM(v.total), 0) as monto_total,
                         COALESCE(AVG(v.total), 0) as promedio_venta
                     FROM clientes c
                     LEFT JOIN ventas v ON c.id = v.cliente_id AND v.estado != 'anulada'
                     WHERE c.estado = 'activo'
-                    GROUP BY c.id, c.nombre, c.apellido
+                    GROUP BY c.id, c.nombres, c.apellido_paterno, c.apellido_materno
                     HAVING total_ventas > 0
                     ORDER BY monto_total DESC
                 """)

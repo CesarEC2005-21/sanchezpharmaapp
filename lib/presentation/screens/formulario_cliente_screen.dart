@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../data/models/cliente_model.dart';
+import '../../data/services/reniec_service.dart';
 import '../../core/utils/validators.dart';
 import '../../core/constants/app_colors.dart';
 import '../widgets/custom_modal_dialog.dart';
@@ -20,11 +21,13 @@ class FormularioClienteScreen extends StatefulWidget {
 
 class _FormularioClienteScreenState extends State<FormularioClienteScreen> {
   final ApiService _apiService = ApiService(DioClient.createDio());
+  final ReniecService _reniecService = ReniecService();
   final _formKey = GlobalKey<FormState>();
   bool _isGuardando = false;
 
-  late final TextEditingController _nombreController;
-  late final TextEditingController _apellidoController;
+  late final TextEditingController _nombresController;
+  late final TextEditingController _apellidoPaternoController;
+  late final TextEditingController _apellidoMaternoController;
   late final TextEditingController _documentoController;
   late final TextEditingController _telefonoController;
   late final TextEditingController _emailController;
@@ -32,29 +35,138 @@ class _FormularioClienteScreenState extends State<FormularioClienteScreen> {
   
   String _tipoDocumentoValue = 'DNI';
   String _estadoValue = 'activo';
+  bool _verificandoDNI = false;
+  String? _mensajeVerificacionDNI;
+  bool? _dniValido;
+  bool _camposBloqueados = false; // Controla si los campos están bloqueados
 
   @override
   void initState() {
     super.initState();
-    _nombreController = TextEditingController(text: widget.cliente?.nombre ?? '');
-    _apellidoController = TextEditingController(text: widget.cliente?.apellido ?? '');
+    _nombresController = TextEditingController(text: widget.cliente?.nombres ?? '');
+    _apellidoPaternoController = TextEditingController(text: widget.cliente?.apellidoPaterno ?? '');
+    _apellidoMaternoController = TextEditingController(text: widget.cliente?.apellidoMaterno ?? '');
     _documentoController = TextEditingController(text: widget.cliente?.documento ?? '');
     _telefonoController = TextEditingController(text: widget.cliente?.telefono ?? '');
     _emailController = TextEditingController(text: widget.cliente?.email ?? '');
     _direccionController = TextEditingController(text: widget.cliente?.direccion ?? '');
     _tipoDocumentoValue = widget.cliente?.tipoDocumento ?? 'DNI';
     _estadoValue = widget.cliente?.estado ?? 'activo';
+    
+    // Si es un cliente nuevo (sin datos), bloquear campos desde el inicio
+    // Si es edición y tiene DNI, permitir edición manual
+    if (widget.cliente == null) {
+      _camposBloqueados = true; // Bloquear desde el inicio para nuevos clientes
+    } else if (widget.cliente!.documento != null && widget.cliente!.documento!.isNotEmpty) {
+      _camposBloqueados = false; // Permitir edición si ya tiene datos
+    } else {
+      _camposBloqueados = true; // Bloquear si no tiene documento
+    }
   }
 
   @override
   void dispose() {
-    _nombreController.dispose();
-    _apellidoController.dispose();
+    _nombresController.dispose();
+    _apellidoPaternoController.dispose();
+    _apellidoMaternoController.dispose();
     _documentoController.dispose();
     _telefonoController.dispose();
     _emailController.dispose();
     _direccionController.dispose();
     super.dispose();
+  }
+
+  Future<void> _verificarDNI({bool mostrarDialogo = false}) async {
+    final dni = _documentoController.text.trim();
+    
+    if (dni.isEmpty) {
+      setState(() {
+        _dniValido = null;
+        _mensajeVerificacionDNI = null;
+        _verificandoDNI = false;
+      });
+      return;
+    }
+
+    if (_tipoDocumentoValue != 'DNI') {
+      setState(() {
+        _dniValido = null;
+        _mensajeVerificacionDNI = null;
+        _verificandoDNI = false;
+      });
+      return;
+    }
+
+    // Validar formato básico
+    final dniLimpio = dni.replaceAll(RegExp(r'[^0-9]'), '');
+    if (dniLimpio.length < 8) {
+      setState(() {
+        _dniValido = null;
+        _mensajeVerificacionDNI = null;
+        _verificandoDNI = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _verificandoDNI = true;
+      _mensajeVerificacionDNI = null;
+      _dniValido = null;
+    });
+
+    try {
+      final resultado = await _reniecService.verificarDNI(dni, tipoDocumento: _tipoDocumentoValue);
+
+      setState(() {
+        _dniValido = resultado['valido'] as bool;
+        _mensajeVerificacionDNI = resultado['mensaje'] as String;
+      });
+
+      if (resultado['valido'] == true && resultado['datos'] != null) {
+        final datos = resultado['datos'] as Map<String, dynamic>;
+        
+        // Prellenar nombres, apellido paterno y apellido materno si están disponibles
+        // Solo autocompletar si el campo está vacío (para no sobrescribir datos ya ingresados)
+        if (datos['nombre'] != null && _nombresController.text.trim().isEmpty) {
+          _nombresController.text = datos['nombre'].toString();
+        }
+        if (datos['apellido_paterno'] != null && _apellidoPaternoController.text.trim().isEmpty) {
+          _apellidoPaternoController.text = datos['apellido_paterno'].toString();
+        }
+        if (datos['apellido_materno'] != null && _apellidoMaternoController.text.trim().isEmpty) {
+          _apellidoMaternoController.text = datos['apellido_materno'].toString();
+        }
+        
+        // Bloquear los campos una vez que se autocompletan desde RENIEC
+        setState(() {
+          _camposBloqueados = true;
+        });
+      } else if (mostrarDialogo && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ ${resultado['mensaje']}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _dniValido = false;
+        _mensajeVerificacionDNI = 'Error al verificar el DNI';
+      });
+      if (mostrarDialogo && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error al verificar el DNI\n\n${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _verificandoDNI = false;
+      });
+    }
   }
 
   Future<void> _guardarCliente() async {
@@ -66,8 +178,9 @@ class _FormularioClienteScreenState extends State<FormularioClienteScreen> {
 
     try {
       final Map<String, dynamic> datos = {
-        'nombre': _nombreController.text,
-        'apellido': _apellidoController.text.isEmpty ? null : _apellidoController.text,
+        'nombres': _nombresController.text,
+        'apellido_paterno': _apellidoPaternoController.text.isEmpty ? null : _apellidoPaternoController.text,
+        'apellido_materno': _apellidoMaternoController.text.isEmpty ? null : _apellidoMaternoController.text,
         'documento': _documentoController.text.isEmpty ? null : _documentoController.text,
         'tipo_documento': _tipoDocumentoValue,
         'telefono': _telefonoController.text.isEmpty ? null : _telefonoController.text,
@@ -159,23 +272,7 @@ class _FormularioClienteScreenState extends State<FormularioClienteScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               ModalSectionBuilder.buildSectionTitle('Información Personal', Icons.person),
-              ModalSectionBuilder.buildTextField(
-                controller: _nombreController,
-                label: 'Nombre',
-                icon: Icons.person_outline,
-                required: true,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'El nombre es requerido';
-                  }
-                  return null;
-                },
-              ),
-              ModalSectionBuilder.buildTextField(
-                controller: _apellidoController,
-                label: 'Apellido',
-                icon: Icons.person_outline,
-              ),
+              // Tipo de documento y documento (PRIMERO)
               Row(
                 children: [
                   Expanded(
@@ -207,6 +304,15 @@ class _FormularioClienteScreenState extends State<FormularioClienteScreen> {
                         onChanged: (value) {
                           setState(() {
                             _tipoDocumentoValue = value ?? 'DNI';
+                            _dniValido = null;
+                            _mensajeVerificacionDNI = null;
+                            _camposBloqueados = true; // Bloquear campos al cambiar tipo de documento
+                            // Limpiar campos si no es DNI
+                            if (value != 'DNI') {
+                              _nombresController.clear();
+                              _apellidoPaternoController.clear();
+                              _apellidoMaternoController.clear();
+                            }
                           });
                         },
                       ),
@@ -215,14 +321,246 @@ class _FormularioClienteScreenState extends State<FormularioClienteScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     flex: 3,
-                    child: ModalSectionBuilder.buildTextField(
+                    child: TextFormField(
                       controller: _documentoController,
-                      label: 'Número de Documento',
-                      icon: Icons.numbers,
+                      decoration: InputDecoration(
+                        labelText: 'Número de Documento *',
+                        prefixIcon: const Icon(Icons.numbers),
+                        suffixIcon: _tipoDocumentoValue == 'DNI'
+                            ? _verificandoDNI
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12.0),
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  )
+                                : Icon(
+                                    _dniValido == true
+                                        ? Icons.check_circle
+                                        : _dniValido == false
+                                            ? Icons.error
+                                            : Icons.verified_user,
+                                    color: _dniValido == true
+                                        ? Colors.green
+                                        : _dniValido == false
+                                            ? Colors.red
+                                            : Colors.grey,
+                                  )
+                            : null,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                        ),
+                        filled: true,
+                        fillColor: Colors.grey.shade50,
+                        helperText: _tipoDocumentoValue == 'DNI' 
+                            ? 'Máximo 8 dígitos, solo números. Se verificará automáticamente'
+                            : null,
+                      ),
+                      keyboardType: TextInputType.number,
+                      maxLength: _tipoDocumentoValue == 'DNI' ? 8 : null,
+                      inputFormatters: _tipoDocumentoValue == 'DNI' 
+                          ? [Validators.dniFormatter]
+                          : null,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'El documento es requerido';
+                        }
+                        if (_tipoDocumentoValue == 'DNI' && _dniValido != true && widget.cliente == null) {
+                          return 'El DNI debe ser verificado';
+                        }
+                        return null;
+                      },
+                      onChanged: (value) {
+                        setState(() {
+                          _dniValido = null;
+                          _mensajeVerificacionDNI = null;
+                          _camposBloqueados = true; // Mantener bloqueados hasta verificar
+                          // Limpiar campos cuando se cambia el DNI
+                          if (_tipoDocumentoValue == 'DNI') {
+                            _nombresController.clear();
+                            _apellidoPaternoController.clear();
+                            _apellidoMaternoController.clear();
+                          }
+                        });
+                        
+                        // Verificar automáticamente después de un breve delay
+                        if (_tipoDocumentoValue == 'DNI' && value.trim().length >= 8) {
+                          Future.delayed(const Duration(milliseconds: 800), () {
+                            if (mounted && _documentoController.text.trim() == value.trim()) {
+                              _verificarDNI();
+                            }
+                          });
+                        }
+                      },
                     ),
                   ),
                 ],
               ),
+              // Mensaje de verificación de DNI
+              if (_tipoDocumentoValue == 'DNI' && _mensajeVerificacionDNI != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0, bottom: 16.0),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _dniValido == true
+                            ? Icons.check_circle
+                            : Icons.error,
+                        color: _dniValido == true
+                            ? Colors.green
+                            : Colors.red,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _mensajeVerificacionDNI!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _dniValido == true
+                                ? Colors.green.shade700
+                                : Colors.red.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (_tipoDocumentoValue == 'DNI' && _mensajeVerificacionDNI == null && !_verificandoDNI && _documentoController.text.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 16,
+                        color: Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Ingrese el DNI para autocompletar los datos',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 16),
+              // Nombres (BLOQUEADO hasta verificar DNI)
+              TextFormField(
+                controller: _nombresController,
+                readOnly: _camposBloqueados || (_tipoDocumentoValue == 'DNI' && _dniValido != true),
+                decoration: InputDecoration(
+                  labelText: 'Nombres *',
+                  prefixIcon: const Icon(Icons.person_outline),
+                  suffixIcon: (_camposBloqueados || (_tipoDocumentoValue == 'DNI' && _dniValido != true))
+                      ? const Icon(Icons.lock, color: Colors.orange, size: 20)
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                  ),
+                  filled: true,
+                  fillColor: (_camposBloqueados || (_tipoDocumentoValue == 'DNI' && _dniValido != true)) 
+                      ? Colors.grey.shade100 
+                      : Colors.grey.shade50,
+                  hintText: (_tipoDocumentoValue == 'DNI' && _dniValido != true)
+                      ? 'Verifique el DNI primero'
+                      : _camposBloqueados 
+                          ? 'Verificado desde RENIEC' 
+                          : null,
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Los nombres son requeridos';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              // Apellido Paterno (BLOQUEADO hasta verificar DNI)
+              TextFormField(
+                controller: _apellidoPaternoController,
+                readOnly: _camposBloqueados || (_tipoDocumentoValue == 'DNI' && _dniValido != true),
+                decoration: InputDecoration(
+                  labelText: 'Apellido Paterno *',
+                  prefixIcon: const Icon(Icons.person_outline),
+                  suffixIcon: (_camposBloqueados || (_tipoDocumentoValue == 'DNI' && _dniValido != true))
+                      ? const Icon(Icons.lock, color: Colors.orange, size: 20)
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                  ),
+                  filled: true,
+                  fillColor: (_camposBloqueados || (_tipoDocumentoValue == 'DNI' && _dniValido != true)) 
+                      ? Colors.grey.shade100 
+                      : Colors.grey.shade50,
+                  hintText: (_tipoDocumentoValue == 'DNI' && _dniValido != true)
+                      ? 'Verifique el DNI primero'
+                      : _camposBloqueados 
+                          ? 'Verificado desde RENIEC' 
+                          : null,
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'El apellido paterno es requerido';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              // Apellido Materno (BLOQUEADO hasta verificar DNI)
+              TextFormField(
+                controller: _apellidoMaternoController,
+                readOnly: _camposBloqueados || (_tipoDocumentoValue == 'DNI' && _dniValido != true),
+                decoration: InputDecoration(
+                  labelText: 'Apellido Materno',
+                  prefixIcon: const Icon(Icons.person_outline),
+                  suffixIcon: (_camposBloqueados || (_tipoDocumentoValue == 'DNI' && _dniValido != true))
+                      ? const Icon(Icons.lock, color: Colors.orange, size: 20)
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                  ),
+                  filled: true,
+                  fillColor: (_camposBloqueados || (_tipoDocumentoValue == 'DNI' && _dniValido != true)) 
+                      ? Colors.grey.shade100 
+                      : Colors.grey.shade50,
+                  hintText: (_tipoDocumentoValue == 'DNI' && _dniValido != true)
+                      ? 'Verifique el DNI primero'
+                      : _camposBloqueados 
+                          ? 'Verificado desde RENIEC' 
+                          : null,
+                ),
+              ),
+              const SizedBox(height: 16              ),
               
               ModalSectionBuilder.buildSectionTitle('Información de Contacto', Icons.contact_phone),
               ModalSectionBuilder.buildTextField(

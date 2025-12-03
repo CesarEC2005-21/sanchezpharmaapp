@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../data/api/dio_client.dart';
+import 'package:dio/dio.dart';
 import '../../data/api/api_service.dart';
 import '../../data/models/login_request.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/responsive_helper.dart';
 import 'dashboard_screen.dart';
 import 'home_cliente_screen.dart';
 import 'registro_cliente_screen.dart';
@@ -326,6 +328,31 @@ class _LoginScreenState extends State<LoginScreen> {
         print('❌ Error en Google Sign-In: $e');
         print('Tipo de error: ${e.runtimeType}');
         
+        // Verificar si es un error de conexión (DioException)
+        // Si es error de conexión, el interceptor ya mostró el diálogo, no mostrar otro
+        if (e is DioException) {
+          if (e.type == DioExceptionType.connectionTimeout ||
+              e.type == DioExceptionType.receiveTimeout ||
+              e.type == DioExceptionType.sendTimeout ||
+              e.type == DioExceptionType.connectionError) {
+            // El interceptor ya mostró el diálogo de "sin conexión", no mostrar otro
+            print('⚠️ Error de conexión detectado - El interceptor ya mostró el diálogo');
+            return;
+          }
+        }
+        
+        // Verificar si el mensaje contiene errores de conexión
+        final errorString = e.toString().toLowerCase();
+        if (errorString.contains('socketexception') ||
+            errorString.contains('failed host lookup') ||
+            errorString.contains('connection error') ||
+            errorString.contains('network is unreachable') ||
+            errorString.contains('connection refused')) {
+          // El interceptor ya mostró el diálogo de "sin conexión", no mostrar otro
+          print('⚠️ Error de conexión detectado en el mensaje - El interceptor ya mostró el diálogo');
+          return;
+        }
+        
         String errorMsg = _getGoogleErrorMessage(e.toString());
         _showErrorDialog(
           errorMsg,
@@ -364,10 +391,19 @@ class _LoginScreenState extends State<LoginScreen> {
       return '🌐 Error de red\n\nNo se pudo conectar con los servicios de Google. Verifica tu conexión a Internet e intenta nuevamente.';
     } else if (error.contains('No se pudo obtener el token')) {
       return '🔑 Error al obtener token\n\nNo se pudo obtener el token de autenticación de Google. Por favor, intenta nuevamente.';
-    } else if (lowerError.contains('socketexception')) {
+    } else if (lowerError.contains('socketexception') ||
+               lowerError.contains('connection error') ||
+               lowerError.contains('failed host lookup') ||
+               lowerError.contains('network is unreachable') ||
+               lowerError.contains('connection refused')) {
+      // Error de conexión - el interceptor ya mostró el diálogo
       return '🌐 Sin conexión a Internet\n\nNo se pudo conectar. Verifica tu conexión a Internet e intenta nuevamente.';
+    } else if (lowerError.contains('dioexception')) {
+      // Si es DioException pero no es de conexión, mostrar mensaje genérico sin detalle técnico
+      return '❌ Error con Google Sign-In\n\nOcurrió un error al iniciar sesión con Google. Por favor, intenta nuevamente.';
     } else {
-      return '❌ Error con Google Sign-In\n\nOcurrió un error al iniciar sesión con Google.\n\nDetalle: $error';
+      // Para otros errores, mostrar mensaje amigable sin el detalle técnico
+      return '❌ Error con Google Sign-In\n\nOcurrió un error al iniciar sesión con Google. Por favor, intenta nuevamente.';
     }
   }
 
@@ -398,7 +434,10 @@ class _LoginScreenState extends State<LoginScreen> {
         content: SingleChildScrollView(
           child: Text(
             message,
-            style: const TextStyle(fontSize: 16, height: 1.5),
+            style: TextStyle(
+              fontSize: ResponsiveHelper.bodyFontSize(context),
+              height: 1.5,
+            ),
           ),
         ),
         actions: [
@@ -412,9 +451,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            child: const Text(
+            child: Text(
               'Entendido',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: ResponsiveHelper.bodyFontSize(context),
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -440,16 +482,20 @@ class _LoginScreenState extends State<LoginScreen> {
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
+              padding: ResponsiveHelper.formPadding(context),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: ResponsiveHelper.maxContentWidth(context) ?? double.infinity,
+                ),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
                     // Logo
                     Container(
-                      width: 150,
-                      height: 150,
+                      width: ResponsiveHelper.isSmallScreen(context) ? 120 : 150,
+                      height: ResponsiveHelper.isSmallScreen(context) ? 120 : 150,
                       decoration: BoxDecoration(
                         color: Colors.white,
                         shape: BoxShape.circle,
@@ -461,41 +507,41 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ],
                       ),
-                      padding: const EdgeInsets.all(15),
+                      padding: EdgeInsets.all(ResponsiveHelper.isSmallScreen(context) ? 12 : 15),
                       child: ClipOval(
                         child: Image.asset(
                           'assets/images/ddspLogo.jpg',
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) {
-                            return const Icon(
+                            return Icon(
                               Icons.medication,
-                              size: 80,
+                              size: ResponsiveHelper.isSmallScreen(context) ? 60 : 80,
                               color: Colors.green,
                             );
                           },
                         ),
                       ),
                     ),
-                    const SizedBox(height: 30),
+                    SizedBox(height: ResponsiveHelper.spacing(context)),
 
                     // Título
-                    const Text(
+                    Text(
                       'Sánchez Pharma',
                       style: TextStyle(
-                        fontSize: 32,
+                        fontSize: ResponsiveHelper.titleFontSize(context) + 4,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    const Text(
+                    SizedBox(height: ResponsiveHelper.spacing(context) / 2),
+                    Text(
                       'Iniciar Sesión',
                       style: TextStyle(
-                        fontSize: 18,
+                        fontSize: ResponsiveHelper.subtitleFontSize(context) + 2,
                         color: Colors.white70,
                       ),
                     ),
-                    const SizedBox(height: 40),
+                    SizedBox(height: ResponsiveHelper.spacing(context) * 2),
 
                     // Campo de usuario
                     Card(
@@ -504,15 +550,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         borderRadius: BorderRadius.circular(15),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(20.0),
+                        padding: ResponsiveHelper.formPadding(context),
                         child: Column(
                           children: [
                             TextFormField(
                               controller: _usernameController,
-                              decoration: const InputDecoration(
+                              style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                              decoration: InputDecoration(
                                 labelText: 'Usuario',
-                                prefixIcon: Icon(Icons.person),
-                                border: OutlineInputBorder(),
+                                labelStyle: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                                prefixIcon: Icon(Icons.person, size: ResponsiveHelper.iconSize(context)),
+                                border: const OutlineInputBorder(),
                               ),
                               validator: (value) {
                                 if (value == null || value.isEmpty) {
@@ -521,21 +569,24 @@ class _LoginScreenState extends State<LoginScreen> {
                                 return null;
                               },
                             ),
-                            const SizedBox(height: 20),
+                            SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
 
                             // Campo de contraseña
                             TextFormField(
                               controller: _passwordController,
                               obscureText: _obscurePassword,
+                              style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                               decoration: InputDecoration(
                                 labelText: 'Contraseña',
-                                prefixIcon: const Icon(Icons.lock),
+                                labelStyle: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                                prefixIcon: Icon(Icons.lock, size: ResponsiveHelper.iconSize(context)),
                                 border: const OutlineInputBorder(),
                                 suffixIcon: IconButton(
                                   icon: Icon(
                                     _obscurePassword
                                         ? Icons.visibility
                                         : Icons.visibility_off,
+                                    size: ResponsiveHelper.iconSize(context),
                                   ),
                                   onPressed: () {
                                     setState(() {
@@ -564,22 +615,22 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                   );
                                 },
-                                child: const Text(
+                                child: Text(
                                   '¿Olvidaste tu contraseña?',
                                   style: TextStyle(
                                     color: Colors.black,
-                                    fontSize: 14,
+                                    fontSize: ResponsiveHelper.bodyFontSize(context),
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 20),
+                            SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
 
                             // Botón de login
                             SizedBox(
                               width: double.infinity,
-                              height: 50,
+                              height: ResponsiveHelper.isSmallScreen(context) ? 45 : 50,
                               child: ElevatedButton(
                                 onPressed: _isLoading ? null : _handleLogin,
                                 style: ElevatedButton.styleFrom(
@@ -594,28 +645,28 @@ class _LoginScreenState extends State<LoginScreen> {
                                         color: Colors.white,
                                         size: 20,
                                       )
-                                    : const Text(
+                                    : Text(
                                         'Ingresar',
                                         style: TextStyle(
-                                          fontSize: 18,
+                                          fontSize: ResponsiveHelper.bodyFontSize(context) + 2,
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
                               ),
                             ),
-                            const SizedBox(height: 20),
+                            SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                             
                             // Divider con "O"
                             Row(
                               children: [
                                 Expanded(child: Divider(color: Colors.grey.shade400)),
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  padding: EdgeInsets.symmetric(horizontal: ResponsiveHelper.spacing(context)),
                                   child: Text(
                                     'O',
                                     style: TextStyle(
                                       color: Colors.grey.shade700,
-                                      fontSize: 16,
+                                      fontSize: ResponsiveHelper.bodyFontSize(context),
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
@@ -623,19 +674,19 @@ class _LoginScreenState extends State<LoginScreen> {
                                 Expanded(child: Divider(color: Colors.white70)),
                               ],
                             ),
-                            const SizedBox(height: 20),
+                            SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                             
                             // Botón de Google Sign In
                             SizedBox(
                               width: double.infinity,
-                              height: 50,
+                              height: ResponsiveHelper.isSmallScreen(context) ? 45 : 50,
                               child: OutlinedButton.icon(
                                 onPressed: _isLoading ? null : _handleGoogleSignIn,
-                                icon: const Icon(Icons.g_mobiledata, size: 24),
-                                label: const Text(
+                                icon: Icon(Icons.g_mobiledata, size: ResponsiveHelper.iconSize(context)),
+                                label: Text(
                                   'Continuar con Google',
                                   style: TextStyle(
-                                    fontSize: 16,
+                                    fontSize: ResponsiveHelper.bodyFontSize(context),
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
@@ -649,7 +700,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: ResponsiveHelper.spacing(context)),
                             
                             // Link para registrarse
                             TextButton(
@@ -662,20 +713,20 @@ class _LoginScreenState extends State<LoginScreen> {
                                 );
                               },
                               child: RichText(
-                                text: const TextSpan(
+                                text: TextSpan(
                                   style: TextStyle(
                                     color: Colors.black87,
-                                    fontSize: 16,
+                                    fontSize: ResponsiveHelper.bodyFontSize(context),
                                   ),
                                   children: [
-                                    TextSpan(text: '¿No tienes cuenta? '),
+                                    const TextSpan(text: '¿No tienes cuenta? '),
                                     TextSpan(
                                       text: 'Regístrate aquí',
                                       style: TextStyle(
                                         color: Colors.black,
                                         fontWeight: FontWeight.bold,
                                         decoration: TextDecoration.underline,
-                                        fontSize: 16,
+                                        fontSize: ResponsiveHelper.bodyFontSize(context),
                                       ),
                                     ),
                                   ],
@@ -683,7 +734,10 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               style: TextButton.styleFrom(
                                 backgroundColor: Colors.white.withOpacity(0.9),
-                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                                padding: EdgeInsets.symmetric(
+                                  vertical: ResponsiveHelper.spacing(context) / 2,
+                                  horizontal: ResponsiveHelper.spacing(context),
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
                                 ),
@@ -700,6 +754,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
+    ),
     );
   }
 }

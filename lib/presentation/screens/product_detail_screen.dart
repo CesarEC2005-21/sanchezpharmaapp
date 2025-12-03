@@ -973,11 +973,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                titulo,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+              Flexible(
+                child: Text(
+                  titulo,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (!_isLoadingSugerencias)
@@ -1013,7 +1017,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ),
                     )
                   : SizedBox(
-                      height: 190,
+                      height: 210,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: productos.length,
@@ -1051,9 +1055,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: 100,
+              height: 90,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 gradient: const LinearGradient(
@@ -1098,6 +1103,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ),
@@ -1105,24 +1112,28 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Text(
               producto.nombre,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
+                fontSize: 13,
+                height: 1.2,
               ),
             ),
-            const SizedBox(height: 4),
-            const Spacer(),
+            const SizedBox(height: 6),
             Align(
               alignment: Alignment.bottomRight,
               child: IconButton(
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
+                constraints: const BoxConstraints(
+                  minWidth: 32,
+                  minHeight: 32,
+                ),
                 onPressed: () => _agregarAlCarrito(producto),
-                icon: const Icon(Icons.add_circle, color: Colors.green),
+                icon: const Icon(Icons.add_circle, color: Colors.green, size: 24),
               ),
             ),
           ],

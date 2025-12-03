@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../../data/api/dio_client.dart';
+import '../../core/utils/error_message_helper.dart';
+import '../../core/utils/responsive_helper.dart';
 import 'dart:async';
 
 class RecuperarPasswordScreen extends StatefulWidget {
@@ -237,7 +239,7 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al verificar el código: ${e.toString()}'),
+            content: Text(ErrorMessageHelper.getFriendlyErrorMessage(e)),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),
@@ -331,7 +333,7 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al cambiar la contraseña: ${e.toString()}'),
+            content: Text(ErrorMessageHelper.getFriendlyErrorMessage(e)),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),
@@ -354,63 +356,69 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
         foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 20),
-              
-              // Icono
-              Icon(
-                Icons.lock_reset,
-                size: 80,
-                color: Colors.green[700],
-              ),
-              
-              const SizedBox(height: 20),
-              
-              // Título
-              Text(
-                !_codigoEnviado
-                    ? 'Ingresa tu correo'
-                    : !_codigoVerificado
-                        ? 'Verifica tu código'
-                        : 'Nueva contraseña',
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
+        padding: ResponsiveHelper.formPadding(context),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: ResponsiveHelper.maxContentWidth(context) ?? double.infinity,
+          ),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(height: ResponsiveHelper.verticalPadding(context)),
+                
+                // Icono
+                Icon(
+                  Icons.lock_reset,
+                  size: ResponsiveHelper.isSmallScreen(context) ? 60 : 80,
+                  color: Colors.green[700],
                 ),
-                textAlign: TextAlign.center,
-              ),
-              
-              const SizedBox(height: 10),
-              
-              // Descripción
-              Text(
-                !_codigoEnviado
-                    ? 'Te enviaremos un código de verificación a tu correo electrónico'
-                    : !_codigoVerificado
-                        ? 'Ingresa el código de 6 dígitos que enviamos a tu correo'
-                        : 'Crea tu nueva contraseña',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
+                
+                SizedBox(height: ResponsiveHelper.spacing(context)),
+                
+                // Título
+                Text(
+                  !_codigoEnviado
+                      ? 'Ingresa tu correo'
+                      : !_codigoVerificado
+                          ? 'Verifica tu código'
+                          : 'Nueva contraseña',
+                  style: TextStyle(
+                    fontSize: ResponsiveHelper.titleFontSize(context),
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
-              ),
-              
-              const SizedBox(height: 30),
+                
+                SizedBox(height: ResponsiveHelper.spacing(context) / 2),
+                
+                // Descripción
+                Text(
+                  !_codigoEnviado
+                      ? 'Te enviaremos un código de verificación a tu correo electrónico'
+                      : !_codigoVerificado
+                          ? 'Ingresa el código de 6 dígitos que enviamos a tu correo'
+                          : 'Crea tu nueva contraseña',
+                  style: TextStyle(
+                    fontSize: ResponsiveHelper.bodyFontSize(context),
+                    color: Colors.grey[600],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                
+                SizedBox(height: ResponsiveHelper.spacing(context) * 2),
               
               // Campo Email
               if (!_codigoEnviado) ...[
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
+                  style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                   decoration: InputDecoration(
                     labelText: 'Correo Electrónico',
-                    prefixIcon: const Icon(Icons.email),
+                    labelStyle: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                    prefixIcon: Icon(Icons.email, size: ResponsiveHelper.iconSize(context)),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -428,20 +436,20 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                   },
                 ),
                 
-                const SizedBox(height: 20),
+                SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                 
                 ElevatedButton(
                   onPressed: _isLoading ? null : _enviarCodigo,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green[700],
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    padding: EdgeInsets.symmetric(vertical: ResponsiveHelper.spacing(context)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
                   child: _isLoading
-                      ? const SizedBox(
+                      ? SizedBox(
                           height: 20,
                           width: 20,
                           child: CircularProgressIndicator(
@@ -449,9 +457,12 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
-                      : const Text(
+                      : Text(
                           'Enviar Código',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontSize: ResponsiveHelper.bodyFontSize(context),
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                 ),
               ],
@@ -463,13 +474,14 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                   keyboardType: TextInputType.number,
                   maxLength: 6,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 24,
+                  style: TextStyle(
+                    fontSize: ResponsiveHelper.titleFontSize(context),
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 10,
+                    letterSpacing: ResponsiveHelper.isSmallScreen(context) ? 5 : 10,
                   ),
                   decoration: InputDecoration(
                     labelText: 'Código de Verificación',
+                    labelStyle: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                     hintText: '000000',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -480,7 +492,7 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                   ),
                 ),
                 
-                const SizedBox(height: 10),
+                SizedBox(height: ResponsiveHelper.spacing(context) / 2),
                 
                 // Temporizador y reenviar
                 Row(
@@ -489,7 +501,10 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                     if (_countdown > 0)
                       Text(
                         'Reenviar código en $_countdown s',
-                        style: TextStyle(color: Colors.grey[600]),
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: ResponsiveHelper.bodyFontSize(context),
+                        ),
                       )
                     else
                       TextButton(
@@ -499,19 +514,22 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                             _codigoEnviado = false;
                           });
                         },
-                        child: const Text('Reenviar código'),
+                        child: Text(
+                          'Reenviar código',
+                          style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                        ),
                       ),
                   ],
                 ),
                 
-                const SizedBox(height: 20),
+                SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                 
                 ElevatedButton(
                   onPressed: _isLoading ? null : _verificarCodigo,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green[700],
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    padding: EdgeInsets.symmetric(vertical: ResponsiveHelper.spacing(context)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -525,9 +543,12 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
-                      : const Text(
+                      : Text(
                           'Verificar Código',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontSize: ResponsiveHelper.bodyFontSize(context),
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                 ),
               ],
@@ -537,12 +558,15 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
+                  style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                   decoration: InputDecoration(
                     labelText: 'Nueva Contraseña',
-                    prefixIcon: const Icon(Icons.lock),
+                    labelStyle: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                    prefixIcon: Icon(Icons.lock, size: ResponsiveHelper.iconSize(context)),
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                        size: ResponsiveHelper.iconSize(context),
                       ),
                       onPressed: () {
                         setState(() {
@@ -567,17 +591,20 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                   },
                 ),
                 
-                const SizedBox(height: 16),
+                SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                 
                 TextFormField(
                   controller: _confirmarPasswordController,
                   obscureText: _obscureConfirmarPassword,
+                  style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                   decoration: InputDecoration(
                     labelText: 'Confirmar Contraseña',
-                    prefixIcon: const Icon(Icons.lock_outline),
+                    labelStyle: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                    prefixIcon: Icon(Icons.lock_outline, size: ResponsiveHelper.iconSize(context)),
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscureConfirmarPassword ? Icons.visibility_off : Icons.visibility,
+                        size: ResponsiveHelper.iconSize(context),
                       ),
                       onPressed: () {
                         setState(() {
@@ -602,14 +629,14 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                   },
                 ),
                 
-                const SizedBox(height: 20),
+                SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                 
                 ElevatedButton(
                   onPressed: _isLoading ? null : _cambiarPassword,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green[700],
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    padding: EdgeInsets.symmetric(vertical: ResponsiveHelper.spacing(context)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -623,13 +650,17 @@ class _RecuperarPasswordScreenState extends State<RecuperarPasswordScreen> {
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
-                      : const Text(
+                      : Text(
                           'Cambiar Contraseña',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontSize: ResponsiveHelper.bodyFontSize(context),
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                 ),
               ],
-            ],
+              ],
+            ),
           ),
         ),
       ),

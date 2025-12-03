@@ -5,6 +5,7 @@ import '../../data/api/api_service.dart';
 import '../../data/models/envio_model.dart';
 import '../../data/models/usuario_model.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/error_message_helper.dart';
 import '../../core/constants/role_constants.dart';
 import 'seguimiento_envio_screen.dart';
 import 'escanner_qr_screen.dart';
@@ -112,7 +113,9 @@ class _EnviosScreenState extends State<EnviosScreen> {
       if (_filtroEstado != null) {
         query = {'estado': _filtroEstado};
       }
-
+      
+      // Si el usuario es repartidor, el backend debe filtrar solo sus envíos asignados
+      // El filtrado se hace en el backend basado en el token JWT
       final response = await _apiService.getEnvios(query);
 
       if (response.response.statusCode == 200) {
@@ -120,10 +123,48 @@ class _EnviosScreenState extends State<EnviosScreen> {
 
         if (data['code'] == 1 && data['data'] != null) {
           final List<dynamic> enviosJson = data['data'];
+          List<EnvioModel> enviosCargados = enviosJson
+              .map((json) => EnvioModel.fromJson(json))
+              .toList();
+          
+          // Si el usuario es repartidor, filtrar solo los envíos asignados a él
+          if (_rolId == 4) { // Rol de repartidor
+            final currentUsername = await SharedPrefsHelper.getUsername();
+            print('🔍 Filtrando envíos para repartidor: $currentUsername');
+            
+            // Filtrar envíos asignados a este repartidor
+            // El backend debería hacer este filtrado, pero lo hacemos aquí como fallback
+            final enviosFiltrados = <EnvioModel>[];
+            
+            for (final envio in enviosCargados) {
+              // Solo mostrar envíos donde el repartidor asignado coincide con el usuario actual
+              if (envio.conductorRepartidor == null || envio.conductorRepartidor!.isEmpty) {
+                continue;
+              }
+              
+              // Comparar con username (el conductor_repartidor puede contener el username)
+              final conductorRepartidorLower = envio.conductorRepartidor!.toLowerCase().trim();
+              final usernameLower = currentUsername?.toLowerCase() ?? '';
+              
+              // Verificar si el conductor_repartidor contiene el username
+              // Esto funciona porque el backend guarda el nombre completo que puede incluir el username
+              final coincide = conductorRepartidorLower.contains(usernameLower) ||
+                              usernameLower.contains(conductorRepartidorLower);
+              
+              if (coincide) {
+                print('✅ Envío ${envio.id} asignado a este repartidor: ${envio.conductorRepartidor}');
+                enviosFiltrados.add(envio);
+              } else {
+                print('❌ Envío ${envio.id} NO asignado a este repartidor: ${envio.conductorRepartidor}');
+              }
+            }
+            
+            enviosCargados = enviosFiltrados;
+            print('📦 Envíos filtrados para repartidor: ${enviosCargados.length} de ${enviosJson.length}');
+          }
+          
           setState(() {
-            _envios = enviosJson
-                .map((json) => EnvioModel.fromJson(json))
-                .toList();
+            _envios = enviosCargados;
             _isLoading = false;
           });
         } else {
@@ -140,7 +181,7 @@ class _EnviosScreenState extends State<EnviosScreen> {
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Error: ${e.toString()}';
+        _errorMessage = ErrorMessageHelper.getFriendlyErrorMessage(e);
         _isLoading = false;
       });
     }
@@ -194,12 +235,7 @@ class _EnviosScreenState extends State<EnviosScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ErrorMessageHelper.showErrorSnackBar(context, e);
       }
     }
   }
@@ -227,7 +263,10 @@ class _EnviosScreenState extends State<EnviosScreen> {
       return null;
     }
     
+    // Obtener el username del usuario actual para prevenir auto-asignación
+    final currentUsername = await SharedPrefsHelper.getUsername();
     print('✅ Mostrando diálogo con ${_repartidores.length} repartidores');
+    print('   Usuario actual: $currentUsername');
 
     return await showDialog<String>(
       context: context,
@@ -243,6 +282,11 @@ class _EnviosScreenState extends State<EnviosScreen> {
               final nombreCompleto = '${repartidor.nombre} ${repartidor.apellido}';
               final isAsignado = envio.conductorRepartidor == nombreCompleto;
               
+              // Prevenir que un repartidor se asigne a sí mismo
+              // Comparar username del repartidor con el usuario actual
+              final esElMismoUsuario = repartidor.username.toLowerCase() == currentUsername?.toLowerCase();
+              final puedeSeleccionar = !esElMismoUsuario;
+              
               return ListTile(
                 leading: CircleAvatar(
                   child: Text(
@@ -251,14 +295,29 @@ class _EnviosScreenState extends State<EnviosScreen> {
                   ),
                 ),
                 title: Text(nombreCompleto),
-                subtitle: Text(repartidor.email),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(repartidor.email),
+                    if (esElMismoUsuario)
+                      Text(
+                        'No puedes asignarte a ti mismo',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.red.shade700,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                  ],
+                ),
                 trailing: isAsignado
                     ? const Icon(Icons.check_circle, color: Colors.green)
                     : null,
                 selected: isAsignado,
-                onTap: () {
+                enabled: puedeSeleccionar,
+                onTap: puedeSeleccionar ? () {
                   Navigator.of(context).pop(nombreCompleto);
-                },
+                } : null,
               );
             },
           ),
@@ -309,12 +368,7 @@ class _EnviosScreenState extends State<EnviosScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ErrorMessageHelper.showErrorSnackBar(context, e);
       }
     }
   }
@@ -330,6 +384,7 @@ class _EnviosScreenState extends State<EnviosScreen> {
     print('🔑 _puedeAsignarRepartidor() → rolId: $_rolId, puede: $puedeAsignar');
     return puedeAsignar;
   }
+  
 
   Future<void> _mostrarOpcionesEstado(EnvioModel envio) async {
     final estados = _obtenerEstadosSiguientes(envio.estado);
@@ -556,12 +611,7 @@ class _EnviosScreenState extends State<EnviosScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ErrorMessageHelper.showErrorSnackBar(context, e);
       }
     }
   }
@@ -657,6 +707,7 @@ class _EnviosScreenState extends State<EnviosScreen> {
                             child: Column(
                               children: [
                                 ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                   leading: CircleAvatar(
                                     backgroundColor: _getEstadoColor(envio.estado),
                                     child: Icon(
@@ -669,30 +720,57 @@ class _EnviosScreenState extends State<EnviosScreen> {
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                     ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
                                   subtitle: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Text('Venta: ${envio.numeroVenta ?? "N/A"}'),
-                                      Text('Cliente: ${envio.clienteNombre ?? "N/A"}'),
-                                      Text('Destinatario: ${envio.nombreDestinatario}'),
-                                      Text('Dirección: ${envio.direccionEntrega}'),
+                                      Text(
+                                        'Venta: ${envio.numeroVenta ?? "N/A"}',
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                      ),
+                                      Text(
+                                        'Cliente: ${envio.clienteNombre ?? "N/A"}',
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                      ),
+                                      Text(
+                                        'Destinatario: ${envio.nombreDestinatario}',
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                      ),
+                                      Text(
+                                        'Dirección: ${envio.direccionEntrega}',
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 2,
+                                      ),
                                       if (envio.conductorRepartidor != null && envio.conductorRepartidor!.isNotEmpty)
                                         Row(
                                           children: [
                                             Icon(Icons.person, size: 16, color: Colors.green.shade700),
                                             const SizedBox(width: 4),
-                                            Text(
-                                              'Repartidor: ${envio.conductorRepartidor}',
-                                              style: TextStyle(
-                                                color: Colors.green.shade700,
-                                                fontWeight: FontWeight.bold,
+                                            Expanded(
+                                              child: Text(
+                                                'Repartidor: ${envio.conductorRepartidor}',
+                                                style: TextStyle(
+                                                  color: Colors.green.shade700,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                                maxLines: 1,
                                               ),
                                             ),
                                           ],
                                         ),
                                       if (envio.fechaEstimadaEntrega != null)
-                                        Text('Fecha Estimada: ${envio.fechaEstimadaEntrega!.day}/${envio.fechaEstimadaEntrega!.month}/${envio.fechaEstimadaEntrega!.year}'),
+                                        Text(
+                                          'Fecha Estimada: ${envio.fechaEstimadaEntrega!.day}/${envio.fechaEstimadaEntrega!.month}/${envio.fechaEstimadaEntrega!.year}',
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 1,
+                                        ),
                                     ],
                                   ),
                                     trailing: PopupMenuButton(

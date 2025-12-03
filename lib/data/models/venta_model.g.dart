@@ -25,6 +25,7 @@ VentaModel _$VentaModelFromJson(Map<String, dynamic> json) => VentaModel(
   clienteDocumento: json['cliente_documento'] as String?,
   usuarioNombre: json['usuario_nombre'] as String?,
   metodoPagoNombre: json['metodo_pago_nombre'] as String?,
+  codigoQr: json['codigo_qr'] as String?,
   detalle: (json['detalle'] as List<dynamic>?)
       ?.map((e) => DetalleVentaModel.fromJson(e as Map<String, dynamic>))
       .toList(),
@@ -50,5 +51,6 @@ Map<String, dynamic> _$VentaModelToJson(VentaModel instance) =>
       'cliente_documento': instance.clienteDocumento,
       'usuario_nombre': instance.usuarioNombre,
       'metodo_pago_nombre': instance.metodoPagoNombre,
+      'codigo_qr': instance.codigoQr,
       'detalle': instance.detalle,
     };

@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/error_message_helper.dart';
 import '../../core/constants/role_constants.dart';
 import '../../core/constants/api_constants.dart';
 import 'login_screen.dart';
@@ -229,29 +230,14 @@ class _BackupsScreenState extends State<BackupsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        String errorMsg = 'Error al generar backup: ${e.toString()}';
-        
-        // Detectar errores 401 en el mensaje de error
-        if (e.toString().contains('401') || e.toString().contains('no autenticado')) {
-          errorMsg = 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.';
-          await SharedPrefsHelper.clearAuthData();
-          if (mounted) {
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(
-                builder: (context) => const LoginScreen(),
-              ),
-              (route) => false,
-            );
-          }
+        // Usar ErrorMessageHelper para obtener mensaje amigable
+        // No mostrar si es error 401 (el interceptor ya lo maneja)
+        final errorString = e.toString().toLowerCase();
+        if (!errorString.contains('401') && 
+            !errorString.contains('sesión expirada') &&
+            !errorString.contains('unauthorized')) {
+          ErrorMessageHelper.showErrorSnackBar(context, e);
         }
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMsg),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-          ),
-        );
       }
     } finally {
       if (mounted) {
@@ -392,7 +378,7 @@ class _BackupsScreenState extends State<BackupsScreen> {
             ScaffoldMessenger.of(context).hideCurrentSnackBar();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Error al guardar archivo: ${fileError.toString()}'),
+                content: Text(ErrorMessageHelper.getFriendlyErrorMessage(fileError)),
                 backgroundColor: Colors.orange,
                 duration: const Duration(seconds: 4),
               ),
@@ -404,7 +390,7 @@ class _BackupsScreenState extends State<BackupsScreen> {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error al descargar backup: ${response.statusMessage}'),
+              content: Text('Error al descargar backup. Por favor, intenta nuevamente.'),
               backgroundColor: Colors.red,
             ),
           );
@@ -415,7 +401,7 @@ class _BackupsScreenState extends State<BackupsScreen> {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al descargar backup: ${e.toString()}'),
+            content: Text(ErrorMessageHelper.getFriendlyErrorMessage(e)),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 4),
           ),
@@ -576,6 +562,7 @@ class _BackupsScreenState extends State<BackupsScreen> {
                           return Card(
                             margin: const EdgeInsets.only(bottom: 12),
                             child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               leading: CircleAvatar(
                                 backgroundColor: _getColorTipo(tipo),
                                 child: Icon(
@@ -586,12 +573,17 @@ class _BackupsScreenState extends State<BackupsScreen> {
                               title: Text(
                                 nombreArchivo,
                                 style: const TextStyle(fontWeight: FontWeight.bold),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   const SizedBox(height: 4),
-                                  Row(
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
                                     children: [
                                       Chip(
                                         label: Text(
@@ -601,13 +593,12 @@ class _BackupsScreenState extends State<BackupsScreen> {
                                         backgroundColor: _getColorTipo(tipo).withOpacity(0.2),
                                         padding: const EdgeInsets.symmetric(horizontal: 8),
                                       ),
-                                      const SizedBox(width: 8),
                                       Chip(
                                         label: Text(
                                           estado,
                                           style: const TextStyle(fontSize: 10),
                                         ),
-                                        backgroundColor: estado == 'completado'
+                                        backgroundColor: estado == 'completado' || estado == 'completa'
                                             ? Colors.green.withOpacity(0.2)
                                             : Colors.red.withOpacity(0.2),
                                         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -615,8 +606,16 @@ class _BackupsScreenState extends State<BackupsScreen> {
                                     ],
                                   ),
                                   const SizedBox(height: 4),
-                                  Text('Fecha: $fecha'),
-                                  Text('Tamano: ${_formatearTamano(tamano)}'),
+                                  Text(
+                                    'Fecha: $fecha',
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                  ),
+                                  Text(
+                                    'Tamano: ${_formatearTamano(tamano)}',
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                  ),
                                 ],
                               ),
                               trailing: IconButton(

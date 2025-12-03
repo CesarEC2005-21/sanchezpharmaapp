@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
+import '../../core/utils/date_parser.dart';
 
 class ReportesScreen extends StatefulWidget {
   const ReportesScreen({super.key});
@@ -778,8 +779,9 @@ class _ReportesScreenState extends State<ReportesScreen> {
         DataColumn(label: Text('Promedio')),
       ],
       rows: datos.map((item) {
+        final fecha = DateParser.fromJson(item['fecha']);
         return DataRow(cells: [
-          DataCell(Text(DateFormat('dd/MM/yyyy').format(DateTime.parse(item['fecha'])))),
+          DataCell(Text(fecha != null ? DateFormat('dd/MM/yyyy').format(fecha) : 'N/A')),
           DataCell(Text(item['total_ventas']?.toString() ?? '0')),
           DataCell(Text('S/ ${_formatNumber(item['ingreso_total'] ?? 0)}')),
           DataCell(Text('S/ ${_formatNumber(item['promedio_venta'] ?? 0)}')),
@@ -828,6 +830,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
         itemCount: datos.take(50).length,
         itemBuilder: (context, index) {
           final item = datos[index];
+          final fecha = DateParser.fromJson(item['fecha_venta']);
           return Card(
             margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
             child: ListTile(
@@ -835,7 +838,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(DateFormat('dd/MM/yyyy').format(DateTime.parse(item['fecha_venta']))),
+                  Text(fecha != null ? DateFormat('dd/MM/yyyy').format(fecha) : 'N/A'),
                   Text('S/ ${_formatNumber(item['total'] ?? 0)}'),
                   Text(item['tipo_venta']?.toString().replaceAll('_', ' ') ?? ''),
                 ],
@@ -859,8 +862,9 @@ class _ReportesScreenState extends State<ReportesScreen> {
           DataColumn(label: Text('Método Pago')),
         ],
         rows: datos.take(50).map((item) {
+          final fecha = DateParser.fromJson(item['fecha_venta']);
           return DataRow(cells: [
-            DataCell(Text(DateFormat('dd/MM/yyyy').format(DateTime.parse(item['fecha_venta'])))),
+            DataCell(Text(fecha != null ? DateFormat('dd/MM/yyyy').format(fecha) : 'N/A')),
             DataCell(Text('${item['cliente_nombre'] ?? ''} ${item['cliente_apellido'] ?? ''}')),
             DataCell(Text('S/ ${_formatNumber(item['total'] ?? 0)}')),
             DataCell(Text(item['tipo_venta']?.toString().replaceAll('_', ' ') ?? '')),
@@ -1173,6 +1177,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
         itemCount: datos.take(50).length,
         itemBuilder: (context, index) {
           final item = datos[index];
+          final fecha = DateParser.fromJson(item['fecha_creacion']);
           return Card(
             margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
             child: ListTile(
@@ -1180,7 +1185,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(DateFormat('dd/MM/yyyy').format(DateTime.parse(item['fecha_creacion']))),
+                  Text(fecha != null ? DateFormat('dd/MM/yyyy').format(fecha) : 'N/A'),
                   Text('Estado: ${item['estado']?.toString().replaceAll('_', ' ') ?? ''}'),
                   Text('Días: ${item['dias_transcurridos']?.toString() ?? '0'}'),
                 ],
@@ -1202,8 +1207,9 @@ class _ReportesScreenState extends State<ReportesScreen> {
           DataColumn(label: Text('Días')),
         ],
         rows: datos.take(50).map((item) {
+          final fecha = DateParser.fromJson(item['fecha_creacion']);
           return DataRow(cells: [
-            DataCell(Text(DateFormat('dd/MM/yyyy').format(DateTime.parse(item['fecha_creacion'])))),
+            DataCell(Text(fecha != null ? DateFormat('dd/MM/yyyy').format(fecha) : 'N/A')),
             DataCell(Text(item['cliente_nombre'] ?? '')),
             DataCell(Text(item['estado']?.toString().replaceAll('_', ' ') ?? '')),
             DataCell(Text(item['dias_transcurridos']?.toString() ?? '0')),

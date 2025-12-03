@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/direccion_model.dart';
+import '../../core/utils/responsive_helper.dart';
 
 class AgregarDireccionScreen extends StatefulWidget {
   final DireccionModel? direccion;
@@ -242,11 +243,11 @@ class _AgregarDireccionScreenState extends State<AgregarDireccionScreen> {
             child: Form(
               key: _formKey,
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: ResponsiveHelper.formPadding(context),
                 children: [
                   // Instrucción
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    padding: ResponsiveHelper.formPadding(context),
                     decoration: BoxDecoration(
                       color: Colors.blue.shade50,
                       borderRadius: BorderRadius.circular(8),
@@ -254,13 +255,17 @@ class _AgregarDireccionScreenState extends State<AgregarDireccionScreen> {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.info_outline, color: Colors.blue.shade700),
-                        const SizedBox(width: 8),
+                        Icon(
+                          Icons.info_outline,
+                          color: Colors.blue.shade700,
+                          size: ResponsiveHelper.iconSize(context),
+                        ),
+                        SizedBox(width: ResponsiveHelper.spacing(context) / 2),
                         Expanded(
                           child: Text(
                             'Toca el mapa o arrastra el marcador para seleccionar tu ubicación exacta',
                             style: TextStyle(
-                              fontSize: 13,
+                              fontSize: ResponsiveHelper.bodyFontSize(context) - 1,
                               color: Colors.blue.shade900,
                             ),
                           ),
@@ -268,15 +273,18 @@ class _AgregarDireccionScreenState extends State<AgregarDireccionScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: ResponsiveHelper.spacing(context)),
 
                   // Título
                   TextFormField(
                     controller: _tituloController,
+                    style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                     decoration: InputDecoration(
                       labelText: 'Título *',
+                      labelStyle: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                       hintText: 'Ej: Casa, Trabajo, etc.',
-                      prefixIcon: const Icon(Icons.label_outline),
+                      hintStyle: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                      prefixIcon: Icon(Icons.label_outline, size: ResponsiveHelper.iconSize(context)),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -288,14 +296,16 @@ class _AgregarDireccionScreenState extends State<AgregarDireccionScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
 
                   // Dirección
                   TextFormField(
                     controller: _direccionController,
+                    style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                     decoration: InputDecoration(
                       labelText: 'Dirección *',
-                      prefixIcon: const Icon(Icons.location_on),
+                      labelStyle: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                      prefixIcon: Icon(Icons.location_on, size: ResponsiveHelper.iconSize(context)),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -308,27 +318,36 @@ class _AgregarDireccionScreenState extends State<AgregarDireccionScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
 
                   // Referencia
                   TextFormField(
                     controller: _referenciaController,
+                    style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                     decoration: InputDecoration(
                       labelText: 'Referencia (opcional)',
+                      labelStyle: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
                       hintText: 'Ej: Puerta verde, cerca al parque',
-                      prefixIcon: const Icon(Icons.home_outlined),
+                      hintStyle: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                      prefixIcon: Icon(Icons.home_outlined, size: ResponsiveHelper.iconSize(context)),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
                     maxLines: 2,
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
 
                   // Marcar como principal
                   SwitchListTile(
-                    title: const Text('Dirección principal'),
-                    subtitle: const Text('Usar como dirección predeterminada para entregas'),
+                    title: Text(
+                      'Dirección principal',
+                      style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                    ),
+                    subtitle: Text(
+                      'Usar como dirección predeterminada para entregas',
+                      style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context) - 1),
+                    ),
                     value: _esPrincipal,
                     onChanged: (value) {
                       setState(() {
@@ -337,7 +356,7 @@ class _AgregarDireccionScreenState extends State<AgregarDireccionScreen> {
                     },
                     activeColor: Colors.green,
                   ),
-                  const SizedBox(height: 24),
+                  SizedBox(height: ResponsiveHelper.spacing(context) * 1.5),
 
                   // Botones
                   Row(
@@ -345,10 +364,13 @@ class _AgregarDireccionScreenState extends State<AgregarDireccionScreen> {
                       Expanded(
                         child: OutlinedButton(
                           onPressed: _isLoading ? null : () => Navigator.pop(context),
-                          child: const Text('Cancelar'),
+                          child: Text(
+                            'Cancelar',
+                            style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      SizedBox(width: ResponsiveHelper.spacing(context)),
                       Expanded(
                         flex: 2,
                         child: ElevatedButton(
@@ -356,10 +378,10 @@ class _AgregarDireccionScreenState extends State<AgregarDireccionScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green.shade700,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            padding: EdgeInsets.symmetric(vertical: ResponsiveHelper.spacing(context)),
                           ),
                           child: _isLoading
-                              ? const SizedBox(
+                              ? SizedBox(
                                   height: 20,
                                   width: 20,
                                   child: CircularProgressIndicator(
@@ -367,7 +389,10 @@ class _AgregarDireccionScreenState extends State<AgregarDireccionScreen> {
                                     valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                   ),
                                 )
-                              : const Text('Guardar dirección'),
+                              : Text(
+                                  'Guardar dirección',
+                                  style: TextStyle(fontSize: ResponsiveHelper.bodyFontSize(context)),
+                                ),
                         ),
                       ),
                     ],

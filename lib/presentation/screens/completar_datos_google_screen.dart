@@ -4,6 +4,7 @@ import '../../data/api/api_service.dart';
 import '../../data/services/reniec_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/utils/validators.dart';
+import '../../core/utils/responsive_helper.dart';
 import 'home_cliente_screen.dart';
 
 class CompletarDatosGoogleScreen extends StatefulWidget {
@@ -27,7 +28,8 @@ class CompletarDatosGoogleScreen extends StatefulWidget {
 class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nombreController = TextEditingController();
-  final _apellidoController = TextEditingController();
+  final _apellidoPaternoController = TextEditingController();
+  final _apellidoMaternoController = TextEditingController();
   final _documentoController = TextEditingController();
   final _telefonoController = TextEditingController();
   final _direccionController = TextEditingController();
@@ -37,19 +39,21 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
   bool _verificandoDNI = false;
   String? _mensajeVerificacionDNI;
   bool? _dniValido;
+  bool _camposBloqueados = true; // Bloqueados desde el inicio hasta verificar DNI
   final ReniecService _reniecService = ReniecService();
 
   @override
   void initState() {
     super.initState();
-    // Prefill nombre con el nombre que viene de Google, pero permitiendo editarlo
-    _nombreController.text = widget.nombre;
+    // No prellenar el nombre desde Google - se autocompletará desde RENIEC al verificar el DNI
+    // _nombreController se mantiene vacío hasta que se verifique el DNI
   }
 
   @override
   void dispose() {
     _nombreController.dispose();
-    _apellidoController.dispose();
+    _apellidoPaternoController.dispose();
+    _apellidoMaternoController.dispose();
     _documentoController.dispose();
     _telefonoController.dispose();
     _direccionController.dispose();
@@ -105,13 +109,22 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
       if (resultado['valido'] == true && resultado['datos'] != null) {
         final datos = resultado['datos'] as Map<String, dynamic>;
         
-        // Prellenar nombre y apellido si están disponibles y están vacíos
-        if (datos['nombre'] != null && _nombreController.text.trim().isEmpty) {
+        // Autocompletar nombres, apellido paterno y apellido materno desde RENIEC
+        // Siempre sobrescribir con los datos de RENIEC para asegurar que sean correctos
+        if (datos['nombre'] != null) {
           _nombreController.text = datos['nombre'].toString();
         }
-        if (datos['apellido_paterno'] != null && _apellidoController.text.trim().isEmpty) {
-          _apellidoController.text = datos['apellido_paterno'].toString();
+        if (datos['apellido_paterno'] != null) {
+          _apellidoPaternoController.text = datos['apellido_paterno'].toString();
         }
+        if (datos['apellido_materno'] != null) {
+          _apellidoMaternoController.text = datos['apellido_materno'].toString();
+        }
+        
+        // Bloquear los campos una vez que se autocompletan desde RENIEC
+        setState(() {
+          _camposBloqueados = true;
+        });
       } else if (mostrarDialogo && mounted) {
         // Solo mostrar diálogo si se solicita explícitamente
         _showErrorDialog(
@@ -176,8 +189,9 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
       final apiService = ApiService(dio);
 
       final datosCliente = {
-        'nombre': _nombreController.text.trim(),
-        'apellido': _apellidoController.text.trim(),
+        'nombres': _nombreController.text.trim(),
+        'apellido_paterno': _apellidoPaternoController.text.trim(),
+        'apellido_materno': _apellidoMaternoController.text.trim(),
         'documento': _documentoController.text.trim(),
         'tipo_documento': _tipoDocumento,
         'telefono': _telefonoController.text.trim(),
@@ -194,7 +208,7 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
         if (data['code'] == 1) {
           // Guardar datos de autenticación
           final nombreCompleto =
-              '${_nombreController.text.trim()} ${_apellidoController.text.trim()}'.trim();
+              '${_nombreController.text.trim()} ${_apellidoPaternoController.text.trim()} ${_apellidoMaternoController.text.trim()}'.trim();
 
           await SharedPrefsHelper.saveAuthData(
             token: data['token'],
@@ -358,70 +372,84 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
           ),
         ),
         child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 20),
-                  // Avatar de Google si está disponible
-                  if (widget.fotoUrl != null)
-                    CircleAvatar(
-                      radius: 50,
-                      backgroundImage: NetworkImage(widget.fotoUrl!),
-                    )
-                  else
-                    CircleAvatar(
-                      radius: 50,
-                      backgroundColor: Colors.green.shade700,
-                      child: Text(
-                        widget.nombre[0].toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 40,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  Text(
-                    '¡Bienvenido, ${widget.nombre}!',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
-                    ),
-                    textAlign: TextAlign.center,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding: ResponsiveHelper.formPadding(context),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    widget.email,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey.shade600,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 30),
-                  const Text(
-                    'Completa los siguientes datos para finalizar tu registro',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 30),
+                  child: IntrinsicHeight(
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(height: ResponsiveHelper.spacing(context)),
+                          // Avatar de Google si está disponible
+                          if (widget.fotoUrl != null)
+                            CircleAvatar(
+                              radius: ResponsiveHelper.isSmallScreen(context) ? 40 : 50,
+                              backgroundImage: NetworkImage(widget.fotoUrl!),
+                            )
+                          else
+                            CircleAvatar(
+                              radius: ResponsiveHelper.isSmallScreen(context) ? 40 : 50,
+                              backgroundColor: Colors.green.shade700,
+                              child: Text(
+                                widget.nombre[0].toUpperCase(),
+                                style: TextStyle(
+                                  fontSize: ResponsiveHelper.isSmallScreen(context) ? 32 : 40,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          SizedBox(height: ResponsiveHelper.spacing(context)),
+                          Text(
+                            '¡Bienvenido, ${widget.nombre}!',
+                            style: TextStyle(
+                              fontSize: ResponsiveHelper.titleFontSize(context),
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          SizedBox(height: ResponsiveHelper.spacing(context) * 0.5),
+                          Text(
+                            widget.email,
+                            style: TextStyle(
+                              fontSize: ResponsiveHelper.subtitleFontSize(context),
+                              color: Colors.grey.shade600,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          SizedBox(height: ResponsiveHelper.spacing(context) * 1.5),
+                          Text(
+                            'Completa los siguientes datos para finalizar tu registro',
+                            style: TextStyle(
+                              fontSize: ResponsiveHelper.subtitleFontSize(context),
+                              color: Colors.grey,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          SizedBox(height: ResponsiveHelper.spacing(context) * 1.5),
                   
-                  // Nombre
+                          // Nombre
                   TextFormField(
                     controller: _nombreController,
-                    decoration: const InputDecoration(
+                    readOnly: _camposBloqueados,
+                    decoration: InputDecoration(
                       labelText: 'Nombre *',
-                      prefixIcon: Icon(Icons.person),
-                      border: OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.person),
+                      suffixIcon: _camposBloqueados 
+                          ? const Icon(Icons.lock, color: Colors.green, size: 20)
+                          : null,
+                      border: const OutlineInputBorder(),
+                      filled: _camposBloqueados,
+                      fillColor: _camposBloqueados ? Colors.grey.shade100 : null,
+                      hintText: _camposBloqueados ? 'Verificado desde RENIEC' : null,
                     ),
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) {
@@ -430,20 +458,51 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
                       return null;
                     },
                   ),
-                  const SizedBox(height: 16),
+                          SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                   
-                  // Apellido
+                          // Apellido Paterno
                   TextFormField(
-                    controller: _apellidoController,
-                    decoration: const InputDecoration(
-                      labelText: 'Apellido',
-                      prefixIcon: Icon(Icons.person_outline),
-                      border: OutlineInputBorder(),
+                    controller: _apellidoPaternoController,
+                    readOnly: _camposBloqueados,
+                    decoration: InputDecoration(
+                      labelText: 'Apellido Paterno *',
+                      prefixIcon: const Icon(Icons.person_outline),
+                      suffixIcon: _camposBloqueados 
+                          ? const Icon(Icons.lock, color: Colors.green, size: 20)
+                          : null,
+                      border: const OutlineInputBorder(),
+                      filled: _camposBloqueados,
+                      fillColor: _camposBloqueados ? Colors.grey.shade100 : null,
+                      hintText: _camposBloqueados ? 'Verificado desde RENIEC' : null,
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'El apellido paterno es requerido';
+                      }
+                      return null;
+                    },
+                  ),
+                          SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
+                  
+                          // Apellido Materno
+                  TextFormField(
+                    controller: _apellidoMaternoController,
+                    readOnly: _camposBloqueados,
+                    decoration: InputDecoration(
+                      labelText: 'Apellido Materno',
+                      prefixIcon: const Icon(Icons.person_outline),
+                      suffixIcon: _camposBloqueados 
+                          ? const Icon(Icons.lock, color: Colors.green, size: 20)
+                          : null,
+                      border: const OutlineInputBorder(),
+                      filled: _camposBloqueados,
+                      fillColor: _camposBloqueados ? Colors.grey.shade100 : null,
+                      hintText: _camposBloqueados ? 'Verificado desde RENIEC' : null,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                          SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                   
-                  // Tipo de documento y documento
+                          // Tipo de documento y documento
                   Row(
                     children: [
                       Expanded(
@@ -478,7 +537,7 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
                             labelText: 'Número de Documento *',
                             border: const OutlineInputBorder(),
                             helperText: _tipoDocumento == 'DNI' 
-                                ? 'El documento debe ser único'
+                                ? 'Máximo 8 dígitos, solo números'
                                 : 'El documento debe ser único',
                             suffixIcon: _tipoDocumento == 'DNI'
                                 ? _verificandoDNI
@@ -507,10 +566,15 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
                                 : null,
                           ),
                           keyboardType: TextInputType.number,
+                          maxLength: _tipoDocumento == 'DNI' ? 8 : null,
+                          inputFormatters: _tipoDocumento == 'DNI' 
+                              ? [Validators.dniFormatter]
+                              : null,
                           onChanged: (value) {
                             setState(() {
                               _dniValido = null;
                               _mensajeVerificacionDNI = null;
+                              _camposBloqueados = false; // Desbloquear campos si se cambia el DNI
                             });
                             
                             // Verificar automáticamente después de un breve delay
@@ -589,9 +653,9 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
                         ],
                       ),
                     ),
-                  const SizedBox(height: 16),
+                          SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                   
-                  // Teléfono
+                          // Teléfono
                   TextFormField(
                     controller: _telefonoController,
                     decoration: const InputDecoration(
@@ -605,9 +669,9 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
                     inputFormatters: [Validators.telefonoFormatter],
                     validator: Validators.validateTelefonoOpcional,
                   ),
-                  const SizedBox(height: 16),
+                          SizedBox(height: ResponsiveHelper.formFieldSpacing(context)),
                   
-                  // Dirección
+                          // Dirección
                   TextFormField(
                     controller: _direccionController,
                     decoration: const InputDecoration(
@@ -617,12 +681,12 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
                     ),
                     maxLines: 2,
                   ),
-                  const SizedBox(height: 30),
+                          SizedBox(height: ResponsiveHelper.spacing(context) * 1.5),
                   
-                  // Botón de completar registro
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
+                          // Botón de completar registro
+                          SizedBox(
+                            width: double.infinity,
+                            height: ResponsiveHelper.isSmallScreen(context) ? 45 : 50,
                     child: ElevatedButton(
                       onPressed: _isLoading ? null : _completarRegistro,
                       style: ElevatedButton.styleFrom(
@@ -641,18 +705,22 @@ class _CompletarDatosGoogleScreenState extends State<CompletarDatosGoogleScreen>
                                 valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                               ),
                             )
-                          : const Text(
+                          : Text(
                               'Completar Registro',
                               style: TextStyle(
-                                fontSize: 18,
+                                fontSize: ResponsiveHelper.bodyFontSize(context) + 2,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
+                          ),
+                        ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
         ),
       ),
