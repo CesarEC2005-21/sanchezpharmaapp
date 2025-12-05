@@ -74,6 +74,32 @@ class _FormularioProductoScreenState extends State<FormularioProductoScreen> {
     } else if (widget.producto?.imagenUrl != null && widget.producto!.imagenUrl!.isNotEmpty) {
       _imagenesUrlsActuales = [widget.producto!.imagenUrl!];
     }
+    
+    // Si es un producto nuevo y ya tiene categoría seleccionada, autocompletar código y código de barras
+    if (widget.producto == null && _categoriaIdSeleccionada != null) {
+      _cargarSiguienteCodigo(categoriaId: _categoriaIdSeleccionada);
+    }
+  }
+
+  Future<void> _cargarSiguienteCodigo({int? categoriaId}) async {
+    // Solo cargar código si es un producto nuevo
+    if (widget.producto != null) return;
+    
+    try {
+      final response = await _apiService.obtenerSiguienteCodigoProducto(categoriaId);
+      if (response.response.statusCode == 200) {
+        final data = response.data;
+        if (data['code'] == 1 && data['data'] != null) {
+          setState(() {
+            _codigoController.text = data['data']['codigo'] ?? '';
+            _codigoBarrasController.text = data['data']['codigo_barras'] ?? '';
+          });
+        }
+      }
+    } catch (e) {
+      print('Error al cargar siguiente código: $e');
+      // Si falla, no hacer nada, el usuario puede ingresar manualmente
+    }
   }
 
   @override
@@ -528,6 +554,8 @@ class _FormularioProductoScreenState extends State<FormularioProductoScreen> {
                       controller: _codigoController,
                       label: 'Código',
                       icon: Icons.qr_code,
+                      readOnly: widget.producto != null, // No editable si es edición
+                      enabled: widget.producto == null, // Solo habilitado si es nuevo
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -536,6 +564,8 @@ class _FormularioProductoScreenState extends State<FormularioProductoScreen> {
                       controller: _codigoBarrasController,
                       label: 'Código de Barras',
                       icon: Icons.barcode_reader,
+                      readOnly: widget.producto != null, // No editable si es edición
+                      enabled: widget.producto == null, // Solo habilitado si es nuevo
                     ),
                   ),
                 ],
@@ -589,6 +619,10 @@ class _FormularioProductoScreenState extends State<FormularioProductoScreen> {
                     setState(() {
                       _categoriaIdSeleccionada = value;
                     });
+                    // Si es un producto nuevo, generar código basado en la categoría
+                    if (widget.producto == null && value != null) {
+                      _cargarSiguienteCodigo(categoriaId: value);
+                    }
                   },
                 ),
               ),

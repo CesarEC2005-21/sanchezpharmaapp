@@ -401,7 +401,16 @@ class _TiendaScreenState extends State<TiendaScreen> {
         final items = carritoJson.split('|');
         for (var item in items) {
           if (item.isNotEmpty) {
-            final parts = item.split(':');
+            // Separar imagen si existe (formato: id:nombre:precio:cantidad:stock||imagen_url)
+            final imagenIndex = item.indexOf('||');
+            String itemData = item;
+            String? imagenUrl;
+            if (imagenIndex != -1) {
+              itemData = item.substring(0, imagenIndex);
+              imagenUrl = item.substring(imagenIndex + 2);
+            }
+            
+            final parts = itemData.split(':');
             if (parts.length >= 4) {
               carrito.add({
                 'id': int.parse(parts[0]),
@@ -409,6 +418,7 @@ class _TiendaScreenState extends State<TiendaScreen> {
                 'precio': double.parse(parts[2]),
                 'cantidad': int.parse(parts[3]),
                 'stock': int.parse(parts.length > 4 ? parts[4] : '0'),
+                'imagen_url': imagenUrl,
               });
             }
           }
@@ -424,6 +434,11 @@ class _TiendaScreenState extends State<TiendaScreen> {
       final cantidadActual = carrito[index]['cantidad'] as int;
       if (cantidadActual < producto.stockActual) {
         carrito[index]['cantidad'] = cantidadActual + 1;
+        // Actualizar imagen si no existe o está vacía
+        if (carrito[index]['imagen_url'] == null || (carrito[index]['imagen_url'] as String).isEmpty) {
+          final imagenUrl = producto.imagenUrl ?? (producto.imagenes != null && producto.imagenes!.isNotEmpty ? producto.imagenes!.first : null);
+          carrito[index]['imagen_url'] = imagenUrl;
+        }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -436,18 +451,22 @@ class _TiendaScreenState extends State<TiendaScreen> {
         return;
       }
     } else {
+      final imagenUrl = producto.imagenUrl ?? (producto.imagenes != null && producto.imagenes!.isNotEmpty ? producto.imagenes!.first : null);
       carrito.add({
         'id': producto.id,
         'nombre': producto.nombre,
         'precio': producto.precioConDescuento, // Usar precio con descuento si aplica
         'cantidad': 1,
         'stock': producto.stockActual,
+        'imagen_url': imagenUrl,
       });
     }
 
     // Guardar carrito (formato simple)
     final carritoString = carrito.map((item) {
-      return '${item['id']}:${item['nombre']}:${item['precio']}:${item['cantidad']}:${item['stock']}';
+      final base = '${item['id']}:${item['nombre']}:${item['precio']}:${item['cantidad']}:${item['stock']}';
+      final imagenUrl = item['imagen_url'] as String?;
+      return imagenUrl != null && imagenUrl.isNotEmpty ? '$base||$imagenUrl' : base;
     }).join('|');
     await prefs.setString('carrito_cliente', carritoString);
     
@@ -1581,51 +1600,61 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                             Row(
                                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                               children: [
-                                                Row(
-                                                  children: [
-                                                    Container(
-                                                      padding: EdgeInsets.all(ResponsiveHelper.spacing(context) / 2),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.orange.shade700,
-                                                        borderRadius: BorderRadius.circular(12),
-                                                        boxShadow: [
-                                                          BoxShadow(
-                                                            color: Colors.orange.shade300,
-                                                            blurRadius: 8,
-                                                            spreadRadius: 1,
-                                                          ),
-                                                        ],
-                                                      ),
-                                                      child: Icon(
-                                                        Icons.warning_amber_rounded,
-                                                        color: Colors.white,
-                                                        size: ResponsiveHelper.iconSize(context),
-                                                      ),
-                                                    ),
-                                                    SizedBox(width: ResponsiveHelper.spacing(context) / 2),
-                                                    const Column(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      children: [
-                                                        Text(
-                                                          '⏰ ÚLTIMAS UNIDADES',
-                                                          style: TextStyle(
-                                                            fontSize: 18,
-                                                            fontWeight: FontWeight.bold,
-                                                            color: Colors.black87,
-                                                            letterSpacing: 0.5,
-                                                          ),
+                                                Expanded(
+                                                  child: Row(
+                                                    children: [
+                                                      Container(
+                                                        padding: EdgeInsets.all(ResponsiveHelper.spacing(context) / 2),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.orange.shade700,
+                                                          borderRadius: BorderRadius.circular(12),
+                                                          boxShadow: [
+                                                            BoxShadow(
+                                                              color: Colors.orange.shade300,
+                                                              blurRadius: 8,
+                                                              spreadRadius: 1,
+                                                            ),
+                                                          ],
                                                         ),
-                                                        Text(
-                                                          '¡Apúrate! Stock limitado',
-                                                          style: TextStyle(
-                                                            fontSize: 12,
-                                                            color: Colors.black54,
-                                                          ),
+                                                        child: Icon(
+                                                          Icons.warning_amber_rounded,
+                                                          color: Colors.white,
+                                                          size: ResponsiveHelper.iconSize(context),
                                                         ),
-                                                      ],
-                                                    ),
-                                                  ],
+                                                      ),
+                                                      SizedBox(width: ResponsiveHelper.spacing(context) / 2),
+                                                      Expanded(
+                                                        child: Column(
+                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                          mainAxisSize: MainAxisSize.min,
+                                                          children: [
+                                                            Text(
+                                                              '⏰ ÚLTIMAS UNIDADES',
+                                                              style: TextStyle(
+                                                                fontSize: ResponsiveHelper.isSmallScreen(context) ? 16 : 18,
+                                                                fontWeight: FontWeight.bold,
+                                                                color: Colors.black87,
+                                                                letterSpacing: 0.5,
+                                                              ),
+                                                              maxLines: 1,
+                                                              overflow: TextOverflow.ellipsis,
+                                                            ),
+                                                            Text(
+                                                              '¡Apúrate! Stock limitado',
+                                                              style: TextStyle(
+                                                                fontSize: ResponsiveHelper.isSmallScreen(context) ? 11 : 12,
+                                                                color: Colors.black54,
+                                                              ),
+                                                              maxLines: 1,
+                                                              overflow: TextOverflow.ellipsis,
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
+                                                SizedBox(width: ResponsiveHelper.spacing(context) / 2),
                                                 TextButton.icon(
                                                   onPressed: () {
                                                     setState(() {
@@ -1649,6 +1678,10 @@ class _TiendaScreenState extends State<TiendaScreen> {
                                                   ),
                                                   style: TextButton.styleFrom(
                                                     foregroundColor: Colors.orange.shade700,
+                                                    padding: EdgeInsets.symmetric(
+                                                      horizontal: ResponsiveHelper.spacing(context) / 2,
+                                                      vertical: ResponsiveHelper.spacing(context) / 4,
+                                                    ),
                                                   ),
                                                 ),
                                               ],

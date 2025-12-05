@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:retrofit/retrofit.dart';
 import '../../data/api/dio_client.dart';
@@ -19,6 +20,8 @@ class UsuariosScreen extends StatefulWidget {
 
 class _UsuariosScreenState extends State<UsuariosScreen> {
   final ApiService _apiService = ApiService(DioClient.createDio());
+  final TextEditingController _busquedaController = TextEditingController();
+  Timer? _debounceTimer;
   List<UsuarioModel> _usuarios = [];
   List<UsuarioModel> _usuariosFiltrados = [];
   List<RolModel> _roles = [];
@@ -30,9 +33,28 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   @override
   void initState() {
     super.initState();
+    _busquedaController.addListener(_onBusquedaChanged);
     _cargarRolUsuarioActual();
     _cargarUsuarios();
     _cargarRoles();
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    _busquedaController.removeListener(_onBusquedaChanged);
+    _busquedaController.dispose();
+    super.dispose();
+  }
+
+  void _onBusquedaChanged() {
+    // Cancelar el timer anterior si existe
+    _debounceTimer?.cancel();
+    
+    // Crear un nuevo timer que esperará 500ms antes de buscar
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _cargarUsuarios(busqueda: _busquedaController.text.trim());
+    });
   }
 
   Future<void> _cargarRolUsuarioActual() async {
@@ -104,7 +126,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
     }
   }
 
-  Future<void> _cargarUsuarios() async {
+  Future<void> _cargarUsuarios({String? busqueda}) async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -121,7 +143,9 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
         return;
       }
 
-      final response = await _apiService.getUsuarios();
+      // Pasar el parámetro de búsqueda (puede ser null o vacío)
+      final busquedaParam = busqueda != null && busqueda.isNotEmpty ? busqueda : null;
+      final response = await _apiService.getUsuarios(busquedaParam);
       
       if (response.response.statusCode == 200) {
         final data = response.data;
@@ -588,13 +612,56 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _cargarUsuarios,
+            onPressed: () {
+              _busquedaController.clear();
+              _cargarUsuarios();
+            },
             tooltip: 'Actualizar',
           ),
         ],
       ),
       body: Column(
         children: [
+          // Campo de búsqueda por DNI
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            color: Colors.blue.shade50,
+            child: TextField(
+              controller: _busquedaController,
+              decoration: InputDecoration(
+                hintText: 'Buscar por DNI, nombre, apellido, email o usuario...',
+                prefixIcon: const Icon(Icons.search, color: Colors.blue),
+                suffixIcon: _busquedaController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, color: Colors.grey),
+                        onPressed: () {
+                          _busquedaController.clear();
+                          _cargarUsuarios();
+                        },
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.blue.shade300),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.blue.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.blue.shade700, width: 2),
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+              textInputAction: TextInputAction.search,
+              onSubmitted: (value) {
+                _cargarUsuarios(busqueda: value.trim());
+              },
+            ),
+          ),
           // Filtro por rol
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -702,7 +769,10 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                       ),
                     )
                   : RefreshIndicator(
-                      onRefresh: _cargarUsuarios,
+                      onRefresh: () async {
+                        _busquedaController.clear();
+                        await _cargarUsuarios();
+                      },
                       child: ListView.builder(
                         padding: const EdgeInsets.all(8),
                         itemCount: _usuariosFiltrados.length,

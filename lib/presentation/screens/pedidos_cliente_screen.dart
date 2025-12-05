@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../data/api/dio_client.dart';
 import '../../data/api/api_service.dart';
 import '../../core/utils/shared_prefs_helper.dart';
@@ -26,6 +27,10 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   String _username = '';
+  
+  // Filtros de fecha
+  DateTime? _fechaDesde;
+  DateTime? _fechaHasta;
 
   @override
   void initState() {
@@ -58,8 +63,21 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
         return;
       }
 
+      // Preparar parámetros de consulta
+      final queryParams = <String, dynamic>{
+        'cliente_id': clienteId,
+      };
+      
+      // Agregar filtros de fecha si están seleccionados
+      if (_fechaDesde != null) {
+        queryParams['fecha_desde'] = DateFormat('yyyy-MM-dd').format(_fechaDesde!);
+      }
+      if (_fechaHasta != null) {
+        queryParams['fecha_hasta'] = DateFormat('yyyy-MM-dd').format(_fechaHasta!);
+      }
+      
       // Cargar ventas del cliente
-      final ventasResponse = await _apiService.getVentas({'cliente_id': clienteId});
+      final ventasResponse = await _apiService.getVentas(queryParams);
       
       if (ventasResponse.response.statusCode == 200) {
         final data = ventasResponse.data;
@@ -245,6 +263,25 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.filter_list),
+            onPressed: _mostrarFiltroFecha,
+            tooltip: 'Filtrar por fecha',
+          ),
+          if (_fechaDesde != null || _fechaHasta != null)
+            IconButton(
+              icon: const Icon(Icons.clear),
+              onPressed: () {
+                setState(() {
+                  _fechaDesde = null;
+                  _fechaHasta = null;
+                });
+                _cargarPedidos();
+              },
+              tooltip: 'Limpiar filtros',
+            ),
+        ],
       ),
       bottomNavigationBar: const ClienteBottomNav(currentIndex: 2),
       body: _isLoading
@@ -265,31 +302,77 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
                     ],
                   ),
                 )
-              : _pedidos.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.shopping_bag_outlined, size: 64, color: Colors.grey.shade400),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'No tienes pedidos aún',
-                            style: TextStyle(fontSize: 18),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Realiza tu primera compra en la tienda',
-                            style: TextStyle(color: Colors.grey.shade600),
-                          ),
-                        ],
+              : Column(
+                  children: [
+                    // Mostrar filtros activos si existen
+                    if (_fechaDesde != null || _fechaHasta != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        color: Colors.blue.shade50,
+                        child: Row(
+                          children: [
+                            Icon(Icons.filter_alt, size: 16, color: Colors.blue.shade700),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _fechaDesde != null && _fechaHasta != null
+                                    ? 'Filtro: ${DateFormat('dd/MM/yyyy').format(_fechaDesde!)} - ${DateFormat('dd/MM/yyyy').format(_fechaHasta!)}'
+                                    : _fechaDesde != null
+                                        ? 'Desde: ${DateFormat('dd/MM/yyyy').format(_fechaDesde!)}'
+                                        : 'Hasta: ${DateFormat('dd/MM/yyyy').format(_fechaHasta!)}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blue.shade700,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  _fechaDesde = null;
+                                  _fechaHasta = null;
+                                });
+                                _cargarPedidos();
+                              },
+                              child: Text(
+                                'Limpiar',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blue.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _cargarPedidos,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(8),
-                        itemCount: _pedidos.length,
-                        itemBuilder: (context, index) {
+                    // Lista de pedidos
+                    Expanded(
+                      child: _pedidos.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.shopping_bag_outlined, size: 64, color: Colors.grey.shade400),
+                                  const SizedBox(height: 16),
+                                  const Text(
+                                    'No tienes pedidos aún',
+                                    style: TextStyle(fontSize: 18),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Realiza tu primera compra en la tienda',
+                                    style: TextStyle(color: Colors.grey.shade600),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : RefreshIndicator(
+                              onRefresh: _cargarPedidos,
+                              child: ListView.builder(
+                                padding: const EdgeInsets.all(8),
+                                itemCount: _pedidos.length,
+                                itemBuilder: (context, index) {
                           final pedido = _pedidos[index];
                           final ventaId = pedido.id;
                           
@@ -573,6 +656,191 @@ class _PedidosClienteScreenState extends State<PedidosClienteScreen> {
                         },
                       ),
                     ),
+                    ),
+                  ],
+                ),
+    );
+  }
+  
+  Future<void> _mostrarFiltroFecha() async {
+    DateTime? fechaDesde = _fechaDesde;
+    DateTime? fechaHasta = _fechaHasta;
+    
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            left: 20,
+            right: 20,
+            top: 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Filtrar por fecha',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setModalState(() {
+                        fechaDesde = null;
+                        fechaHasta = null;
+                      });
+                    },
+                    child: const Text('Limpiar'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              
+              // Fecha desde
+              ListTile(
+                leading: const Icon(Icons.calendar_today),
+                title: const Text('Desde'),
+                subtitle: Text(
+                  fechaDesde != null
+                      ? DateFormat('dd/MM/yyyy').format(fechaDesde!)
+                      : 'Seleccionar fecha',
+                ),
+                trailing: fechaDesde != null
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          setModalState(() {
+                            fechaDesde = null;
+                          });
+                        },
+                      )
+                    : null,
+                onTap: () async {
+                  final fecha = await showDatePicker(
+                    context: context,
+                    initialDate: fechaDesde ?? DateTime.now(),
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime.now(),
+                    locale: const Locale('es', 'ES'),
+                    builder: (context, child) {
+                      return Theme(
+                        data: Theme.of(context).copyWith(
+                          colorScheme: ColorScheme.light(
+                            primary: Colors.green.shade700,
+                            onPrimary: Colors.white,
+                            onSurface: Colors.black,
+                          ),
+                        ),
+                        child: child!,
+                      );
+                    },
+                  );
+                  if (fecha != null) {
+                    setModalState(() {
+                      fechaDesde = fecha;
+                      // Si fecha hasta es anterior a fecha desde, ajustarla
+                      if (fechaHasta != null && fechaHasta!.isBefore(fecha)) {
+                        fechaHasta = null;
+                      }
+                    });
+                  }
+                },
+              ),
+              
+              // Fecha hasta
+              ListTile(
+                leading: const Icon(Icons.calendar_today),
+                title: const Text('Hasta'),
+                subtitle: Text(
+                  fechaHasta != null
+                      ? DateFormat('dd/MM/yyyy').format(fechaHasta!)
+                      : 'Seleccionar fecha',
+                ),
+                trailing: fechaHasta != null
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          setModalState(() {
+                            fechaHasta = null;
+                          });
+                        },
+                      )
+                    : null,
+                onTap: () async {
+                  final fecha = await showDatePicker(
+                    context: context,
+                    initialDate: fechaHasta ?? (fechaDesde ?? DateTime.now()),
+                    firstDate: fechaDesde ?? DateTime(2020),
+                    lastDate: DateTime.now(),
+                    locale: const Locale('es', 'ES'),
+                    builder: (context, child) {
+                      return Theme(
+                        data: Theme.of(context).copyWith(
+                          colorScheme: ColorScheme.light(
+                            primary: Colors.green.shade700,
+                            onPrimary: Colors.white,
+                            onSurface: Colors.black,
+                          ),
+                        ),
+                        child: child!,
+                      );
+                    },
+                  );
+                  if (fecha != null) {
+                    setModalState(() {
+                      fechaHasta = fecha;
+                    });
+                  }
+                },
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // Botón aplicar
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _fechaDesde = fechaDesde;
+                      _fechaHasta = fechaHasta;
+                    });
+                    Navigator.pop(context);
+                    _cargarPedidos();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Aplicar filtro',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

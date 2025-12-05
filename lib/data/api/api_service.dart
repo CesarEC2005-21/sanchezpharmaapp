@@ -24,7 +24,7 @@ abstract class ApiService {
 
   // ========== USUARIOS ==========
   @GET(ApiConstants.usuarios)
-  Future<HttpResponse<dynamic>> getUsuarios();
+  Future<HttpResponse<dynamic>> getUsuarios(@Query('busqueda') String? busqueda);
 
   @GET(ApiConstants.repartidores)
   Future<HttpResponse<dynamic>> getRepartidores();
@@ -56,6 +56,12 @@ abstract class ApiService {
 
   @DELETE('${ApiConstants.eliminarProducto}/{id}')
   Future<HttpResponse<dynamic>> eliminarProducto(@Path('id') int id);
+
+  @POST(ApiConstants.incrementarStockProducto)
+  Future<HttpResponse<dynamic>> incrementarStockProducto(@Body() Map<String, dynamic> data);
+
+  @GET(ApiConstants.obtenerSiguienteCodigoProducto)
+  Future<HttpResponse<dynamic>> obtenerSiguienteCodigoProducto(@Query('categoria_id') int? categoriaId);
 
   @GET(ApiConstants.buscarProductos)
   Future<HttpResponse<dynamic>> buscarProductos(@Queries() Map<String, dynamic> query);

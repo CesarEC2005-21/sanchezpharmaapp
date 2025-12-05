@@ -147,8 +147,12 @@ def identity(payload):
             documento = cliente.get("documento") if cliente.get("documento") else None
             username = email or documento or str(cliente["id"])
             password = cliente.get("password") or ""  # La contraseña puede no ser necesaria para validación
-            logging.info(f"Cliente encontrado: {username} (ID: {cliente['id']})")
-            return UserSanchezPharma(cliente["id"], username, password)
+            logging.info(f"identity: Cliente encontrado: {username} (ID: {cliente['id']})")
+            cliente_obj = UserSanchezPharma(cliente["id"], username, password)
+            logging.info(f"identity: Objeto UserSanchezPharma creado para cliente: {cliente_obj}")
+            return cliente_obj
+        else:
+            logging.warning(f"identity: Cliente con ID {user_id} no encontrado o no está activo")
         
         logging.warning(f"identity: No se encontró usuario ni cliente con ID: {user_id}")
         return None
@@ -578,15 +582,56 @@ def enviar_correo_con_pdf(destinatario, asunto, cuerpo, pdf_data, nombre_archivo
 # Handler personalizado para errores de JWT
 @jwt.jwt_error_handler
 def jwt_error_handler(error):
+    """
+    Maneja errores de JWT. Solo se llama cuando Flask-JWT encuentra un error REAL.
+    Si el token es válido, Flask-JWT lo procesa normalmente y este handler NO se llama.
+    """
     logging.error(f"JWT Error Handler: {type(error).__name__}: {str(error)}")
     logging.error(f"JWT Error Handler: Request path: {request.path}")
     logging.error(f"JWT Error Handler: Authorization header: {request.headers.get('Authorization', 'None')[:50]}...")
     
+    # Verificar si el error es por token expirado
+    error_str = str(error).lower()
+    is_expired = 'expired' in error_str or 'expirado' in error_str or 'exp' in error_str
+    
+    # Si es el endpoint de renovación y el token está expirado, intentar permitir el acceso
+    if request.path == '/api_renovar_token' and is_expired:
+        # Intentar decodificar el token sin verificar expiración
+        auth_header = request.headers.get("Authorization")
+        if auth_header:
+            try:
+                if auth_header.startswith("Bearer "):
+                    token = auth_header.replace("Bearer ", "").strip()
+                elif auth_header.startswith("JWT "):
+                    token = auth_header.replace("JWT ", "").strip()
+                else:
+                    token = auth_header.strip()
+                
+                # Decodificar sin verificar expiración
+                payload = pyjwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'], options={"verify_exp": False})
+                user = identity(payload)
+                if user:
+                    g.current_identity = user
+                    logging.info(f"jwt_error_handler: Token expirado pero válido, permitiendo renovación para usuario {user.id}")
+                    # No retornar error, dejar que el endpoint procese la renovación
+                    # Flask-JWT no procesará el endpoint porque retornamos None, pero el endpoint ya no usa @jwt_required()
+                    return None
+            except Exception as e:
+                logging.error(f"jwt_error_handler: Error al procesar token expirado para renovación: {repr(e)}")
+    
+    # Para todos los demás casos, retornar el error apropiado
     if hasattr(error, 'status_code'):
         if error.status_code == 401:
-            # Los tokens no expiran, así que este error es solo por token inválido
-            return jsonify({"code": 0, "message": "Token inválido. Por favor, inicia sesión nuevamente."}), 401
+            # Diferenciar entre token expirado y token inválido
+            if is_expired:
+                return jsonify({"code": 0, "message": "Token expirado. Por favor, renueva tu sesión."}), 401
+            else:
+                return jsonify({"code": 0, "message": "Token inválido. Por favor, inicia sesión nuevamente."}), 401
         return jsonify({"code": 0, "message": f"Error de autenticación: {str(error)}"}), error.status_code
+    
+    # Si es token expirado, retornar mensaje específico
+    if is_expired:
+        return jsonify({"code": 0, "message": "Token expirado. Por favor, renueva tu sesión."}), 401
     
     return jsonify({"code": 0, "message": f"Error de autenticación: {str(error)}"}), 401
 
@@ -597,6 +642,7 @@ def procesar_token_manual():
     """
     Procesa el token JWT manualmente si Flask-JWT no lo ha procesado.
     Esto es un fallback para asegurar que g.current_identity se establezca correctamente.
+    IMPORTANTE: Solo se ejecuta si Flask-JWT no ha establecido current_identity.
     """
     # Solo procesar si no es un endpoint público y Flask-JWT no ha establecido current_identity
     endpoints_libres = ("api_login", "hello", "probar_conexion_sanchezpharma", "registrar_cliente_publico_sanchezpharma", 
@@ -608,15 +654,27 @@ def procesar_token_manual():
     if request.method == "OPTIONS" or request.endpoint in endpoints_libres:
         return
     
-    # Si Flask-JWT ya procesó el token, no hacer nada
+    # Si Flask-JWT ya procesó el token correctamente, NO hacer nada
+    # Esto es crítico para evitar interferir con el flujo normal de Flask-JWT
     if hasattr(g, 'current_identity') and g.current_identity is not None:
+        logging.debug(f"procesar_token_manual: Flask-JWT ya procesó el token para usuario {g.current_identity.id}, no hacer nada")
         return
     
-    # Intentar procesar el token manualmente
+    # IMPORTANTE: No intentar procesar tokens manualmente para endpoints normales
+    # Dejar que Flask-JWT maneje todo el flujo normal de autenticación
+    # Solo procesar manualmente para casos especiales (tokens expirados en endpoint de renovación)
     auth_header = request.headers.get("Authorization")
     if not auth_header:
+        # No hay token, Flask-JWT manejará el error si el endpoint requiere autenticación
         return
     
+    # Solo procesar manualmente para el endpoint de renovación con tokens expirados
+    # Para todos los demás casos, dejar que Flask-JWT maneje el token normalmente
+    if request.path != '/api_renovar_token':
+        # No procesar manualmente para otros endpoints - dejar que Flask-JWT lo maneje
+        return
+    
+    # Solo para el endpoint de renovación, intentar procesar tokens expirados
     try:
         # Extraer el token
         token = None
@@ -628,29 +686,21 @@ def procesar_token_manual():
         if not token:
             return
         
-        # Decodificar el token usando PyJWT directamente
+        # Intentar decodificar sin verificar expiración (solo para endpoint de renovación)
         try:
-            # Flask-JWT usa la SECRET_KEY para decodificar
-            # Verificar expiración normalmente (los tokens se renuevan automáticamente)
-            payload = pyjwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            logging.info(f"procesar_token_manual: Token decodificado correctamente, payload: {payload}")
+            payload = pyjwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'], options={"verify_exp": False})
+            logging.info(f"procesar_token_manual: Token decodificado (sin verificar exp) para renovación, payload: {payload}")
             
             # Llamar a la función identity para obtener el usuario
             user = identity(payload)
             if user:
                 g.current_identity = user
-                logging.info(f"procesar_token_manual: Usuario establecido manualmente: {user.id}")
+                logging.info(f"procesar_token_manual: Usuario establecido manualmente para renovación: {user.id}")
             else:
                 logging.warning(f"procesar_token_manual: identity() retornó None para payload: {payload}")
-        except pyjwt.ExpiredSignatureError:
-            logging.warning(f"procesar_token_manual: Token expirado")
-            # El token expiró - la app debería renovarlo automáticamente
-            # No hacer nada, dejar que Flask-JWT maneje el error
-        except pyjwt.InvalidTokenError as decode_error:
-            logging.error(f"procesar_token_manual: Token inválido: {repr(decode_error)}")
-            # No hacer nada, dejar que Flask-JWT maneje el error
-        except Exception as decode_error:
-            logging.error(f"procesar_token_manual: Error al decodificar token: {repr(decode_error)}")
+                # No establecer current_identity si identity falla
+        except Exception as e:
+            logging.error(f"procesar_token_manual: Error al procesar token para renovación: {repr(e)}")
             # No hacer nada, dejar que Flask-JWT maneje el error
     except Exception as e:
         logging.error(f"procesar_token_manual: Error general: {repr(e)}")
@@ -1299,33 +1349,44 @@ def api_login():
 # RENOVAR TOKEN (Renovación automática)
 # ---------------------------------------------------
 @app.route('/api_renovar_token', methods=['POST'])
-@jwt_required()
 def api_renovar_token():
     """
     Renueva el token JWT actual.
-    Solo funciona si el usuario ya está autenticado (tiene un token válido).
+    Acepta tokens expirados para permitir renovación automática.
     Genera un nuevo token con la misma identidad pero con nueva fecha de expiración.
     """
     try:
-        # Obtener el usuario actual del token (ya validado por @jwt_required)
+        # Obtener el usuario actual del token (puede estar establecido por procesar_token_manual)
         current_identity = getattr(g, 'current_identity', None)
         
         if not current_identity:
-            # Intentar obtener del payload manualmente
+            # Intentar obtener del payload manualmente (aceptando tokens expirados)
             auth_header = request.headers.get("Authorization")
-            if auth_header:
-                if auth_header.startswith("Bearer "):
-                    token = auth_header.replace("Bearer ", "").strip()
-                elif auth_header.startswith("JWT "):
-                    token = auth_header.replace("JWT ", "").strip()
-                else:
-                    token = auth_header.strip()
-                
-                try:
-                    payload = pyjwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'], options={"verify_exp": False})
-                    current_identity = identity(payload)
-                except Exception as e:
-                    logging.error(f"Error al decodificar token para renovación: {repr(e)}")
+            if not auth_header:
+                return jsonify({"code": 0, "message": "Token no proporcionado"}), 401
+            
+            if auth_header.startswith("Bearer "):
+                token = auth_header.replace("Bearer ", "").strip()
+            elif auth_header.startswith("JWT "):
+                token = auth_header.replace("JWT ", "").strip()
+            else:
+                token = auth_header.strip()
+            
+            if not token:
+                return jsonify({"code": 0, "message": "Token vacío"}), 401
+            
+            try:
+                # Decodificar sin verificar expiración para permitir renovación de tokens expirados
+                payload = pyjwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'], options={"verify_exp": False})
+                current_identity = identity(payload)
+                if current_identity:
+                    logging.info(f"api_renovar_token: Token decodificado correctamente (puede estar expirado), usuario: {current_identity.id}")
+            except pyjwt.InvalidTokenError as e:
+                logging.error(f"Error al decodificar token para renovación (token inválido): {repr(e)}")
+                return jsonify({"code": 0, "message": "Token inválido. Por favor, inicia sesión nuevamente."}), 401
+            except Exception as e:
+                logging.error(f"Error al decodificar token para renovación: {repr(e)}")
+                return jsonify({"code": 0, "message": f"Error al procesar token: {repr(e)}"}), 401
             
             if not current_identity:
                 return jsonify({"code": 0, "message": "No se pudo identificar al usuario"}), 401
@@ -1547,16 +1608,56 @@ def test_reniec_directo(dni):
 @jwt_required()
 def usuarios_sanchezpharma():
     try:
+        # Obtener parámetro de búsqueda si existe
+        busqueda = request.args.get('busqueda', '').strip()
+        
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM usuarios")
+                if busqueda:
+                    # Búsqueda por DNI, nombre, apellido, email o username
+                    # Verificar primero si existe el campo documento en la tabla
+                    cursor.execute("SHOW COLUMNS FROM usuarios LIKE 'documento'")
+                    tiene_documento = cursor.fetchone()
+                    
+                    if tiene_documento:
+                        # Si tiene campo documento, buscar también por DNI
+                        sql = """
+                            SELECT * FROM usuarios 
+                            WHERE documento LIKE %s 
+                            OR nombre LIKE %s 
+                            OR apellido LIKE %s 
+                            OR email LIKE %s 
+                            OR username LIKE %s
+                            OR CONCAT(nombre, ' ', apellido) LIKE %s
+                            ORDER BY nombre, apellido
+                        """
+                        busqueda_like = f"%{busqueda}%"
+                        cursor.execute(sql, (busqueda_like, busqueda_like, busqueda_like, busqueda_like, busqueda_like, busqueda_like))
+                    else:
+                        # Si no tiene campo documento, buscar por nombre, apellido, email o username
+                        sql = """
+                            SELECT * FROM usuarios 
+                            WHERE nombre LIKE %s 
+                            OR apellido LIKE %s 
+                            OR email LIKE %s 
+                            OR username LIKE %s
+                            OR CONCAT(nombre, ' ', apellido) LIKE %s
+                            ORDER BY nombre, apellido
+                        """
+                        busqueda_like = f"%{busqueda}%"
+                        cursor.execute(sql, (busqueda_like, busqueda_like, busqueda_like, busqueda_like, busqueda_like))
+                else:
+                    # Sin búsqueda, traer todos
+                    cursor.execute("SELECT * FROM usuarios ORDER BY nombre, apellido")
+                
                 data = cursor.fetchall()
 
         return jsonify({"code": 1, "data": data, "message": "Usuarios listados correctamente"})
 
     except Exception as e:
-        return jsonify({"code": 0, "data": {}, "message": repr(e)})
+        logging.error(f"Error al listar usuarios: {repr(e)}")
+        return jsonify({"code": 0, "data": [], "message": repr(e)})
 
 
 # ---------------------------------------------------
@@ -1982,6 +2083,155 @@ def eliminar_producto_sanchezpharma(producto_id):
 
     except Exception as e:
         return jsonify({"code": 0, "message": repr(e)})
+
+
+# INCREMENTAR STOCK DE PRODUCTO
+@app.route('/incrementar_stock_producto_sanchezpharma', methods=['POST'])
+@jwt_required()
+def incrementar_stock_producto_sanchezpharma():
+    try:
+        data = request.json
+        producto_id = data.get("producto_id")
+        cantidad = data.get("cantidad")
+
+        if not producto_id:
+            return jsonify({"code": 0, "message": "Falta el ID del producto"}), 400
+        
+        if cantidad is None or cantidad <= 0:
+            return jsonify({"code": 0, "message": "La cantidad debe ser mayor a 0"}), 400
+
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Verificar que el producto existe
+                cursor.execute("SELECT id, stock_actual, nombre FROM productos WHERE id = %s", (producto_id,))
+                producto = cursor.fetchone()
+                
+                if not producto:
+                    return jsonify({"code": 0, "message": "Producto no encontrado"}), 404
+                
+                # Incrementar el stock
+                nuevo_stock = producto['stock_actual'] + cantidad
+                cursor.execute("""
+                    UPDATE productos 
+                    SET stock_actual = %s
+                    WHERE id = %s
+                """, (nuevo_stock, producto_id))
+            conn.commit()
+
+        return jsonify({
+            "code": 1, 
+            "message": f"Stock incrementado correctamente. Nuevo stock: {nuevo_stock}",
+            "data": {
+                "producto_id": producto_id,
+                "stock_anterior": producto['stock_actual'],
+                "cantidad_agregada": cantidad,
+                "stock_actual": nuevo_stock
+            }
+        })
+
+    except Exception as e:
+        logging.error(f"Error al incrementar stock: {repr(e)}")
+        return jsonify({"code": 0, "message": repr(e)}), 500
+
+
+# OBTENER SIGUIENTE CÓDIGO Y CÓDIGO DE BARRAS
+@app.route('/obtener_siguiente_codigo_producto_sanchezpharma', methods=['GET'])
+@jwt_required()
+def obtener_siguiente_codigo_producto_sanchezpharma():
+    try:
+        categoria_id = request.args.get('categoria_id', type=int)
+        
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                # Mapeo de categorías a prefijos de código
+                # Basado en los datos existentes: MED (Medicamentos), CP (Cuidado Personal), VIT (Vitaminas), PA (Primeros Auxilios)
+                prefijos_categoria = {
+                    1: 'MED',  # Medicamentos
+                    2: 'CP',   # Cuidado Personal
+                    3: 'VIT',  # Vitaminas
+                    4: 'PA',   # Primeros Auxilios
+                    5: 'BEB',  # Bebés
+                    6: 'DERM', # Dermocosméticos
+                }
+                
+                # Si no se proporciona categoria_id, usar un prefijo genérico
+                prefijo = 'PROD'
+                if categoria_id:
+                    # Obtener el nombre de la categoría para determinar el prefijo
+                    cursor.execute("SELECT nombre FROM categorias WHERE id = %s", (categoria_id,))
+                    categoria = cursor.fetchone()
+                    
+                    if categoria:
+                        nombre_cat = categoria['nombre'].upper()
+                        # Buscar prefijo basado en el nombre de la categoría
+                        if 'MEDICAMENTO' in nombre_cat or 'MEDICINA' in nombre_cat:
+                            prefijo = 'MED'
+                        elif 'CUIDADO PERSONAL' in nombre_cat or 'PERSONAL' in nombre_cat:
+                            prefijo = 'CP'
+                        elif 'VITAMINA' in nombre_cat or 'SUPLEMENTO' in nombre_cat:
+                            prefijo = 'VIT'
+                        elif 'PRIMEROS AUXILIOS' in nombre_cat or 'AUXILIO' in nombre_cat:
+                            prefijo = 'PA'
+                        elif 'BEBE' in nombre_cat or 'BEBÉ' in nombre_cat or 'BABY' in nombre_cat:
+                            prefijo = 'BEB'
+                        elif 'DERMO' in nombre_cat or 'COSMÉTICO' in nombre_cat:
+                            prefijo = 'DERM'
+                        else:
+                            # Usar las primeras 3 letras del nombre de la categoría
+                            prefijo = nombre_cat[:3] if len(nombre_cat) >= 3 else nombre_cat
+                    elif categoria_id in prefijos_categoria:
+                        prefijo = prefijos_categoria[categoria_id]
+                
+                # Obtener el último código con ese prefijo
+                cursor.execute("""
+                    SELECT codigo FROM productos 
+                    WHERE codigo LIKE %s
+                    ORDER BY CAST(SUBSTRING(codigo, %s) AS UNSIGNED) DESC 
+                    LIMIT 1
+                """, (f"{prefijo}%", len(prefijo) + 1))
+                ultimo_codigo = cursor.fetchone()
+                
+                # Generar nuevo código
+                if ultimo_codigo and ultimo_codigo.get('codigo'):
+                    try:
+                        codigo_str = ultimo_codigo['codigo']
+                        # Extraer el número del código (después del prefijo)
+                        numero_str = codigo_str[len(prefijo):]
+                        siguiente_numero = int(numero_str) + 1
+                        nuevo_codigo = f"{prefijo}{siguiente_numero:03d}"  # Formato: PREF001, PREF002, etc.
+                    except:
+                        nuevo_codigo = f"{prefijo}001"
+                else:
+                    nuevo_codigo = f"{prefijo}001"
+                
+                # Generar código de barras único (usando timestamp + número aleatorio)
+                import time
+                import random
+                timestamp = int(time.time())
+                numero_aleatorio = random.randint(1000, 9999)
+                codigo_barras = f"{timestamp}{numero_aleatorio}"
+                
+                # Verificar que el código de barras no exista
+                cursor.execute("SELECT id FROM productos WHERE codigo_barras = %s", (codigo_barras,))
+                while cursor.fetchone():
+                    numero_aleatorio = random.randint(1000, 9999)
+                    codigo_barras = f"{timestamp}{numero_aleatorio}"
+                    cursor.execute("SELECT id FROM productos WHERE codigo_barras = %s", (codigo_barras,))
+
+        return jsonify({
+            "code": 1,
+            "data": {
+                "codigo": nuevo_codigo,
+                "codigo_barras": codigo_barras
+            },
+            "message": "Códigos generados correctamente"
+        })
+
+    except Exception as e:
+        logging.error(f"Error al obtener siguiente código: {repr(e)}")
+        return jsonify({"code": 0, "message": repr(e)}), 500
 
 
 # ---------------------------------------------------
@@ -3145,6 +3395,74 @@ def registrar_cliente_sanchezpharma():
 
 
 # EDITAR CLIENTE
+# SUBIR FOTO DE CLIENTE
+@app.route('/subir_foto_cliente_sanchezpharma', methods=['POST'])
+@jwt_required()
+def subir_foto_cliente_sanchezpharma():
+    """
+    Endpoint para subir foto de perfil del cliente.
+    Retorna la URL de la imagen guardada.
+    """
+    try:
+        # Verificar que se haya enviado un archivo
+        if 'imagen' not in request.files:
+            return jsonify({"code": 0, "message": "No se recibió archivo"}), 400
+        
+        archivo = request.files['imagen']
+        
+        if archivo.filename == '':
+            return jsonify({"code": 0, "message": "No se recibió archivo"}), 400
+        
+        # Crear directorio para fotos de clientes si no existe
+        upload_dir = '/home/nxlsxx/mysite/static/uploads/clientes'
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # Extensiones permitidas
+        ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+        
+        def allowed_file(filename):
+            return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+        
+        if not allowed_file(archivo.filename):
+            return jsonify({"code": 0, "message": "Extensión no permitida. Use: png, jpg, jpeg, gif, webp"}), 400
+        
+        # Generar nombre único para el archivo
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+        filename = secure_filename(archivo.filename)
+        nombre_base, extension = os.path.splitext(filename)
+        nombre_archivo = f"{nombre_base}_{timestamp}{extension}"
+        
+        # Ruta completa del archivo
+        filepath = os.path.join(upload_dir, nombre_archivo)
+        
+        try:
+            # Guardar archivo
+            archivo.save(filepath)
+            
+            # Verificar que el archivo se guardó correctamente
+            if not os.path.exists(filepath):
+                logging.error(f"No se pudo guardar el archivo: {filepath}")
+                return jsonify({"code": 0, "message": "Error al guardar el archivo"}), 500
+            
+            # Generar URL pública
+            url_imagen = f"https://nxlsxx.pythonanywhere.com/static/uploads/clientes/{nombre_archivo}"
+            
+            logging.info(f"Foto de cliente guardada: {filepath} -> {url_imagen}")
+            
+            return jsonify({
+                "code": 1,
+                "message": "Foto subida correctamente",
+                "url": url_imagen
+            })
+        except Exception as save_error:
+            logging.error(f"Error al guardar archivo {archivo.filename}: {repr(save_error)}")
+            return jsonify({"code": 0, "message": f"Error al guardar el archivo: {str(save_error)}"}), 500
+    
+    except Exception as e:
+        logging.error(f"Error en subir_foto_cliente_sanchezpharma: {repr(e)}")
+        return jsonify({"code": 0, "message": f"Error al subir la foto: {str(e)}"}), 500
+
+
 @app.route('/editar_cliente_sanchezpharma', methods=['PUT'])
 @jwt_required()
 def editar_cliente_sanchezpharma():
@@ -3160,11 +3478,20 @@ def editar_cliente_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
+                # Verificar si existe la columna foto_url, si no existe, crearla
+                try:
+                    cursor.execute("SHOW COLUMNS FROM clientes LIKE 'foto_url'")
+                    if not cursor.fetchone():
+                        cursor.execute("ALTER TABLE clientes ADD COLUMN foto_url VARCHAR(500) NULL")
+                        logging.info("Columna foto_url agregada a la tabla clientes")
+                except Exception as e:
+                    logging.warning(f"No se pudo verificar/crear columna foto_url: {e}")
+                
                 cursor.execute("""
                     UPDATE clientes 
                     SET nombre = %s, apellido = %s, documento = %s, tipo_documento = %s,
                         telefono = %s, email = %s, direccion = %s, estado = %s,
-                        genero = %s, fecha_nacimiento = %s
+                        genero = %s, fecha_nacimiento = %s, foto_url = %s
                     WHERE id = %s
                 """, (
                     data.get("nombre"),
@@ -3177,6 +3504,7 @@ def editar_cliente_sanchezpharma():
                     data.get("estado", "activo"),
                     data.get("genero"),
                     data.get("fecha_nacimiento"),
+                    data.get("foto_url"),
                     data.get("id")
                 ))
             conn.commit()
@@ -3424,20 +3752,28 @@ def registrar_venta_sanchezpharma():
                 descuento_valor = data.get("descuento", 0)
                 descuento = Decimal(str(descuento_valor)) if descuento_valor else Decimal('0')
                 
-                # Calcular total (subtotal - descuento)
+                # Obtener costo_envio si existe
+                costo_envio_valor = data.get("costo_envio", 0)
+                costo_envio = Decimal(str(costo_envio_valor)) if costo_envio_valor else Decimal('0')
+                
+                # Calcular subtotal de productos con descuento (sin costo de envío)
                 # Nota: El subtotal calculado ya incluye el IGV del 18% porque los precios_venta
                 # de los productos ya incluyen el IGV (según normativa peruana)
-                total = subtotal - descuento
+                subtotal_con_descuento = subtotal - descuento
                 
-                # Calcular IGV (18%) a partir del total que ya lo incluye
+                # Calcular IGV (18%) a partir del subtotal de productos (sin costo de envío)
                 # En Perú, el IGV está incluido en el precio, por lo que debemos extraerlo
-                # Fórmula: IGV = Total * (0.18 / 1.18)
-                #          Subtotal sin IGV = Total - IGV
+                # Fórmula: IGV = Subtotal * (0.18 / 1.18)
+                #          Subtotal sin IGV = Subtotal - IGV
                 IGV_PORCENTAJE = Decimal('0.18')  # 18%
-                # Calcular impuesto directamente
-                impuesto = total * IGV_PORCENTAJE / (Decimal('1') + IGV_PORCENTAJE)
+                # Calcular impuesto sobre el subtotal de productos (sin costo de envío)
+                impuesto = subtotal_con_descuento * IGV_PORCENTAJE / (Decimal('1') + IGV_PORCENTAJE)
                 # Calcular subtotal sin IGV
-                subtotal_sin_igv = total - impuesto
+                subtotal_sin_igv = subtotal_con_descuento - impuesto
+                
+                # Calcular total final (subtotal con descuento + costo de envío)
+                # El costo de envío NO tiene IGV
+                total = subtotal_con_descuento + costo_envio
                 
                 # Redondear a 2 decimales
                 impuesto = round(impuesto, 2)
@@ -3492,14 +3828,25 @@ def registrar_venta_sanchezpharma():
                 except Exception as e:
                     logging.warning(f"No se pudo verificar/crear columna codigo_qr: {e}")
                 
+                # Verificar si existe la columna costo_envio, si no existe, crearla
+                try:
+                    cursor.execute("SHOW COLUMNS FROM ventas LIKE 'costo_envio'")
+                    if not cursor.fetchone():
+                        cursor.execute("ALTER TABLE ventas ADD COLUMN costo_envio DECIMAL(10,2) DEFAULT 0.00 AFTER total")
+                        logging.info("Columna costo_envio agregada a la tabla ventas")
+                except Exception as e:
+                    logging.warning(f"No se pudo verificar/crear columna costo_envio: {e}")
+                
                 # Generar código QR único para la venta
                 # Formato: VENTA-{venta_id}-{hash_seguridad}
                 # Primero insertamos sin código QR, luego lo generamos con el ID
+                # Nota: costo_envio ya fue calculado arriba antes del cálculo del total
+                
                 cursor.execute("""
                     INSERT INTO ventas 
                     (cliente_id, usuario_id, tipo_venta, metodo_pago_id,
-                     subtotal, descuento, impuesto, total, estado, observaciones)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     subtotal, descuento, impuesto, total, costo_envio, estado, observaciones)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     data.get("cliente_id"),
                     usuario_id_final,
@@ -3509,6 +3856,7 @@ def registrar_venta_sanchezpharma():
                     descuento,
                     impuesto,
                     total,
+                    costo_envio,
                     estado_inicial,
                     data.get("observaciones")
                 ))
@@ -4368,17 +4716,7 @@ def dashboard_resumen_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                # Intentar usar stored procedure si existe
-                try:
-                    cursor.callproc('dashboard_resumen')
-                    results = cursor.fetchall()
-                    # Si el stored procedure devuelve datos, usarlos
-                    if results:
-                        return jsonify({"code": 1, "data": results, "message": "Dashboard resumen obtenido correctamente"})
-                except Exception as proc_error:
-                    logging.warning(f"Stored procedure no disponible, usando consultas directas: {proc_error}")
-                
-                # Si el stored procedure no existe o no devuelve datos, calcular manualmente
+                # Calcular directamente desde la tabla ventas (ignorando stored procedures y vistas)
                 resultados = []
                 
                 # Obtener fecha actual del servidor para debug
@@ -4386,63 +4724,21 @@ def dashboard_resumen_sanchezpharma():
                 fecha_info = cursor.fetchone()
                 logging.info(f"Fechas del servidor - NOW(): {fecha_info.get('ahora')}, CURDATE(): {fecha_info.get('hoy')}, Perú: {fecha_info.get('ahora_peru')}, Hoy Perú: {fecha_info.get('hoy_peru')}")
                 
-                # Ventas del día - usar múltiples métodos para asegurar que funcione
+                # Ventas del día - Ajustar fecha_venta a zona horaria de Perú (UTC-5)
                 # IMPORTANTE: Incluir todas las ventas excepto las anuladas (pendiente, completada, etc.)
-                # Método 1: CURDATE() (zona horaria del servidor)
                 cursor.execute("""
                     SELECT 
                         COUNT(*) as cantidad, 
                         COALESCE(SUM(total), 0) as monto
                     FROM ventas
-                    WHERE DATE(fecha_venta) = CURDATE()
+                    WHERE DATE(DATE_SUB(fecha_venta, INTERVAL 5 HOUR)) = DATE(DATE_SUB(NOW(), INTERVAL 5 HOUR))
                     AND estado != 'anulada'
                     AND estado IS NOT NULL
                 """)
                 ventas_dia = cursor.fetchone()
-                logging.info(f"Ventas del día (CURDATE): {ventas_dia}")
-                
-                # Método 2: Ajuste UTC-5 (Perú/Lima)
-                cursor.execute("""
-                    SELECT 
-                        COUNT(*) as cantidad, 
-                        COALESCE(SUM(total), 0) as monto
-                    FROM ventas
-                    WHERE DATE(fecha_venta) = DATE(DATE_SUB(NOW(), INTERVAL 5 HOUR))
-                    AND estado != 'anulada'
-                    AND estado IS NOT NULL
-                """)
-                ventas_dia_utc5 = cursor.fetchone()
-                logging.info(f"Ventas del día (UTC-5): {ventas_dia_utc5}")
-                
-                # Método 3: Consulta más amplia que incluya ventas de las últimas 24 horas
-                cursor.execute("""
-                    SELECT 
-                        COUNT(*) as cantidad, 
-                        COALESCE(SUM(total), 0) as monto
-                    FROM ventas
-                    WHERE fecha_venta >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
-                    AND fecha_venta < DATE_ADD(NOW(), INTERVAL 1 DAY)
-                    AND estado != 'anulada'
-                    AND estado IS NOT NULL
-                """)
-                ventas_dia_24h = cursor.fetchone()
-                logging.info(f"Ventas del día (últimas 24h): {ventas_dia_24h}")
-                
-                # Usar el que tenga más resultados
-                if ventas_dia_24h and (ventas_dia_24h.get('cantidad', 0) or 0) > (ventas_dia.get('cantidad', 0) or 0):
-                    ventas_dia = ventas_dia_24h
-                    logging.info("Usando ventas del día con rango de 24 horas")
-                elif ventas_dia_utc5 and (ventas_dia_utc5.get('cantidad', 0) or 0) > (ventas_dia.get('cantidad', 0) or 0):
-                    ventas_dia = ventas_dia_utc5
-                    logging.info("Usando ventas del día con ajuste UTC-5")
-                
-                # Asegurar que cantidad sea un entero
-                cantidad_dia = 0
-                monto_dia = 0.0
-                if ventas_dia:
-                    cantidad_dia = int(ventas_dia.get('cantidad', 0) or 0)
-                    monto_dia = float(ventas_dia.get('monto', 0) or 0)
-                    logging.info(f"Ventas del día finales - Cantidad: {cantidad_dia}, Monto: {monto_dia}")
+                cantidad_dia = int(ventas_dia.get('cantidad', 0) or 0) if ventas_dia else 0
+                monto_dia = float(ventas_dia.get('monto', 0) or 0) if ventas_dia else 0.0
+                logging.info(f"Ventas del día (UTC-5) - Cantidad: {cantidad_dia}, Monto: {monto_dia}")
                 
                 resultados.append({
                     'tipo': 'ventas_dia',
@@ -4450,85 +4746,22 @@ def dashboard_resumen_sanchezpharma():
                     'monto': monto_dia
                 })
                 
-                # Ventas del mes - usar múltiples métodos
+                # Ventas del mes - Ajustar fecha_venta a zona horaria de Perú (UTC-5)
                 # IMPORTANTE: Incluir todas las ventas excepto las anuladas (pendiente, completada, etc.)
-                # Método 1: YEAR/MONTH con CURDATE()
                 cursor.execute("""
                     SELECT 
                         COUNT(*) as cantidad, 
                         COALESCE(SUM(total), 0) as monto
                     FROM ventas
-                    WHERE YEAR(fecha_venta) = YEAR(CURDATE())
-                    AND MONTH(fecha_venta) = MONTH(CURDATE())
+                    WHERE YEAR(DATE_SUB(fecha_venta, INTERVAL 5 HOUR)) = YEAR(DATE_SUB(NOW(), INTERVAL 5 HOUR))
+                    AND MONTH(DATE_SUB(fecha_venta, INTERVAL 5 HOUR)) = MONTH(DATE_SUB(NOW(), INTERVAL 5 HOUR))
                     AND estado != 'anulada'
                     AND estado IS NOT NULL
                 """)
                 ventas_mes = cursor.fetchone()
-                logging.info(f"Ventas del mes (CURDATE): {ventas_mes}")
-                
-                # Método 2: Ajuste UTC-5
-                cursor.execute("""
-                    SELECT 
-                        COUNT(*) as cantidad, 
-                        COALESCE(SUM(total), 0) as monto
-                    FROM ventas
-                    WHERE YEAR(fecha_venta) = YEAR(DATE_SUB(NOW(), INTERVAL 5 HOUR))
-                    AND MONTH(fecha_venta) = MONTH(DATE_SUB(NOW(), INTERVAL 5 HOUR))
-                    AND estado != 'anulada'
-                    AND estado IS NOT NULL
-                """)
-                ventas_mes_utc5 = cursor.fetchone()
-                logging.info(f"Ventas del mes (UTC-5): {ventas_mes_utc5}")
-                
-                # Método 3: Consulta más amplia usando DATE_FORMAT
-                cursor.execute("""
-                    SELECT 
-                        COUNT(*) as cantidad, 
-                        COALESCE(SUM(total), 0) as monto
-                    FROM ventas
-                    WHERE DATE_FORMAT(fecha_venta, '%Y-%m') = DATE_FORMAT(NOW(), '%Y-%m')
-                    AND estado != 'anulada'
-                    AND estado IS NOT NULL
-                """)
-                ventas_mes_format = cursor.fetchone()
-                logging.info(f"Ventas del mes (DATE_FORMAT): {ventas_mes_format}")
-                
-                # Usar el que tenga más resultados
-                if ventas_mes_format and (ventas_mes_format.get('cantidad', 0) or 0) > (ventas_mes.get('cantidad', 0) or 0):
-                    ventas_mes = ventas_mes_format
-                    logging.info("Usando ventas del mes con DATE_FORMAT")
-                elif ventas_mes_utc5 and (ventas_mes_utc5.get('cantidad', 0) or 0) > (ventas_mes.get('cantidad', 0) or 0):
-                    ventas_mes = ventas_mes_utc5
-                    logging.info("Usando ventas del mes con ajuste UTC-5")
-                
-                # Asegurar que cantidad sea un entero
-                cantidad_mes = 0
-                monto_mes = 0.0
-                if ventas_mes:
-                    cantidad_mes = int(ventas_mes.get('cantidad', 0) or 0)
-                    monto_mes = float(ventas_mes.get('monto', 0) or 0)
-                    logging.info(f"Ventas del mes finales - Cantidad: {cantidad_mes}, Monto: {monto_mes}")
-                
-                # Verificar todas las ventas para debug (incluyendo estado pendiente)
-                cursor.execute("""
-                    SELECT 
-                        COUNT(*) as total, 
-                        COUNT(CASE WHEN estado = 'pendiente' THEN 1 END) as ventas_pendientes,
-                        COUNT(CASE WHEN estado = 'completada' THEN 1 END) as ventas_completadas,
-                        MIN(fecha_venta) as primera_venta,
-                        MAX(fecha_venta) as ultima_venta,
-                        COUNT(CASE WHEN DATE(fecha_venta) = CURDATE() THEN 1 END) as ventas_hoy_curdate,
-                        COUNT(CASE WHEN DATE(fecha_venta) = DATE(DATE_SUB(NOW(), INTERVAL 5 HOUR)) THEN 1 END) as ventas_hoy_utc5,
-                        COUNT(CASE WHEN YEAR(fecha_venta) = YEAR(CURDATE()) AND MONTH(fecha_venta) = MONTH(CURDATE()) THEN 1 END) as ventas_mes_curdate,
-                        COUNT(CASE WHEN YEAR(fecha_venta) = YEAR(DATE_SUB(NOW(), INTERVAL 5 HOUR)) AND MONTH(fecha_venta) = MONTH(DATE_SUB(NOW(), INTERVAL 5 HOUR)) THEN 1 END) as ventas_mes_utc5
-                    FROM ventas
-                    WHERE estado != 'anulada'
-                """)
-                debug_info = cursor.fetchone()
-                logging.info(f"Debug ventas - Total: {debug_info.get('total')}, Pendientes: {debug_info.get('ventas_pendientes')}, Completadas: {debug_info.get('ventas_completadas')}")
-                logging.info(f"Debug - Primera: {debug_info.get('primera_venta')}, Última: {debug_info.get('ultima_venta')}")
-                logging.info(f"Debug - Hoy (CURDATE): {debug_info.get('ventas_hoy_curdate')}, Hoy (UTC-5): {debug_info.get('ventas_hoy_utc5')}")
-                logging.info(f"Debug - Mes (CURDATE): {debug_info.get('ventas_mes_curdate')}, Mes (UTC-5): {debug_info.get('ventas_mes_utc5')}")
+                cantidad_mes = int(ventas_mes.get('cantidad', 0) or 0) if ventas_mes else 0
+                monto_mes = float(ventas_mes.get('monto', 0) or 0) if ventas_mes else 0.0
+                logging.info(f"Ventas del mes (UTC-5) - Cantidad: {cantidad_mes}, Monto: {monto_mes}")
                 
                 resultados.append({
                     'tipo': 'ventas_mes',
@@ -4560,6 +4793,33 @@ def dashboard_resumen_sanchezpharma():
                 resultados.append({
                     'tipo': 'envios_pendientes',
                     'cantidad': envios_pendientes['cantidad'] if envios_pendientes else 0,
+                    'monto': 0.0
+                })
+                
+                # Envíos del día - Ajustar fecha_creacion a zona horaria de Perú (UTC-5)
+                cursor.execute("""
+                    SELECT COUNT(*) as cantidad
+                    FROM envios
+                    WHERE DATE(DATE_SUB(fecha_creacion, INTERVAL 5 HOUR)) = DATE(DATE_SUB(NOW(), INTERVAL 5 HOUR))
+                """)
+                envios_dia = cursor.fetchone()
+                resultados.append({
+                    'tipo': 'envios_dia',
+                    'cantidad': envios_dia['cantidad'] if envios_dia else 0,
+                    'monto': 0.0
+                })
+                
+                # Envíos del mes - Ajustar fecha_creacion a zona horaria de Perú (UTC-5)
+                cursor.execute("""
+                    SELECT COUNT(*) as cantidad
+                    FROM envios
+                    WHERE YEAR(DATE_SUB(fecha_creacion, INTERVAL 5 HOUR)) = YEAR(DATE_SUB(NOW(), INTERVAL 5 HOUR))
+                    AND MONTH(DATE_SUB(fecha_creacion, INTERVAL 5 HOUR)) = MONTH(DATE_SUB(NOW(), INTERVAL 5 HOUR))
+                """)
+                envios_mes = cursor.fetchone()
+                resultados.append({
+                    'tipo': 'envios_mes',
+                    'cantidad': envios_mes['cantidad'] if envios_mes else 0,
                     'monto': 0.0
                 })
                 
@@ -4756,23 +5016,19 @@ def vista_ventas_diarias_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                # Intentar usar vista si existe, sino calcular directamente
-                try:
-                    cursor.execute("SELECT * FROM vista_ventas_diarias ORDER BY fecha DESC LIMIT 30")
-                    data = cursor.fetchall()
-                    if data:
-                        return jsonify({"code": 1, "data": data, "message": "Ventas diarias obtenidas correctamente"})
-                except Exception as view_error:
-                    logging.warning(f"Vista no disponible, usando consulta directa: {view_error}")
-                
-                # Calcular directamente (usando zona horaria de Perú/Lima - UTC-5)
+                # Calcular directamente desde la tabla ventas (ignorando vistas para datos actualizados)
+                # Usando zona horaria de Perú/Lima - UTC-5
                 # IMPORTANTE: Incluir todas las ventas excepto las anuladas (pendiente, completada, etc.)
                 cursor.execute("""
                     SELECT 
                         DATE(DATE_SUB(fecha_venta, INTERVAL 5 HOUR)) as fecha,
                         COUNT(*) as total_ventas,
                         COALESCE(SUM(total), 0) as ingreso_total,
-                        COALESCE(AVG(total), 0) as promedio_venta
+                        COALESCE(AVG(total), 0) as promedio_venta,
+                        COALESCE(MIN(total), 0) as venta_minima,
+                        COALESCE(MAX(total), 0) as venta_maxima,
+                        SUM(CASE WHEN tipo_venta = 'recojo_tienda' THEN 1 ELSE 0 END) as ventas_recojo,
+                        SUM(CASE WHEN tipo_venta = 'envio_domicilio' THEN 1 ELSE 0 END) as ventas_envio
                     FROM ventas
                     WHERE estado != 'anulada'
                     AND estado IS NOT NULL
@@ -4797,24 +5053,18 @@ def vista_ventas_mensuales_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                # Intentar usar vista si existe, sino calcular directamente
-                try:
-                    cursor.execute("SELECT * FROM vista_ventas_mensuales ORDER BY año DESC, mes DESC LIMIT 12")
-                    data = cursor.fetchall()
-                    if data:
-                        return jsonify({"code": 1, "data": data, "message": "Ventas mensuales obtenidas correctamente"})
-                except Exception as view_error:
-                    logging.warning(f"Vista no disponible, usando consulta directa: {view_error}")
-                
-                # Calcular directamente (usando zona horaria de Perú/Lima - UTC-5)
+                # Calcular directamente desde la tabla ventas (ignorando vistas para datos actualizados)
+                # Usando zona horaria de Perú/Lima - UTC-5
                 # IMPORTANTE: Incluir todas las ventas excepto las anuladas (pendiente, completada, etc.)
                 cursor.execute("""
                     SELECT 
-                        MONTH(DATE_SUB(fecha_venta, INTERVAL 5 HOUR)) as mes,
                         YEAR(DATE_SUB(fecha_venta, INTERVAL 5 HOUR)) as año,
+                        MONTH(DATE_SUB(fecha_venta, INTERVAL 5 HOUR)) as mes,
                         COUNT(*) as total_ventas,
                         COALESCE(SUM(total), 0) as ingreso_total,
-                        COUNT(DISTINCT cliente_id) as clientes_unicos
+                        COALESCE(AVG(total), 0) as promedio_venta,
+                        COUNT(DISTINCT cliente_id) as clientes_unicos,
+                        COUNT(DISTINCT usuario_id) as vendedores
                     FROM ventas
                     WHERE estado != 'anulada'
                     AND estado IS NOT NULL
@@ -6223,6 +6473,28 @@ def backups_historial_sanchezpharma():
         logging.info(f"backups_historial_sanchezpharma: current_identity: {current_user}")
         
         if not current_user:
+            # Intentar procesar el token manualmente si Flask-JWT no lo procesó
+            if auth_header:
+                try:
+                    if auth_header.startswith("Bearer "):
+                        token = auth_header.replace("Bearer ", "").strip()
+                    elif auth_header.startswith("JWT "):
+                        token = auth_header.replace("JWT ", "").strip()
+                    else:
+                        token = auth_header.strip()
+                    
+                    if token:
+                        # Decodificar el token sin verificar expiración para permitir renovación
+                        payload = pyjwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'], options={"verify_exp": False})
+                        user = identity(payload)
+                        if user:
+                            current_user = user
+                            g.current_identity = user
+                            logging.info(f"backups_historial_sanchezpharma: Usuario establecido manualmente: {user.id}")
+                except Exception as e:
+                    logging.error(f"backups_historial_sanchezpharma: Error al procesar token manualmente: {repr(e)}")
+        
+        if not current_user:
             # Intentar obtener información adicional del token
             try:
                 token_data = getattr(g, 'jwt_payload', None)
@@ -6326,6 +6598,28 @@ def generar_backup_bd_sanchezpharma():
         current_user = getattr(g, 'current_identity', None)
         logging.info(f"generar_backup_bd_sanchezpharma: current_identity: {current_user}")
         logging.info(f"generar_backup_bd_sanchezpharma: g.current_identity type: {type(current_user)}")
+        
+        if not current_user:
+            # Intentar procesar el token manualmente si Flask-JWT no lo procesó
+            if auth_header:
+                try:
+                    if auth_header.startswith("Bearer "):
+                        token = auth_header.replace("Bearer ", "").strip()
+                    elif auth_header.startswith("JWT "):
+                        token = auth_header.replace("JWT ", "").strip()
+                    else:
+                        token = auth_header.strip()
+                    
+                    if token:
+                        # Decodificar el token sin verificar expiración para permitir renovación
+                        payload = pyjwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'], options={"verify_exp": False})
+                        user = identity(payload)
+                        if user:
+                            current_user = user
+                            g.current_identity = user
+                            logging.info(f"generar_backup_bd_sanchezpharma: Usuario establecido manualmente: {user.id}")
+                except Exception as e:
+                    logging.error(f"generar_backup_bd_sanchezpharma: Error al procesar token manualmente: {repr(e)}")
         
         if not current_user:
             # Intentar obtener información adicional del token
@@ -6448,6 +6742,30 @@ def generar_backup_archivos_sanchezpharma():
     try:
         # Obtener usuario del token
         current_user = getattr(g, 'current_identity', None)
+        
+        if not current_user:
+            # Intentar procesar el token manualmente si Flask-JWT no lo procesó
+            auth_header = request.headers.get("Authorization")
+            if auth_header:
+                try:
+                    if auth_header.startswith("Bearer "):
+                        token = auth_header.replace("Bearer ", "").strip()
+                    elif auth_header.startswith("JWT "):
+                        token = auth_header.replace("JWT ", "").strip()
+                    else:
+                        token = auth_header.strip()
+                    
+                    if token:
+                        # Decodificar el token sin verificar expiración para permitir renovación
+                        payload = pyjwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'], options={"verify_exp": False})
+                        user = identity(payload)
+                        if user:
+                            current_user = user
+                            g.current_identity = user
+                            logging.info(f"generar_backup_archivos_sanchezpharma: Usuario establecido manualmente: {user.id}")
+                except Exception as e:
+                    logging.error(f"generar_backup_archivos_sanchezpharma: Error al procesar token manualmente: {repr(e)}")
+            
         if not current_user:
             return jsonify({"code": 0, "message": "Usuario no autenticado"}), 401
         
@@ -6553,6 +6871,30 @@ def generar_backup_completo_sanchezpharma():
     try:
         # Obtener usuario del token
         current_user = getattr(g, 'current_identity', None)
+        
+        if not current_user:
+            # Intentar procesar el token manualmente si Flask-JWT no lo procesó
+            auth_header = request.headers.get("Authorization")
+            if auth_header:
+                try:
+                    if auth_header.startswith("Bearer "):
+                        token = auth_header.replace("Bearer ", "").strip()
+                    elif auth_header.startswith("JWT "):
+                        token = auth_header.replace("JWT ", "").strip()
+                    else:
+                        token = auth_header.strip()
+                    
+                    if token:
+                        # Decodificar el token sin verificar expiración para permitir renovación
+                        payload = pyjwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'], options={"verify_exp": False})
+                        user = identity(payload)
+                        if user:
+                            current_user = user
+                            g.current_identity = user
+                            logging.info(f"generar_backup_completo_sanchezpharma: Usuario establecido manualmente: {user.id}")
+                except Exception as e:
+                    logging.error(f"generar_backup_completo_sanchezpharma: Error al procesar token manualmente: {repr(e)}")
+            
         if not current_user:
             return jsonify({"code": 0, "message": "Usuario no autenticado"}), 401
         
@@ -6765,6 +7107,30 @@ def descargar_backup_sanchezpharma(backup_id):
     try:
         # Obtener usuario del token
         current_user = getattr(g, 'current_identity', None)
+        
+        if not current_user:
+            # Intentar procesar el token manualmente si Flask-JWT no lo procesó
+            auth_header = request.headers.get("Authorization")
+            if auth_header:
+                try:
+                    if auth_header.startswith("Bearer "):
+                        token = auth_header.replace("Bearer ", "").strip()
+                    elif auth_header.startswith("JWT "):
+                        token = auth_header.replace("JWT ", "").strip()
+                    else:
+                        token = auth_header.strip()
+                    
+                    if token:
+                        # Decodificar el token sin verificar expiración para permitir renovación
+                        payload = pyjwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'], options={"verify_exp": False})
+                        user = identity(payload)
+                        if user:
+                            current_user = user
+                            g.current_identity = user
+                            logging.info(f"descargar_backup_sanchezpharma: Usuario establecido manualmente: {user.id}")
+                except Exception as e:
+                    logging.error(f"descargar_backup_sanchezpharma: Error al procesar token manualmente: {repr(e)}")
+            
         if not current_user:
             return jsonify({"code": 0, "message": "Usuario no autenticado"}), 401
         

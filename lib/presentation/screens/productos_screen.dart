@@ -721,6 +721,108 @@ class _ProductosScreenState extends State<ProductosScreen> {
     }
   }
 
+  Future<void> _incrementarStock(ProductoModel producto) async {
+    if (producto.id == null) return;
+
+    final cantidadController = TextEditingController();
+    
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Incrementar Stock'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Producto: ${producto.nombre}'),
+            const SizedBox(height: 8),
+            Text('Stock actual: ${producto.stockActual}'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: cantidadController,
+              decoration: const InputDecoration(
+                labelText: 'Cantidad a agregar',
+                hintText: 'Ingrese la cantidad',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final cantidad = int.tryParse(cantidadController.text);
+              if (cantidad != null && cantidad > 0) {
+                Navigator.of(context).pop({'cantidad': cantidad});
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Ingrese una cantidad válida mayor a 0'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Agregar'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == null || result['cantidad'] == null) return;
+
+    final cantidad = result['cantidad'] as int;
+
+    try {
+      final response = await _apiService.incrementarStockProducto({
+        'producto_id': producto.id,
+        'cantidad': cantidad,
+      });
+
+      if (response.response.statusCode == 200) {
+        final data = response.data;
+        if (data['code'] == 1) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(data['message'] ?? 'Stock incrementado correctamente'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+          _cargarProductos();
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(data['message'] ?? 'Error al incrementar stock'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Color _getStockColor(ProductoModel producto) {
     if (producto.stockActual <= 0) return Colors.red;
     if (producto.stockActual <= producto.stockMinimo) return Colors.orange;
@@ -926,6 +1028,11 @@ class _ProductosScreenState extends State<ProductosScreen> {
                                     trailing: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.add_circle, color: Colors.blue),
+                                          onPressed: () => _incrementarStock(producto),
+                                          tooltip: 'Agregar Stock',
+                                        ),
                                         IconButton(
                                           icon: const Icon(Icons.edit, color: Colors.green),
                                           onPressed: () => _mostrarFormularioProducto(producto: producto),

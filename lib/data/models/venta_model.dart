@@ -25,6 +25,8 @@ class VentaModel {
   final double impuesto;
   @JsonKey(name: 'total', fromJson: _precioFromJson)
   final double total;
+  @JsonKey(name: 'costo_envio', fromJson: _precioFromJson)
+  final double? costoEnvio;
   final String estado;
   final String? observaciones;
   @JsonKey(name: 'fecha_venta', fromJson: DateParser.fromJson)
@@ -55,6 +57,7 @@ class VentaModel {
     required this.descuento,
     required this.impuesto,
     required this.total,
+    this.costoEnvio,
     this.estado = 'pendiente',
     this.observaciones,
     this.fechaVenta,

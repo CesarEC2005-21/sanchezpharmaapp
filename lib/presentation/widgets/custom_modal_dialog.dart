@@ -179,11 +179,16 @@ class ModalSectionBuilder {
     String? Function(String?)? validator,
     bool required = false,
     List<TextInputFormatter>? inputFormatters,
+    bool readOnly = false,
+    bool? enabled,
   }) {
+    final isEnabled = enabled ?? !readOnly;
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: TextFormField(
         controller: controller,
+        readOnly: readOnly,
+        enabled: isEnabled,
         decoration: InputDecoration(
           labelText: required ? '$label *' : label,
           hintText: hint,
@@ -200,12 +205,16 @@ class ModalSectionBuilder {
             borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: AppColors.primary, width: 2),
           ),
+          disabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
           errorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: AppColors.error),
           ),
           filled: true,
-          fillColor: Colors.grey.shade50,
+          fillColor: isEnabled ? Colors.grey.shade50 : Colors.grey.shade200,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),
         maxLines: maxLines,

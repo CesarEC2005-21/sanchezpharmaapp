@@ -256,6 +256,8 @@ class _ReportesScreenState extends State<ReportesScreen> {
   Widget _buildDashboardCards() {
     final ventasDia = _dashboardData!['ventas_dia'];
     final ventasMes = _dashboardData!['ventas_mes'];
+    final enviosDia = _dashboardData!['envios_dia'];
+    final enviosMes = _dashboardData!['envios_mes'];
     final stockBajo = _dashboardData!['stock_bajo'];
     final enviosPendientes = _dashboardData!['envios_pendientes'];
     final valorInventario = _dashboardData!['valor_inventario'];
@@ -268,6 +270,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
+        // Ventas del día y mes
         Row(
           children: [
             Expanded(
@@ -292,6 +295,31 @@ class _ReportesScreenState extends State<ReportesScreen> {
           ],
         ),
         const SizedBox(height: 12),
+        // Envíos del día y mes
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricCard(
+                'Envíos Hoy',
+                enviosDia?['cantidad']?.toString() ?? '0',
+                'Envíos realizados',
+                Colors.blue,
+                Icons.local_shipping,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildMetricCard(
+                'Envíos Mes',
+                enviosMes?['cantidad']?.toString() ?? '0',
+                'Envíos realizados',
+                Colors.blue,
+                Icons.calendar_today,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
         Row(
           children: [
             Expanded(
@@ -310,7 +338,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
                 enviosPendientes?['cantidad']?.toString() ?? '0',
                 'Envíos',
                 Colors.purple,
-                Icons.local_shipping,
+                Icons.pending_actions,
               ),
             ),
           ],

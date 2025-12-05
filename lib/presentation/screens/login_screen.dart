@@ -526,7 +526,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     // Título
                     Text(
-                      'Sánchez Pharma',
+                      'FarmaGo',
                       style: TextStyle(
                         fontSize: ResponsiveHelper.titleFontSize(context) + 4,
                         fontWeight: FontWeight.bold,

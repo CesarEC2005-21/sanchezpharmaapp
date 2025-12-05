@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/notifiers/cart_notifier.dart';
+import '../../data/api/dio_client.dart';
+import '../../data/api/api_service.dart';
+import '../../data/models/producto_model.dart';
 import '../widgets/cliente_bottom_nav.dart';
 import 'pago_screen.dart';
 
@@ -13,6 +16,7 @@ class CarritoScreen extends StatefulWidget {
 }
 
 class _CarritoScreenState extends State<CarritoScreen> {
+  final ApiService _apiService = ApiService(DioClient.createDio());
   List<Map<String, dynamic>> _carrito = [];
   bool _isLoading = true;
 
@@ -37,7 +41,16 @@ class _CarritoScreenState extends State<CarritoScreen> {
         _carrito = [];
         for (var item in items) {
           if (item.isNotEmpty) {
-            final parts = item.split(':');
+            // Separar imagen si existe (formato: id:nombre:precio:cantidad:stock||imagen_url)
+            final imagenIndex = item.indexOf('||');
+            String itemData = item;
+            String? imagenUrl;
+            if (imagenIndex != -1) {
+              itemData = item.substring(0, imagenIndex);
+              imagenUrl = item.substring(imagenIndex + 2);
+            }
+            
+            final parts = itemData.split(':');
             if (parts.length >= 4) {
               _carrito.add({
                 'id': int.parse(parts[0]),
@@ -45,6 +58,7 @@ class _CarritoScreenState extends State<CarritoScreen> {
                 'precio': double.parse(parts[2]),
                 'cantidad': int.parse(parts[3]),
                 'stock': int.parse(parts.length > 4 ? parts[4] : '0'),
+                'imagen_url': imagenUrl,
               });
             }
           }
@@ -57,6 +71,9 @@ class _CarritoScreenState extends State<CarritoScreen> {
       _carrito = [];
     }
 
+    // Actualizar imágenes de productos que no tienen imagen
+    await _actualizarImagenesProductos();
+    
     setState(() {
       _isLoading = false;
     });
@@ -64,6 +81,56 @@ class _CarritoScreenState extends State<CarritoScreen> {
     // Actualizar contador global
     final totalItems = _carrito.fold(0, (sum, item) => sum + (item['cantidad'] as int));
     CartNotifier.instance.updateCount(totalItems);
+  }
+
+  Future<void> _actualizarImagenesProductos() async {
+    // Verificar si hay productos sin imagen
+    final productosSinImagen = _carrito.where((item) {
+      final imagenUrl = item['imagen_url'] as String?;
+      return imagenUrl == null || imagenUrl.isEmpty;
+    }).toList();
+
+    if (productosSinImagen.isEmpty) return;
+
+    try {
+      // Cargar todos los productos desde la API
+      final response = await _apiService.getProductos();
+      if (response.response.statusCode == 200) {
+        final data = response.data;
+        if (data['code'] == 1 && data['data'] != null) {
+          final List<dynamic> productosJson = data['data'];
+          final productos = productosJson.map((json) => ProductoModel.fromJson(json)).toList();
+          
+          // Crear un mapa de productos por ID para búsqueda rápida
+          final productosMap = {for (var p in productos) p.id: p};
+          
+          // Actualizar imágenes en el carrito
+          bool actualizado = false;
+          for (var item in _carrito) {
+            final imagenUrl = item['imagen_url'] as String?;
+            if (imagenUrl == null || imagenUrl.isEmpty) {
+              final productoId = item['id'] as int;
+              final producto = productosMap[productoId];
+              if (producto != null) {
+                final nuevaImagenUrl = producto.imagenUrl ?? (producto.imagenes != null && producto.imagenes!.isNotEmpty ? producto.imagenes!.first : null);
+                if (nuevaImagenUrl != null && nuevaImagenUrl.isNotEmpty) {
+                  item['imagen_url'] = nuevaImagenUrl;
+                  actualizado = true;
+                }
+              }
+            }
+          }
+          
+          // Guardar carrito actualizado si hubo cambios
+          if (actualizado) {
+            await _guardarCarrito();
+          }
+        }
+      }
+    } catch (e) {
+      print('Error al actualizar imágenes de productos: $e');
+      // No mostrar error al usuario, simplemente continuar sin imágenes
+    }
   }
 
   void _actualizarCantidad(int index, int nuevaCantidad) {
@@ -92,7 +159,9 @@ class _CarritoScreenState extends State<CarritoScreen> {
       CartNotifier.instance.updateCount(0);
     } else {
       final carritoString = _carrito.map((item) {
-        return '${item['id']}:${item['nombre']}:${item['precio']}:${item['cantidad']}:${item['stock']}';
+        final base = '${item['id']}:${item['nombre']}:${item['precio']}:${item['cantidad']}:${item['stock']}';
+        final imagenUrl = item['imagen_url'] as String?;
+        return imagenUrl != null && imagenUrl.isNotEmpty ? '$base||$imagenUrl' : base;
       }).join('|');
       await prefs.setString('carrito_cliente', carritoString);
       // Actualizar el contador global
@@ -180,13 +249,32 @@ class _CarritoScreenState extends State<CarritoScreen> {
                         itemCount: _carrito.length,
                         itemBuilder: (context, index) {
                           final item = _carrito[index];
+                          final imagenUrl = item['imagen_url'] as String?;
+                          final tieneImagen = imagenUrl != null && imagenUrl.isNotEmpty;
+                          
                           return Card(
                             margin: const EdgeInsets.only(bottom: 8),
                             child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: Colors.green.shade100,
-                                child: Icon(Icons.medication, color: Colors.green.shade700),
-                              ),
+                              leading: tieneImagen
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.network(
+                                        imagenUrl!,
+                                        width: 50,
+                                        height: 50,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return CircleAvatar(
+                                            backgroundColor: Colors.green.shade100,
+                                            child: Icon(Icons.medication, color: Colors.green.shade700),
+                                          );
+                                        },
+                                      ),
+                                    )
+                                  : CircleAvatar(
+                                      backgroundColor: Colors.green.shade100,
+                                      child: Icon(Icons.medication, color: Colors.green.shade700),
+                                    ),
                               title: Text(item['nombre'] as String),
                               subtitle: Text('S/ ${(item['precio'] as num).toStringAsFixed(2)} c/u'),
                               trailing: Row(

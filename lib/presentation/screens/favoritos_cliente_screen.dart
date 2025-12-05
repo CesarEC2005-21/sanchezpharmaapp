@@ -167,6 +167,11 @@ class _FavoritosClienteScreenState extends State<FavoritosClienteScreen> {
       final cantidadActual = carrito[index]['cantidad'] as int;
       if (cantidadActual < producto.stockActual) {
         carrito[index]['cantidad'] = cantidadActual + 1;
+        // Actualizar imagen si no existe o está vacía
+        if (carrito[index]['imagen_url'] == null || (carrito[index]['imagen_url'] as String).isEmpty) {
+          final imagenUrl = producto.imagenUrl ?? (producto.imagenes != null && producto.imagenes!.isNotEmpty ? producto.imagenes!.first : null);
+          carrito[index]['imagen_url'] = imagenUrl;
+        }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -179,18 +184,22 @@ class _FavoritosClienteScreenState extends State<FavoritosClienteScreen> {
         return;
       }
     } else {
+      final imagenUrl = producto.imagenUrl ?? (producto.imagenes != null && producto.imagenes!.isNotEmpty ? producto.imagenes!.first : null);
       carrito.add({
         'id': producto.id,
         'nombre': producto.nombre,
         'precio': producto.precioVenta,
         'cantidad': 1,
         'stock': producto.stockActual,
+        'imagen_url': imagenUrl,
       });
     }
 
     // Guardar carrito
     final carritoString = carrito.map((item) {
-      return '${item['id']}:${item['nombre']}:${item['precio']}:${item['cantidad']}:${item['stock']}';
+      final base = '${item['id']}:${item['nombre']}:${item['precio']}:${item['cantidad']}:${item['stock']}';
+      final imagenUrl = item['imagen_url'] as String?;
+      return imagenUrl != null && imagenUrl.isNotEmpty ? '$base||$imagenUrl' : base;
     }).join('|');
     await prefs.setString('carrito_cliente', carritoString);
     
@@ -468,11 +477,25 @@ class _FavoritosClienteScreenState extends State<FavoritosClienteScreen> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Icon(
-                      Icons.medication,
-                      size: 50,
-                      color: Colors.green.shade700,
-                    ),
+                    child: producto.todasLasImagenes.isNotEmpty
+                        ? Image.network(
+                            producto.todasLasImagenes.first,
+                            width: 100,
+                            height: 100,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Icon(
+                                Icons.medication,
+                                size: 50,
+                                color: Colors.green.shade700,
+                              );
+                            },
+                          )
+                        : Icon(
+                            Icons.medication,
+                            size: 50,
+                            color: Colors.green.shade700,
+                          ),
                   ),
                 ),
                 const SizedBox(width: 12),

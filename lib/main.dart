@@ -26,15 +26,26 @@ void main() async {
     // En producción, podrías enviar esto a un servicio de logging
     // Por ahora, solo lo logueamos
     
-    // Limpiar datos de autenticación cuando hay un error crítico
+    // NO limpiar la sesión automáticamente ante cualquier error
+    // Solo limpiar en casos realmente críticos (errores de autenticación explícitos)
+    // Los errores de red, parsing, etc. no deberían causar logout
+    
+    // Verificar si es un error crítico que requiere logout
+    final errorString = details.exception.toString().toLowerCase();
+    final isCriticalAuthError = errorString.contains('unauthorized') ||
+        errorString.contains('token') && errorString.contains('invalid') ||
+        errorString.contains('authentication') ||
+        errorString.contains('session expired');
+    
+    if (isCriticalAuthError) {
+      print('⚠️ Error crítico de autenticación detectado, limpiando sesión');
     SharedPrefsHelper.clearAuthData();
     
-    // Redirigir directamente al login si hay un contexto disponible
+      // Redirigir directamente al login solo si es un error de autenticación
     if (navigatorKey.currentContext != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final context = navigatorKey.currentContext;
         if (context != null) {
-          // Limpiar toda la pila y redirigir directamente al login
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(
               builder: (context) => const LoginScreen(),
@@ -43,6 +54,9 @@ void main() async {
           );
         }
       });
+      }
+    } else {
+      print('ℹ️ Error no crítico, manteniendo sesión activa');
     }
   };
   
@@ -102,7 +116,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Sánchez Pharma',
+      title: 'FarmaGo',
       debugShowCheckedModeBanner: false,
       navigatorKey: navigatorKey,
       theme: ThemeData(
@@ -130,23 +144,11 @@ class MyApp extends StatelessWidget {
           print('❌ Error de renderizado: ${details.exception}');
           print('Stack trace: ${details.stack}');
           
-          // Limpiar datos de autenticación cuando hay un error crítico
-          SharedPrefsHelper.clearAuthData();
+          // NO limpiar la sesión automáticamente ante errores de renderizado
+          // Los errores de UI no deberían causar logout
+          // Solo mostrar un mensaje amigable y permitir que el usuario continúe
           
-          // Redirigir directamente al login después de un breve delay
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (navigatorKey.currentContext != null) {
-              // Limpiar toda la pila de navegación y redirigir directamente al login
-              Navigator.of(navigatorKey.currentContext!).pushAndRemoveUntil(
-                MaterialPageRoute(
-                  builder: (context) => const LoginScreen(),
-                ),
-                (route) => false,
-              );
-            }
-          });
-          
-          // Retornar un widget de error temporal mientras se redirige
+          // Retornar un widget de error amigable sin redirigir al login
           return Scaffold(
             body: Center(
               child: Padding(
@@ -157,7 +159,7 @@ class MyApp extends StatelessWidget {
                     Icon(
                       Icons.error_outline,
                       size: 64,
-                      color: Colors.red.shade300,
+                      color: Colors.orange.shade300,
                     ),
                     const SizedBox(height: 16),
                     const Text(
@@ -169,12 +171,23 @@ class MyApp extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Ocurrió un error inesperado. Redirigiendo...',
+                      'Ocurrió un error al renderizar esta pantalla.\nPuedes intentar navegar hacia atrás o recargar la aplicación.',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 16),
                     ),
                     const SizedBox(height: 24),
-                    const CircularProgressIndicator(),
+                    ElevatedButton(
+                      onPressed: () {
+                        // Intentar navegar hacia atrás si es posible
+                        if (navigatorKey.currentContext != null) {
+                          final navigator = Navigator.of(navigatorKey.currentContext!);
+                          if (navigator.canPop()) {
+                            navigator.pop();
+                          }
+                        }
+                      },
+                      child: const Text('Volver'),
+                    ),
                   ],
                 ),
               ),
@@ -322,11 +335,19 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
               const SizedBox(height: 24),
               const Text(
-                'Sánchez Pharma',
+                'FarmaGo',
                 style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Cargando...',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.white70,
                 ),
               ),
               const SizedBox(height: 24),

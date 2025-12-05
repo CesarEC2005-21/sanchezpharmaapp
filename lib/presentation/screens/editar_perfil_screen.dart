@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 import '../../data/api/dio_client.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/utils/validators.dart';
+import '../../data/services/reniec_service.dart';
+import '../../core/constants/api_constants.dart';
 import 'package:intl/intl.dart';
 
 class EditarPerfilScreen extends StatefulWidget {
@@ -31,6 +35,17 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
   String _tipoDocumento = 'DNI';
   String? _genero;
   DateTime? _fechaNacimiento;
+  
+  // Foto de perfil
+  File? _fotoSeleccionada;
+  String? _fotoUrlActual;
+  bool _subiendoFoto = false;
+  
+  // Validación de DNI
+  final ReniecService _reniecService = ReniecService();
+  bool _verificandoDNI = false;
+  bool? _dniValido;
+  String? _mensajeVerificacionDNI;
   
   final List<String> _tiposDocumento = ['DNI', 'Pasaporte', 'Carnet de extranjería'];
   final List<String> _generos = ['Masculino', 'Femenino', 'Otro'];
@@ -89,6 +104,7 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
             _documentoController.text = clienteActual['documento'] ?? '';
             _telefonoController.text = clienteActual['telefono'] ?? '';
             _tipoDocumento = clienteActual['tipo_documento'] ?? 'DNI';
+            _fotoUrlActual = clienteActual['foto_url'];
             
             // Género - normalizar valores
             final generoDb = clienteActual['genero'];
@@ -154,6 +170,174 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
     }
   }
   
+  Future<void> _mostrarOpcionesFoto() async {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Seleccionar de galería'),
+              onTap: () async {
+                Navigator.pop(context);
+                final ImagePicker picker = ImagePicker();
+                final XFile? image = await picker.pickImage(
+                  source: ImageSource.gallery,
+                  maxWidth: 800,
+                  maxHeight: 800,
+                  imageQuality: 85,
+                );
+                if (image != null) {
+                  setState(() {
+                    _fotoSeleccionada = File(image.path);
+                  });
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Tomar foto'),
+              onTap: () async {
+                Navigator.pop(context);
+                final ImagePicker picker = ImagePicker();
+                final XFile? image = await picker.pickImage(
+                  source: ImageSource.camera,
+                  maxWidth: 800,
+                  maxHeight: 800,
+                  imageQuality: 85,
+                );
+                if (image != null) {
+                  setState(() {
+                    _fotoSeleccionada = File(image.path);
+                  });
+                }
+              },
+            ),
+            if (_fotoSeleccionada != null || (_fotoUrlActual != null && _fotoUrlActual!.isNotEmpty))
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('Eliminar foto', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    _fotoSeleccionada = null;
+                    _fotoUrlActual = null;
+                  });
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Future<String?> _subirFoto() async {
+    if (_fotoSeleccionada == null) {
+      return _fotoUrlActual; // Retornar la URL actual si no hay nueva foto
+    }
+    
+    setState(() {
+      _subiendoFoto = true;
+    });
+    
+    try {
+      final dio = DioClient.createDio();
+      dio.options.connectTimeout = const Duration(seconds: 60);
+      dio.options.receiveTimeout = const Duration(seconds: 60);
+      
+      final formData = FormData();
+      String fileName = _fotoSeleccionada!.path.split('/').last;
+      formData.files.add(MapEntry(
+        'imagen',
+        await MultipartFile.fromFile(
+          _fotoSeleccionada!.path,
+          filename: fileName,
+        ),
+      ));
+      
+      final token = await SharedPrefsHelper.getToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('No se encontró token de autenticación');
+      }
+      
+      final response = await dio.post(
+        '/subir_foto_cliente_sanchezpharma',
+        data: formData,
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer ${token.trim()}',
+          },
+        ),
+      );
+      
+      if (response.statusCode == 200 && response.data['code'] == 1) {
+        return response.data['url'];
+      } else {
+        throw Exception(response.data['message'] ?? 'Error al subir la foto');
+      }
+    } catch (e) {
+      print('Error al subir foto: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al subir la foto: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return null;
+    } finally {
+      setState(() {
+        _subiendoFoto = false;
+      });
+    }
+  }
+  
+  Future<void> _verificarDNI() async {
+    final dni = _documentoController.text.trim();
+    if (dni.length != 8) {
+      setState(() {
+        _dniValido = null;
+        _mensajeVerificacionDNI = null;
+      });
+      return;
+    }
+    
+    setState(() {
+      _verificandoDNI = true;
+      _dniValido = null;
+      _mensajeVerificacionDNI = null;
+    });
+    
+    try {
+      final resultado = await _reniecService.verificarDNI(dni);
+      setState(() {
+        _verificandoDNI = false;
+        _dniValido = resultado['valido'] as bool;
+        _mensajeVerificacionDNI = resultado['mensaje'] as String;
+        
+        // Si el DNI es válido y tiene datos, autocompletar campos
+        if (_dniValido == true && resultado['datos'] != null) {
+          final datos = resultado['datos'] as Map<String, dynamic>;
+          _nombreController.text = datos['nombre'] ?? '';
+          _apellidoPaternoController.text = datos['apellido_paterno'] ?? '';
+          _apellidoMaternoController.text = datos['apellido_materno'] ?? '';
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _verificandoDNI = false;
+        _dniValido = false;
+        _mensajeVerificacionDNI = 'Error al verificar el DNI: ${e.toString()}';
+      });
+    }
+  }
+  
   Future<void> _guardarCambios() async {
     if (!_formKey.currentState!.validate()) return;
     
@@ -172,6 +356,9 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
     });
     
     try {
+      // Subir foto primero si hay una nueva
+      String? fotoUrl = await _subirFoto();
+      
       final dio = DioClient.createDio();
       
       // Preparar datos para enviar
@@ -185,6 +372,14 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
         'telefono': _telefonoController.text.trim(),
         'estado': 'activo',
       };
+      
+      // Agregar foto_url si hay una nueva o si se eliminó
+      if (fotoUrl != null) {
+        data['foto_url'] = fotoUrl;
+      } else if (_fotoSeleccionada == null && _fotoUrlActual != null) {
+        // Si se eliminó la foto, enviar null
+        data['foto_url'] = null;
+      }
       
       // Agregar género si está seleccionado
       if (_genero != null) {
@@ -288,36 +483,44 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
                           CircleAvatar(
                             radius: 50,
                             backgroundColor: Colors.grey[300],
-                            child: Icon(
-                              Icons.person,
-                              size: 60,
-                              color: Colors.grey[600],
-                            ),
+                            backgroundImage: _fotoSeleccionada != null
+                                ? FileImage(_fotoSeleccionada!)
+                                : (_fotoUrlActual != null && _fotoUrlActual!.isNotEmpty
+                                    ? NetworkImage(_fotoUrlActual!)
+                                    : null),
+                            child: _fotoSeleccionada == null && (_fotoUrlActual == null || _fotoUrlActual!.isEmpty)
+                                ? Icon(
+                                    Icons.person,
+                                    size: 60,
+                                    color: Colors.grey[600],
+                                  )
+                                : null,
                           ),
                           Positioned(
                             bottom: 0,
                             right: 0,
                             child: GestureDetector(
-                              onTap: () {
-                                // Funcionalidad para cambiar foto (opcional)
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Funcionalidad de foto en desarrollo'),
-                                    duration: Duration(seconds: 1),
-                                  ),
-                                );
-                              },
+                              onTap: _mostrarOpcionesFoto,
                               child: Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
                                   color: Colors.green[700],
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(
-                                  Icons.camera_alt,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
+                                child: _subiendoFoto
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.camera_alt,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
                               ),
                             ),
                           ),
@@ -438,6 +641,10 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
                     TextFormField(
                       controller: _documentoController,
                       keyboardType: TextInputType.number,
+                      maxLength: _tipoDocumento == 'DNI' ? 8 : null,
+                      inputFormatters: _tipoDocumento == 'DNI' 
+                          ? [Validators.dniFormatter]
+                          : null,
                       decoration: InputDecoration(
                         labelText: 'Número de documento',
                         border: OutlineInputBorder(
@@ -445,14 +652,87 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
                         ),
                         filled: true,
                         fillColor: Colors.grey[100],
+                        suffixIcon: _tipoDocumento == 'DNI' && _verificandoDNI
+                            ? const Padding(
+                                padding: EdgeInsets.all(12.0),
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                            : _tipoDocumento == 'DNI' && _dniValido != null
+                                ? Icon(
+                                    _dniValido == true
+                                        ? Icons.check_circle
+                                        : Icons.error,
+                                    color: _dniValido == true
+                                        ? Colors.green
+                                        : Colors.red,
+                                  )
+                                : null,
+                        helperText: _tipoDocumento == 'DNI'
+                            ? 'Máximo 8 dígitos, solo números'
+                            : null,
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
                           return 'Ingresa tu número de documento';
                         }
+                        if (_tipoDocumento == 'DNI') {
+                          if (value.length != 8) {
+                            return 'El DNI debe tener 8 dígitos';
+                          }
+                          if (_dniValido == false) {
+                            return 'El DNI no es válido';
+                          }
+                        }
                         return null;
                       },
+                      onChanged: (value) {
+                        if (_tipoDocumento == 'DNI' && value.length == 8) {
+                          _verificarDNI();
+                        } else {
+                          setState(() {
+                            _dniValido = null;
+                            _mensajeVerificacionDNI = null;
+                          });
+                        }
+                      },
                     ),
+                    
+                    // Mensaje de verificación de DNI
+                    if (_tipoDocumento == 'DNI' && _mensajeVerificacionDNI != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Row(
+                          children: [
+                            Icon(
+                              _dniValido == true
+                                  ? Icons.check_circle
+                                  : Icons.error,
+                              color: _dniValido == true
+                                  ? Colors.green
+                                  : Colors.red,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _mensajeVerificacionDNI!,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: _dniValido == true
+                                      ? Colors.green.shade700
+                                      : Colors.red.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     
                     const SizedBox(height: 16),
                     

@@ -34,6 +34,12 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
   int _itemsEnCarrito = 0;
   String _ordenSeleccionado = 'relevancia'; // relevancia, precio_asc, precio_desc, nombre_asc
   Set<int> _favoritos = {}; // IDs de productos favoritos
+  
+  // Filtros
+  double? _precioMin;
+  double? _precioMax;
+  bool _soloConDescuento = false;
+  bool _soloEnStock = true;
 
   @override
   void initState() {
@@ -153,9 +159,23 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
   void _aplicarFiltros() {
     setState(() {
       List<ProductoModel> productosFiltrados = _productos.where((producto) {
+        // Filtro de búsqueda
         final coincideBusqueda = _searchController.text.isEmpty ||
             producto.nombre.toLowerCase().contains(_searchController.text.toLowerCase());
-        return coincideBusqueda;
+        if (!coincideBusqueda) return false;
+        
+        // Filtro de precio
+        final precio = producto.tieneDescuento ? producto.precioConDescuento : producto.precioVenta;
+        if (_precioMin != null && precio < _precioMin!) return false;
+        if (_precioMax != null && precio > _precioMax!) return false;
+        
+        // Filtro de descuento
+        if (_soloConDescuento && !producto.tieneDescuento) return false;
+        
+        // Filtro de stock
+        if (_soloEnStock && producto.stockActual <= 0) return false;
+        
+        return true;
       }).toList();
 
       // Aplicar ordenamiento
@@ -224,7 +244,16 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
         final items = carritoJson.split('|');
         for (var item in items) {
           if (item.isNotEmpty) {
-            final parts = item.split(':');
+            // Separar imagen si existe (formato: id:nombre:precio:cantidad:stock||imagen_url)
+            final imagenIndex = item.indexOf('||');
+            String itemData = item;
+            String? imagenUrl;
+            if (imagenIndex != -1) {
+              itemData = item.substring(0, imagenIndex);
+              imagenUrl = item.substring(imagenIndex + 2);
+            }
+            
+            final parts = itemData.split(':');
             if (parts.length >= 4) {
               carrito.add({
                 'id': int.parse(parts[0]),
@@ -232,6 +261,7 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
                 'precio': double.parse(parts[2]),
                 'cantidad': int.parse(parts[3]),
                 'stock': int.parse(parts.length > 4 ? parts[4] : '0'),
+                'imagen_url': imagenUrl,
               });
             }
           }
@@ -247,6 +277,11 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
       final cantidadActual = carrito[index]['cantidad'] as int;
       if (cantidadActual < producto.stockActual) {
         carrito[index]['cantidad'] = cantidadActual + 1;
+        // Actualizar imagen si no existe o está vacía
+        if (carrito[index]['imagen_url'] == null || (carrito[index]['imagen_url'] as String).isEmpty) {
+          final imagenUrl = producto.imagenUrl ?? (producto.imagenes != null && producto.imagenes!.isNotEmpty ? producto.imagenes!.first : null);
+          carrito[index]['imagen_url'] = imagenUrl;
+        }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -259,18 +294,22 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
         return;
       }
     } else {
+      final imagenUrl = producto.imagenUrl ?? (producto.imagenes != null && producto.imagenes!.isNotEmpty ? producto.imagenes!.first : null);
       carrito.add({
         'id': producto.id,
         'nombre': producto.nombre,
         'precio': producto.precioConDescuento, // Usar precio con descuento si aplica
         'cantidad': 1,
         'stock': producto.stockActual,
+        'imagen_url': imagenUrl,
       });
     }
 
     // Guardar carrito
     final carritoString = carrito.map((item) {
-      return '${item['id']}:${item['nombre']}:${item['precio']}:${item['cantidad']}:${item['stock']}';
+      final base = '${item['id']}:${item['nombre']}:${item['precio']}:${item['cantidad']}:${item['stock']}';
+      final imagenUrl = item['imagen_url'] as String?;
+      return imagenUrl != null && imagenUrl.isNotEmpty ? '$base||$imagenUrl' : base;
     }).join('|');
     await prefs.setString('carrito_cliente', carritoString);
     
@@ -348,6 +387,160 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
         _aplicarFiltros();
         Navigator.pop(context);
       },
+    );
+  }
+
+  void _mostrarDialogoFiltrar() {
+    final precioMinController = TextEditingController(text: _precioMin?.toStringAsFixed(2) ?? '');
+    final precioMaxController = TextEditingController(text: _precioMax?.toStringAsFixed(2) ?? '');
+    bool soloConDescuento = _soloConDescuento;
+    bool soloEnStock = _soloEnStock;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            left: 20,
+            right: 20,
+            top: 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Filtrar por',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setModalState(() {
+                        precioMinController.clear();
+                        precioMaxController.clear();
+                        soloConDescuento = false;
+                        soloEnStock = true;
+                      });
+                    },
+                    child: const Text('Limpiar'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              
+              // Filtro de precio
+              const Text(
+                'Rango de precio',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: precioMinController,
+                      keyboardType: TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Precio mínimo',
+                        prefixText: 'S/ ',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: precioMaxController,
+                      keyboardType: TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Precio máximo',
+                        prefixText: 'S/ ',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              
+              // Filtro de descuento
+              CheckboxListTile(
+                title: const Text('Solo productos con descuento'),
+                value: soloConDescuento,
+                onChanged: (value) {
+                  setModalState(() {
+                    soloConDescuento = value ?? false;
+                  });
+                },
+              ),
+              
+              // Filtro de stock
+              CheckboxListTile(
+                title: const Text('Solo productos en stock'),
+                value: soloEnStock,
+                onChanged: (value) {
+                  setModalState(() {
+                    soloEnStock = value ?? true;
+                  });
+                },
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // Botón aplicar
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _precioMin = precioMinController.text.isNotEmpty
+                          ? double.tryParse(precioMinController.text)
+                          : null;
+                      _precioMax = precioMaxController.text.isNotEmpty
+                          ? double.tryParse(precioMaxController.text)
+                          : null;
+                      _soloConDescuento = soloConDescuento;
+                      _soloEnStock = soloEnStock;
+                    });
+                    _aplicarFiltros();
+                    Navigator.pop(context);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Aplicar filtros',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -524,12 +717,7 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () {
-                        // TODO: Implementar filtros avanzados
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Funcionalidad de filtros próximamente')),
-                        );
-                      },
+                      onPressed: _mostrarDialogoFiltrar,
                       icon: const Icon(Icons.tune, size: 18),
                       label: const Text('Filtrar por'),
                       style: OutlinedButton.styleFrom(

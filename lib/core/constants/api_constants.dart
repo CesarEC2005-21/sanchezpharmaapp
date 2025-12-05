@@ -7,6 +7,7 @@ class ApiConstants {
   static const String logout = '/api_logout';
   static const String renovarToken = '/api_renovar_token';
   static const String usuarios = '/usuarios_sanchezpharma';
+  static const String buscarUsuarios = '/usuarios_sanchezpharma';
   static const String repartidores = '/repartidores_sanchezpharma';
   static const String registrarUsuario = '/registrar_usuario_sanchezpharma';
   static const String editarUsuario = '/editar_usuario_sanchezpharma';
@@ -19,6 +20,8 @@ class ApiConstants {
   static const String registrarProducto = '/registrar_producto_sanchezpharma';
   static const String editarProducto = '/editar_producto_sanchezpharma';
   static const String eliminarProducto = '/eliminar_producto_sanchezpharma';
+  static const String incrementarStockProducto = '/incrementar_stock_producto_sanchezpharma';
+  static const String obtenerSiguienteCodigoProducto = '/obtener_siguiente_codigo_producto_sanchezpharma';
   static const String buscarProductos = '/buscar_productos_sanchezpharma';
   static const String productosStockBajo = '/productos_stock_bajo_sanchezpharma';
   static const String productosProximosVencer = '/productos_proximos_vencer_sanchezpharma';

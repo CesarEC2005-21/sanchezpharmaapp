@@ -28,6 +28,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   late final PageController _pageController;
   late final List<String> _imageUrls;
   int _currentImageIndex = 0;
+  Set<int> _favoritos = {}; // IDs de productos favoritos
 
   @override
   void initState() {
@@ -37,9 +38,60 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     _cargarSugerencias();
     _verificarFavorito();
     _actualizarContadorCarrito();
+    _cargarFavoritos();
     
     // Escuchar cambios en el carrito global
     CartNotifier.instance.addListener(_onCartChanged);
+  }
+  
+  Future<void> _cargarFavoritos() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final favoritosJson = prefs.getString('favoritos_cliente');
+      if (favoritosJson != null && favoritosJson.isNotEmpty) {
+        final ids = favoritosJson.split(',').where((id) => id.isNotEmpty).map((id) => int.tryParse(id)).whereType<int>().toSet();
+        setState(() {
+          _favoritos = ids;
+        });
+      }
+    } catch (e) {
+      print('Error al cargar favoritos: $e');
+    }
+  }
+  
+  bool _esFavoritoProducto(int? productoId) {
+    if (productoId == null) return false;
+    return _favoritos.contains(productoId);
+  }
+  
+  Future<void> _toggleFavoritoProducto(ProductoModel producto) async {
+    if (producto.id == null) return;
+    
+    final prefs = await SharedPreferences.getInstance();
+    final favoritosJson = prefs.getString('favoritos_cliente') ?? '';
+    final ids = favoritosJson.split(',').where((id) => id.isNotEmpty).toSet();
+    
+    if (_favoritos.contains(producto.id)) {
+      ids.remove(producto.id.toString());
+      _favoritos.remove(producto.id);
+    } else {
+      ids.add(producto.id.toString());
+      _favoritos.add(producto.id!);
+    }
+    
+    await prefs.setString('favoritos_cliente', ids.join(','));
+    setState(() {});
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_favoritos.contains(producto.id)
+              ? '${producto.nombre} agregado a favoritos'
+              : '${producto.nombre} eliminado de favoritos'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   @override
@@ -178,6 +230,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       final cantidadActual = carrito[index]['cantidad'] as int;
       if (cantidadActual < producto.stockActual) {
         carrito[index]['cantidad'] = cantidadActual + 1;
+        // Actualizar imagen si no existe o está vacía
+        if (carrito[index]['imagen_url'] == null || (carrito[index]['imagen_url'] as String).isEmpty) {
+          final imagenUrl = producto.imagenUrl ?? (producto.imagenes != null && producto.imagenes!.isNotEmpty ? producto.imagenes!.first : null);
+          carrito[index]['imagen_url'] = imagenUrl;
+        }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -190,19 +247,22 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         return;
       }
     } else {
+      final imagenUrl = producto.imagenUrl ?? (producto.imagenes != null && producto.imagenes!.isNotEmpty ? producto.imagenes!.first : null);
       carrito.add({
         'id': producto.id,
         'nombre': producto.nombre,
         'precio': producto.precioConDescuento, // Usar precio con descuento si aplica
         'cantidad': 1,
         'stock': producto.stockActual,
+        'imagen_url': imagenUrl,
       });
     }
 
-    final carritoString = carrito
-        .map((item) =>
-            '${item['id']}:${item['nombre']}:${item['precio']}:${item['cantidad']}:${item['stock']}')
-        .join('|');
+    final carritoString = carrito.map((item) {
+      final base = '${item['id']}:${item['nombre']}:${item['precio']}:${item['cantidad']}:${item['stock']}';
+      final imagenUrl = item['imagen_url'] as String?;
+      return imagenUrl != null && imagenUrl.isNotEmpty ? '$base||$imagenUrl' : base;
+    }).join('|');
     await prefs.setString('carrito_cliente', carritoString);
 
     setState(() {
@@ -1017,7 +1077,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ),
                     )
                   : SizedBox(
-                      height: 210,
+                      height: 240,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: productos.length,
@@ -1037,6 +1097,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final thumbUrl = imagenes.isNotEmpty
         ? imagenes[0]
         : 'https://placehold.co/400x400?text=${Uri.encodeComponent(producto.nombre)}';
+    final esFavorito = _esFavoritoProducto(producto.id);
+    
     return InkWell(
       onTap: () {
         Navigator.push(
@@ -1048,7 +1110,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       },
       child: Container(
         width: 190,
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           border: Border.all(color: Colors.grey.shade200),
           borderRadius: BorderRadius.circular(16),
@@ -1058,7 +1120,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: 90,
+              height: 85,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 gradient: const LinearGradient(
@@ -1079,6 +1141,36 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           Icons.local_pharmacy,
                           color: Colors.green.shade700,
                           size: 48,
+                        ),
+                      ),
+                    ),
+                    // Botón de favoritos (corazón)
+                    Positioned(
+                      top: 4,
+                      left: 4,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: esFavorito ? Colors.red.shade300 : Colors.grey.shade300,
+                            width: 1.5,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          color: esFavorito ? Colors.red.shade50 : Colors.white,
+                        ),
+                        child: IconButton(
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
+                          icon: Icon(
+                            esFavorito ? Icons.favorite : Icons.favorite_border,
+                            color: esFavorito ? Colors.red.shade600 : Colors.grey.shade600,
+                            size: 18,
+                          ),
+                          onPressed: () {
+                            _toggleFavoritoProducto(producto);
+                          },
                         ),
                       ),
                     ),
@@ -1112,28 +1204,44 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              producto.nombre,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-                height: 1.2,
+            const SizedBox(height: 6),
+            Flexible(
+              child: Text(
+                producto.nombre,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                  height: 1.2,
+                ),
               ),
             ),
-            const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.bottomRight,
-              child: IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  minWidth: 32,
-                  minHeight: 32,
+            const SizedBox(height: 4),
+            // Botón agregar al carrito
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: producto.stockActual > 0
+                    ? () => _agregarAlCarrito(producto)
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 2,
+                  minimumSize: const Size(0, 28),
                 ),
-                onPressed: () => _agregarAlCarrito(producto),
-                icon: const Icon(Icons.add_circle, color: Colors.green, size: 24),
+                child: const Text(
+                  'Agregar',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
           ],

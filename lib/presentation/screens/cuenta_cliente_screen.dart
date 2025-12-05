@@ -26,6 +26,7 @@ class CuentaClienteScreen extends StatefulWidget {
 class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
   String _username = '';
   String _email = '';
+  String? _fotoUrl;
   int _notificacionesNoLeidas = 0;
   Timer? _timer;
 
@@ -59,12 +60,55 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
   }
 
   Future<void> _loadUserData() async {
-    final username = await SharedPrefsHelper.getUsername();
-    setState(() {
-      _username = username ?? 'Cliente';
-      // El email podría guardarse también, por ahora usamos username
-      _email = '';
-    });
+    try {
+      final username = await SharedPrefsHelper.getUsername();
+      final clienteId = await SharedPrefsHelper.getUserId();
+      
+      setState(() {
+        _username = username ?? 'Cliente';
+        _email = '';
+        _fotoUrl = null;
+      });
+      
+      // Cargar datos completos del cliente incluyendo foto
+      if (clienteId != null) {
+        final dio = DioClient.createDio();
+        final response = await dio.get('/clientes_sanchezpharma');
+        
+        if (response.data['code'] == 1) {
+          final clientes = response.data['data'] as List;
+          final clienteActual = clientes.firstWhere(
+            (c) => c['id'] == clienteId,
+            orElse: () => null,
+          );
+          
+          if (clienteActual != null) {
+            setState(() {
+              // Construir nombre completo
+              final nombre = clienteActual['nombre'] ?? '';
+              final apellido = clienteActual['apellido'] ?? '';
+              if (nombre.isNotEmpty && apellido.isNotEmpty) {
+                _username = '$nombre $apellido';
+              } else if (nombre.isNotEmpty) {
+                _username = nombre;
+              }
+              
+              _email = clienteActual['email'] ?? '';
+              _fotoUrl = clienteActual['foto_url'];
+            });
+          }
+        }
+      }
+    } catch (e) {
+      print('Error al cargar datos del cliente: $e');
+      // Si falla, mantener los datos básicos
+      final username = await SharedPrefsHelper.getUsername();
+      setState(() {
+        _username = username ?? 'Cliente';
+        _email = '';
+        _fotoUrl = null;
+      });
+    }
   }
 
   Future<void> _handleLogout() async {
@@ -186,14 +230,25 @@ class _CuentaClienteScreenState extends State<CuentaClienteScreen> {
                     CircleAvatar(
                       radius: ResponsiveHelper.isSmallScreen(context) ? 30 : 35,
                       backgroundColor: Colors.green.shade700,
-                      child: Text(
-                        _username.isNotEmpty ? _username[0].toUpperCase() : 'C',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: ResponsiveHelper.isSmallScreen(context) ? 24 : 28,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      backgroundImage: _fotoUrl != null && _fotoUrl!.isNotEmpty
+                          ? NetworkImage(_fotoUrl!)
+                          : null,
+                      child: _fotoUrl == null || _fotoUrl!.isEmpty
+                          ? Text(
+                              _username.isNotEmpty ? _username[0].toUpperCase() : 'C',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: ResponsiveHelper.isSmallScreen(context) ? 24 : 28,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                          : null,
+                      onBackgroundImageError: (exception, stackTrace) {
+                        // Si falla la carga de la imagen, mostrar la inicial
+                        setState(() {
+                          _fotoUrl = null;
+                        });
+                      },
                     ),
                     SizedBox(width: ResponsiveHelper.spacing(context)),
                     Expanded(
