@@ -170,6 +170,8 @@ app.debug = True
 app.config['SECRET_KEY'] = 'super-secret'
 # Configurar Flask-JWT para aceptar "Bearer" en lugar de "JWT"
 app.config['JWT_AUTH_HEADER_PREFIX'] = 'Bearer'
+# Configurar expiración del token JWT - 30 días (se renueva automáticamente)
+app.config['JWT_EXPIRATION_DELTA'] = timedelta(days=30)
 # Configurar tamaño máximo de archivo (16MB)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
@@ -582,7 +584,8 @@ def jwt_error_handler(error):
     
     if hasattr(error, 'status_code'):
         if error.status_code == 401:
-            return jsonify({"code": 0, "message": "Token inválido o expirado. Por favor, inicia sesión nuevamente."}), 401
+            # Los tokens no expiran, así que este error es solo por token inválido
+            return jsonify({"code": 0, "message": "Token inválido. Por favor, inicia sesión nuevamente."}), 401
         return jsonify({"code": 0, "message": f"Error de autenticación: {str(error)}"}), error.status_code
     
     return jsonify({"code": 0, "message": f"Error de autenticación: {str(error)}"}), 401
@@ -628,6 +631,7 @@ def procesar_token_manual():
         # Decodificar el token usando PyJWT directamente
         try:
             # Flask-JWT usa la SECRET_KEY para decodificar
+            # Verificar expiración normalmente (los tokens se renuevan automáticamente)
             payload = pyjwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
             logging.info(f"procesar_token_manual: Token decodificado correctamente, payload: {payload}")
             
@@ -639,7 +643,8 @@ def procesar_token_manual():
             else:
                 logging.warning(f"procesar_token_manual: identity() retornó None para payload: {payload}")
         except pyjwt.ExpiredSignatureError:
-            logging.error(f"procesar_token_manual: Token expirado")
+            logging.warning(f"procesar_token_manual: Token expirado")
+            # El token expiró - la app debería renovarlo automáticamente
             # No hacer nada, dejar que Flask-JWT maneje el error
         except pyjwt.InvalidTokenError as decode_error:
             logging.error(f"procesar_token_manual: Token inválido: {repr(decode_error)}")
@@ -1288,6 +1293,72 @@ def api_login():
     except Exception as e:
         logging.error(f"Error en api_login: {repr(e)}")
         return jsonify({"code": 0, "message": repr(e)}), 500
+
+
+# ---------------------------------------------------
+# RENOVAR TOKEN (Renovación automática)
+# ---------------------------------------------------
+@app.route('/api_renovar_token', methods=['POST'])
+@jwt_required()
+def api_renovar_token():
+    """
+    Renueva el token JWT actual.
+    Solo funciona si el usuario ya está autenticado (tiene un token válido).
+    Genera un nuevo token con la misma identidad pero con nueva fecha de expiración.
+    """
+    try:
+        # Obtener el usuario actual del token (ya validado por @jwt_required)
+        current_identity = getattr(g, 'current_identity', None)
+        
+        if not current_identity:
+            # Intentar obtener del payload manualmente
+            auth_header = request.headers.get("Authorization")
+            if auth_header:
+                if auth_header.startswith("Bearer "):
+                    token = auth_header.replace("Bearer ", "").strip()
+                elif auth_header.startswith("JWT "):
+                    token = auth_header.replace("JWT ", "").strip()
+                else:
+                    token = auth_header.strip()
+                
+                try:
+                    payload = pyjwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'], options={"verify_exp": False})
+                    current_identity = identity(payload)
+                except Exception as e:
+                    logging.error(f"Error al decodificar token para renovación: {repr(e)}")
+            
+            if not current_identity:
+                return jsonify({"code": 0, "message": "No se pudo identificar al usuario"}), 401
+        
+        # Generar nuevo token con la misma identidad
+        nuevo_token = jwt.jwt_encode_callback(current_identity)
+        
+        # Determinar tipo de usuario
+        user_type = "usuario"
+        user_id = current_identity.id
+        
+        # Verificar si es cliente
+        conn = obtenerconexion_sanchezpharma()
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT id FROM clientes WHERE id = %s AND estado = 'activo'", (user_id,))
+                cliente = cursor.fetchone()
+                if cliente:
+                    user_type = "cliente"
+        
+        logging.info(f"Token renovado exitosamente para {user_type} ID: {user_id}")
+        
+        return jsonify({
+            "code": 1,
+            "message": "Token renovado exitosamente",
+            "token": nuevo_token.decode('utf-8') if hasattr(nuevo_token, 'decode') else nuevo_token,
+            "user_type": user_type,
+            "user_id": user_id
+        })
+        
+    except Exception as e:
+        logging.error(f"Error al renovar token: {repr(e)}")
+        return jsonify({"code": 0, "message": f"Error al renovar token: {str(e)}"}), 500
 
 
 # ---------------------------------------------------
@@ -3128,13 +3199,40 @@ def metodos_pago_sanchezpharma():
         conn = obtenerconexion_sanchezpharma()
         with conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM metodos_pago WHERE estado = 'activo' ORDER BY nombre")
+                # Seleccionar solo métodos activos, ordenados por nombre
+                cursor.execute("""
+                    SELECT 
+                        id,
+                        nombre,
+                        COALESCE(descripcion, '') as descripcion,
+                        estado
+                    FROM metodos_pago 
+                    WHERE estado = 'activo' 
+                    ORDER BY nombre ASC
+                """)
                 data = cursor.fetchall()
 
-        return jsonify({"code": 1, "data": data, "message": "Métodos de pago listados correctamente"})
+        # Validar que haya datos
+        if not data:
+            return jsonify({
+                "code": 1, 
+                "data": [], 
+                "message": "No hay métodos de pago activos disponibles"
+            })
+
+        return jsonify({
+            "code": 1, 
+            "data": data, 
+            "message": f"Métodos de pago listados correctamente ({len(data)} métodos encontrados)"
+        })
 
     except Exception as e:
-        return jsonify({"code": 0, "data": [], "message": repr(e)})
+        logging.error(f"Error en metodos_pago_sanchezpharma: {repr(e)}")
+        return jsonify({
+            "code": 0, 
+            "data": [], 
+            "message": f"Error al obtener métodos de pago: {str(e)}"
+        })
 
 
 # ---------------------------------------------------
@@ -6713,6 +6811,83 @@ def descargar_backup_sanchezpharma(backup_id):
     except Exception as e:
         logging.error(f"Error al descargar backup: {repr(e)}")
         return jsonify({"code": 0, "message": repr(e)}), 500
+
+
+# ---------------------------------------------------
+# VERIFICACIÓN DE VERSIÓN DE LA APP
+# ---------------------------------------------------
+@app.route('/api_version_check', methods=['GET'])
+def api_version_check():
+    """
+    Endpoint para verificar si hay actualizaciones disponibles de la app.
+    No requiere autenticación para que funcione incluso si el token expiró.
+    """
+    try:
+        # Versión actual de la app en producción
+        # Actualiza estos valores cuando subas una nueva versión
+        CURRENT_VERSION = "1.0.0"
+        MINIMUM_VERSION = "1.0.0"  # Versión mínima requerida (forzada)
+        LATEST_VERSION = "1.0.1"   # Última versión disponible
+        
+        # URL donde está alojado el APK (ajusta según tu servidor)
+        # Ejemplo: https://tudominio.com/downloads/app-v1.0.1.apk
+        APK_BASE_URL = "https://nxlsxx.pythonanywhere.com/downloads"
+        APK_FILENAME = f"sanchezpharmaapp-v{LATEST_VERSION}.apk"
+        APK_URL = f"{APK_BASE_URL}/{APK_FILENAME}"
+        
+        # Tamaño del APK en bytes (ajusta según el tamaño real)
+        # Puedes calcularlo automáticamente si el archivo existe
+        APK_SIZE = 25000000  # 25 MB aproximado
+        
+        # Obtener versión del cliente desde query params (opcional)
+        client_version = request.args.get('version', CURRENT_VERSION)
+        
+        # Comparar versiones (asumiendo formato semántico: major.minor.patch)
+        def compare_versions(v1, v2):
+            """Compara dos versiones. Retorna: -1 si v1 < v2, 0 si igual, 1 si v1 > v2"""
+            v1_parts = [int(x) for x in v1.split('.')]
+            v2_parts = [int(x) for x in v2.split('.')]
+            
+            # Asegurar que ambas tengan la misma longitud
+            max_len = max(len(v1_parts), len(v2_parts))
+            v1_parts.extend([0] * (max_len - len(v1_parts)))
+            v2_parts.extend([0] * (max_len - len(v2_parts)))
+            
+            for i in range(max_len):
+                if v1_parts[i] < v2_parts[i]:
+                    return -1
+                elif v1_parts[i] > v2_parts[i]:
+                    return 1
+            return 0
+        
+        # Verificar si necesita actualización
+        needs_update = compare_versions(client_version, LATEST_VERSION) < 0
+        force_update = compare_versions(client_version, MINIMUM_VERSION) < 0
+        
+        return jsonify({
+            "code": 1,
+            "data": {
+                "current_version": CURRENT_VERSION,
+                "minimum_version": MINIMUM_VERSION,
+                "latest_version": LATEST_VERSION,
+                "client_version": client_version,
+                "needs_update": needs_update,
+                "force_update": force_update,
+                "apk_url": APK_URL,
+                "apk_size": APK_SIZE,
+                "update_message": "Nueva versión disponible con mejoras y correcciones" if needs_update else "Ya tienes la última versión",
+                "release_notes": "• Mejoras en rendimiento\n• Corrección de errores\n• Nuevas funcionalidades"
+            },
+            "message": "Información de versión obtenida correctamente"
+        })
+        
+    except Exception as e:
+        logging.error(f"Error al verificar versión: {repr(e)}")
+        return jsonify({
+            "code": 0,
+            "data": {},
+            "message": f"Error al verificar versión: {str(e)}"
+        }), 500
 
 
 # ---------------------------------------------------

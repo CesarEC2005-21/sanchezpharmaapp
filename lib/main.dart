@@ -1,9 +1,11 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'core/utils/shared_prefs_helper.dart';
 import 'core/services/local_notification_service.dart';
 import 'core/services/session_timeout_service.dart';
+import 'core/notifiers/cart_notifier.dart';
 import 'presentation/screens/login_screen.dart';
 import 'presentation/screens/dashboard_screen.dart';
 import 'presentation/screens/home_cliente_screen.dart';
@@ -61,7 +63,37 @@ void main() async {
   // Inicializar servicio de timeout de sesión
   SessionTimeoutService().initialize();
   
+  // Inicializar contador del carrito desde SharedPreferences
+  await _inicializarCarrito();
+  
   runApp(const MyApp());
+}
+
+/// Inicializa el contador del carrito desde SharedPreferences
+Future<void> _inicializarCarrito() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final carritoJson = prefs.getString('carrito_cliente');
+    int totalItems = 0;
+    
+    if (carritoJson != null && carritoJson.isNotEmpty) {
+      final items = carritoJson.split('|');
+      for (var item in items) {
+        if (item.isNotEmpty) {
+          final parts = item.split(':');
+          if (parts.length >= 4) {
+            totalItems += int.tryParse(parts[3]) ?? 0;
+          }
+        }
+      }
+    }
+    
+    CartNotifier.instance.updateCount(totalItems);
+    print('🛒 Carrito inicializado: $totalItems items');
+  } catch (e) {
+    print('❌ Error al inicializar carrito: $e');
+    CartNotifier.instance.updateCount(0);
+  }
 }
 
 class MyApp extends StatelessWidget {

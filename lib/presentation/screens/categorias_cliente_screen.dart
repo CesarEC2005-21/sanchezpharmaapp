@@ -63,13 +63,27 @@ class _CategoriasClienteScreenState extends State<CategoriasClienteScreen> {
   Future<void> _actualizarContadorCarrito() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final carrito = prefs.getStringList('carrito') ?? [];
+      final carritoJson = prefs.getString('carrito_cliente');
+      int totalItems = 0;
+      
+      if (carritoJson != null && carritoJson.isNotEmpty) {
+        final items = carritoJson.split('|');
+        for (var item in items) {
+          if (item.isNotEmpty) {
+            final parts = item.split(':');
+            if (parts.length >= 4) {
+              totalItems += int.parse(parts[3]);
+            }
+          }
+        }
+      }
+      
       if (mounted) {
         setState(() {
-          _itemsEnCarrito = carrito.length;
+          _itemsEnCarrito = totalItems;
         });
       }
-      CartNotifier.instance.updateCount(carrito.length);
+      CartNotifier.instance.updateCount(totalItems);
     } catch (e) {
       print('Error al actualizar contador de carrito: $e');
     }

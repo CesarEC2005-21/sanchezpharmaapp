@@ -19,6 +19,9 @@ abstract class ApiService {
   @POST(ApiConstants.logout)
   Future<HttpResponse<dynamic>> logout();
 
+  @POST(ApiConstants.renovarToken)
+  Future<HttpResponse<dynamic>> renovarToken();
+
   // ========== USUARIOS ==========
   @GET(ApiConstants.usuarios)
   Future<HttpResponse<dynamic>> getUsuarios();

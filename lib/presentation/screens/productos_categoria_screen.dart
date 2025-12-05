@@ -5,6 +5,7 @@ import '../../data/api/api_service.dart';
 import '../../data/models/producto_model.dart';
 import '../../data/models/categoria_model.dart';
 import '../../core/utils/error_message_helper.dart';
+import '../../core/notifiers/cart_notifier.dart';
 import '../widgets/cliente_bottom_nav.dart';
 import 'carrito_screen.dart';
 import 'product_detail_screen.dart';
@@ -41,13 +42,25 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
     _cargarProductos();
     _actualizarContadorCarrito();
     _searchController.addListener(_aplicarFiltros);
+    // Escuchar cambios en el carrito global
+    CartNotifier.instance.addListener(_onCartChanged);
+  }
+
+  void _onCartChanged() {
+    if (mounted) {
+      setState(() {
+        _itemsEnCarrito = CartNotifier.instance.value;
+      });
+    }
   }
 
   @override
   void dispose() {
+    CartNotifier.instance.removeListener(_onCartChanged);
     _searchController.dispose();
     super.dispose();
   }
+
 
   Future<void> _cargarFavoritos() async {
     try {
@@ -185,12 +198,16 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
             _itemsEnCarrito = totalItems;
           });
         }
+        // Actualizar el notificador global
+        CartNotifier.instance.updateCount(totalItems);
       } else {
         if (mounted) {
           setState(() {
             _itemsEnCarrito = 0;
           });
         }
+        // Actualizar el notificador global
+        CartNotifier.instance.updateCount(0);
       }
     } catch (e) {
       print('Error al actualizar contador de carrito: $e');
@@ -259,6 +276,8 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
     
     setState(() {
       _itemsEnCarrito = carrito.fold(0, (sum, item) => sum + (item['cantidad'] as int));
+      // Actualizar el notificador global
+      CartNotifier.instance.updateCount(_itemsEnCarrito);
     });
 
     if (mounted) {
@@ -449,45 +468,50 @@ class _ProductosCategoriaScreenState extends State<ProductosCategoriaScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Stack(
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.shopping_cart, color: Colors.green.shade700),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const CarritoScreen(),
-                            ),
-                          ).then((_) => _actualizarContadorCarrito());
-                        },
-                      ),
-                      if (_itemsEnCarrito > 0)
-                        Positioned(
-                          right: 8,
-                          top: 8,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.blue,
-                              shape: BoxShape.circle,
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 16,
-                              minHeight: 16,
-                            ),
-                            child: Text(
-                              '$_itemsEnCarrito',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
+                  ValueListenableBuilder<int>(
+                    valueListenable: CartNotifier.instance,
+                    builder: (context, cartCount, _) {
+                      return Stack(
+                        children: [
+                          IconButton(
+                            icon: Icon(Icons.shopping_cart, color: Colors.green.shade700),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const CarritoScreen(),
+                                ),
+                              ).then((_) => _actualizarContadorCarrito());
+                            },
                           ),
-                        ),
-                    ],
+                          if (cartCount > 0)
+                            Positioned(
+                              right: 8,
+                              top: 8,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: Colors.blue,
+                                  shape: BoxShape.circle,
+                                ),
+                                constraints: const BoxConstraints(
+                                  minWidth: 16,
+                                  minHeight: 16,
+                                ),
+                                child: Text(
+                                  cartCount > 9 ? '9+' : '$cartCount',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),

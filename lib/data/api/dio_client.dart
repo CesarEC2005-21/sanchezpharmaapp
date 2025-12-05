@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/utils/shared_prefs_helper.dart';
 import '../../core/utils/error_message_helper.dart';
 import '../../core/services/session_timeout_service.dart';
+import '../../core/services/token_refresh_service.dart';
 import '../../core/constants/api_constants.dart';
 import '../../main.dart';
 import '../../presentation/screens/login_screen.dart';
@@ -28,6 +29,7 @@ class DioClient {
           // Excluir endpoints públicos que no requieren token
           final publicEndpoints = [
             '/api_login',
+            '/api_version_check',  // Endpoint de verificación de versión
             '/registrar_cliente_publico_sanchezpharma',
             '/login_google_sanchezpharma',
             '/registrar_cliente_google_sanchezpharma',
@@ -43,6 +45,10 @@ class DioClient {
           // Solo agregar token si NO es un endpoint público
           if (!isPublicEndpoint) {
             try {
+              // Verificar y renovar token automáticamente si es necesario
+              final tokenRefreshService = TokenRefreshService();
+              await tokenRefreshService.renovarSiEsNecesario();
+              
               final token = await SharedPrefsHelper.getToken();
               if (token != null && token.isNotEmpty) {
                 // Limpiar el token (eliminar espacios en blanco)

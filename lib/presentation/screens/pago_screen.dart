@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/utils/error_handler.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/api/dio_client.dart';
@@ -139,12 +140,27 @@ class _PagoScreenState extends State<PagoScreen> {
             _metodosPago = metodosJson.map((json) => json as Map<String, dynamic>).toList();
             if (_metodosPago.isNotEmpty) {
               _metodoPagoId = _metodosPago.first['id'] as int;
+            } else {
+              // Si no hay métodos de pago disponibles, mostrar mensaje
+              print('⚠️ No hay métodos de pago disponibles en la base de datos');
             }
           });
+        } else {
+          print('⚠️ Error al cargar métodos de pago: ${data['message'] ?? 'Error desconocido'}');
         }
+      } else {
+        print('⚠️ Error HTTP al cargar métodos de pago: ${response.response.statusCode}');
       }
     } catch (e) {
-      print('Error al cargar métodos de pago: $e');
+      print('❌ Error al cargar métodos de pago: $e');
+      // Usar ErrorHandler para evitar mensajes duplicados
+      if (mounted) {
+        ErrorHandler.handleError(
+          context,
+          e,
+          customMessage: 'Error al cargar métodos de pago. Por favor, intenta nuevamente.',
+        );
+      }
     }
   }
 
@@ -653,6 +669,18 @@ class _PagoScreenState extends State<PagoScreen> {
       return;
     }
 
+    // Validar que haya métodos de pago disponibles
+    if (_metodosPago.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Error: No hay métodos de pago disponibles. Por favor, contacta al administrador.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Validar que se haya seleccionado un método de pago
     if (_metodoPagoId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -814,12 +842,8 @@ class _PagoScreenState extends State<PagoScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        // Usar ErrorHandler para evitar mensajes duplicados
+        ErrorHandler.handleError(context, e);
       }
     } finally {
       if (mounted) {
@@ -1110,9 +1134,30 @@ class _PagoScreenState extends State<PagoScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              ..._metodosPago.map((metodo) => RadioListTile<int>(
-                    title: Text(metodo['nombre'] as String),
-                    value: metodo['id'] as int,
+              // Mostrar mensaje si no hay métodos de pago disponibles
+              if (_metodosPago.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text(
+                    'No hay métodos de pago disponibles. Por favor, contacta al administrador.',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                )
+              else
+                ..._metodosPago.map((metodo) {
+                  final metodoId = metodo['id'] as int;
+                  final metodoNombre = metodo['nombre'] as String;
+                  final metodoDescripcion = metodo['descripcion'] as String?;
+                  
+                  return RadioListTile<int>(
+                    title: Text(metodoNombre),
+                    subtitle: metodoDescripcion != null && metodoDescripcion.isNotEmpty
+                        ? Text(
+                            metodoDescripcion,
+                            style: const TextStyle(fontSize: 12),
+                          )
+                        : null,
+                    value: metodoId,
                     groupValue: _metodoPagoId,
                     onChanged: (value) {
                       setState(() {
@@ -1126,7 +1171,8 @@ class _PagoScreenState extends State<PagoScreen> {
                         _cvvController.clear();
                       });
                     },
-                  )),
+                  );
+                }),
               
               // Campos de simulación según el método de pago seleccionado
               if (_requiereSimulacion(_nombreMetodoPago)) ...[

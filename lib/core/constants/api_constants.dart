@@ -5,6 +5,7 @@ class ApiConstants {
   // Endpoints - Usuarios
   static const String login = '/api_login';
   static const String logout = '/api_logout';
+  static const String renovarToken = '/api_renovar_token';
   static const String usuarios = '/usuarios_sanchezpharma';
   static const String repartidores = '/repartidores_sanchezpharma';
   static const String registrarUsuario = '/registrar_usuario_sanchezpharma';
@@ -117,5 +118,8 @@ class ApiConstants {
   static const String generarBackupArchivos = '/generar_backup_archivos_sanchezpharma';
   static const String generarBackupCompleto = '/generar_backup_completo_sanchezpharma';
   static const String descargarBackup = '/descargar_backup_sanchezpharma';
+  
+  // Endpoints - Actualización de App
+  static const String versionCheck = '/api_version_check';
 }
 

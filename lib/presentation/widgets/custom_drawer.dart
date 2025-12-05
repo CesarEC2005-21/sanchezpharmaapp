@@ -10,6 +10,10 @@ import '../screens/reportes_screen.dart';
 import '../screens/backups_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../../core/constants/role_constants.dart';
+import '../../core/services/app_update_service.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import '../../core/services/app_update_service.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class CustomDrawer extends StatelessWidget {
   final String username;
@@ -384,8 +388,12 @@ class CustomDrawer extends StatelessWidget {
               ),
             ),
 
-            // Botón de cerrar sesión
+            // Botón de actualizar app
             const Divider(),
+            _UpdateAppButton(),
+            const Divider(),
+            
+            // Botón de cerrar sesión
             _buildDrawerItem(
               icon: Icons.logout,
               title: 'Cerrar Sesión',
@@ -439,6 +447,217 @@ class CustomDrawer extends StatelessWidget {
         ],
       ),
       onTap: onTap,
+    );
+  }
+}
+
+// Widget para el botón de actualizar app
+class _UpdateAppButton extends StatefulWidget {
+  @override
+  State<_UpdateAppButton> createState() => _UpdateAppButtonState();
+}
+
+class _UpdateAppButtonState extends State<_UpdateAppButton> {
+  final AppUpdateService _updateService = AppUpdateService();
+  bool _isChecking = false;
+  bool _hasUpdate = false;
+  String _currentVersion = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersionInfo();
+    _checkForUpdates();
+  }
+
+  Future<void> _loadVersionInfo() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      setState(() {
+        _currentVersion = packageInfo.version;
+      });
+    } catch (e) {
+      debugPrint('Error al obtener versión: $e');
+    }
+  }
+
+  Future<void> _checkForUpdates() async {
+    setState(() {
+      _isChecking = true;
+    });
+
+    try {
+      final updateInfo = await _updateService.checkForUpdates();
+      if (updateInfo != null && updateInfo['needs_update'] == true) {
+        setState(() {
+          _hasUpdate = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error al verificar actualización: $e');
+    } finally {
+      setState(() {
+        _isChecking = false;
+      });
+    }
+  }
+
+  Future<void> _handleUpdateTap() async {
+    // Verificar actualización nuevamente
+    final updateInfo = await _updateService.checkForUpdates();
+    
+    if (updateInfo == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo verificar actualizaciones. Intenta más tarde.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!updateInfo['needs_update']) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Ya tienes la última versión instalada.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Mostrar diálogo de actualización
+    if (mounted) {
+      Navigator.pop(context); // Cerrar drawer
+      AppUpdateService.showUpdateDialog(
+        context,
+        updateInfo: updateInfo,
+        onDownload: () => _downloadAndInstall(updateInfo),
+      );
+    }
+  }
+
+  Future<void> _downloadAndInstall(Map<String, dynamic> updateInfo) async {
+    final apkUrl = updateInfo['apk_url'] as String?;
+    if (apkUrl == null || apkUrl.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('URL de descarga no disponible.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Mostrar diálogo de progreso
+    if (mounted) {
+      AppUpdateService.showDownloadProgressDialog(
+        context,
+        onCancel: () {},
+      );
+    }
+
+    // Descargar e instalar
+    final success = await _updateService.downloadAndInstallApk(
+      apkUrl: apkUrl,
+      onProgress: (received, total) {
+        // Actualizar progreso (se puede mejorar con un StatefulBuilder)
+        debugPrint('Descargando: ${(received / total * 100).toStringAsFixed(1)}%');
+      },
+      onError: (error) {
+        if (mounted) {
+          Navigator.pop(context); // Cerrar diálogo de progreso
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: $error'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      },
+    );
+
+    if (mounted) {
+      Navigator.pop(context); // Cerrar diálogo de progreso
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Actualización descargada. Por favor instala el APK.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Stack(
+        children: [
+          Icon(
+            Icons.system_update,
+            color: Colors.blue.shade700,
+          ),
+          if (_hasUpdate)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+        ],
+      ),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Actualizar App',
+              style: TextStyle(
+                color: Colors.black87,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          if (_isChecking)
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.blue.shade700),
+              ),
+            )
+          else if (_currentVersion.isNotEmpty)
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'v$_currentVersion',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+            ),
+        ],
+      ),
+      onTap: _handleUpdateTap,
     );
   }
 }

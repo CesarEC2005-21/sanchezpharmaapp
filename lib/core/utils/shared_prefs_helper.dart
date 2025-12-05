@@ -65,6 +65,23 @@ class SharedPrefsHelper {
     return token?.trim();
   }
 
+  // Guardar solo el token (útil para renovación)
+  static Future<void> saveToken(String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    final cleanToken = token.trim();
+    await prefs.setString(_keyToken, cleanToken);
+    print('✅ Token actualizado: ${cleanToken.substring(0, cleanToken.length > 20 ? 20 : cleanToken.length)}...');
+  }
+
+  // Obtener token de forma síncrona (para uso en servicios)
+  static String? getTokenSync() {
+    // Nota: Esto requiere acceso síncrono a SharedPreferences
+    // En Flutter, SharedPreferences es asíncrono, así que esto puede no funcionar directamente
+    // Se recomienda usar getToken() async en su lugar
+    // Este método está aquí para compatibilidad, pero puede retornar null
+    return null;
+  }
+
   // Obtener ID de usuario
   static Future<int?> getUserId() async {
     final prefs = await SharedPreferences.getInstance();
