@@ -1,6 +1,6 @@
 class ApiConstants {
-  // Base URL de tu API Flask
-  static const String baseUrl = 'https://nxlsxx.pythonanywhere.com';
+  // Base URL de tu servidor Laravel local (usa 10.0.2.2 para emulador Android)
+  static const String baseUrl = 'http://10.0.2.2:8000/api';
   
   // Endpoints - Usuarios
   static const String login = '/api_login';
